@@ -34,3 +34,10 @@ logging:
     com.kairon: DEBUG
     org.flywaydb: DEBUG
     org.hibernate.SQL: DEBUG
+
+kairon:
+  security:
+    refresh-token:
+      cookie:
+        # The Vite dev server and bootRun both serve plain http on localhost.
+        secure: false

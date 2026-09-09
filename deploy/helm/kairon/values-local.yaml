@@ -30,6 +30,10 @@ resources:
     cpu: "1"
     memory: 768Mi
 
+# Fixed dev secret so restarts / re-installs don't drop local sessions. Not sensitive.
+security:
+  jwtSecret: local-dev-kairon-jwt-secret-not-for-any-real-use
+
 postgresql:
   enabled: false
 

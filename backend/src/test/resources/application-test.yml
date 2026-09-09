@@ -1,0 +1,18 @@
+# Profile for @SpringBootTest / slice tests. The datasource is supplied by
+# Testcontainers (@ServiceConnection); everything here is app config only.
+kairon:
+  security:
+    jwt:
+      secret: test-only-secret-not-used-anywhere-real-000000
+      issuer: kairon
+      access-token-ttl: PT15M
+    refresh-token:
+      ttl: P30D
+      cookie:
+        secure: false
+    rate-limit:
+      # Generous by default so unrelated tests aren't throttled; the rate-limit
+      # test narrows this with @TestPropertySource.
+      enabled: true
+      capacity: 1000
+      refill-period: PT1M

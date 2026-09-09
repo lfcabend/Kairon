@@ -56,6 +56,15 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/* Secret name holding app secrets (KAIRON_JWT_SECRET). An existing one wins. */}}
+{{- define "kairon.appSecretName" -}}
+{{- if .Values.security.existingSecret -}}
+{{- .Values.security.existingSecret -}}
+{{- else -}}
+{{- printf "%s-app" (include "kairon.fullname" .) -}}
+{{- end -}}
+{{- end -}}
+
 {{/* JDBC URL: explicit override wins; otherwise built from database.host / .port /
      .name, where an empty database.host falls back to the bundled postgresql
      subchart ({release}-postgresql). Set database.host to an FQDN to reuse an

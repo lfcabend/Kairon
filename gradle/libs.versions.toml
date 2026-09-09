@@ -2,6 +2,8 @@
 springBoot = "4.1.1"
 nodeGradle = "7.1.0"
 archunit = "1.4.1"
+bucket4j = "8.14.0"
+bouncycastle = "1.81"
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
@@ -12,3 +14,8 @@ spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-depe
 archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
 flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
 postgresql = { module = "org.postgresql:postgresql" }
+# Rate limiting for the auth endpoints. The core library plus a small servlet filter,
+# not the Spring Boot starter (its Boot 4 readiness is unverified — see docs/DESIGN.md §14).
+bucket4j-core = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bucket4j" }
+# BouncyCastle is not managed by the Spring Boot BOM; needed for Argon2id hashing.
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }

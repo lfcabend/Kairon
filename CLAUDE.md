@@ -4,11 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-This repo is **design/planning only — there is no code yet.** It contains `README.md`
-and `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `adr/`). Those documents are
-the specification; treat them as the source of truth and keep them updated when
-decisions change. The first milestone (**M0 — walking skeleton**, see `docs/ROADMAP.md`)
-creates the `backend/`, `web/`, `deploy/`, and `docker/` trees described below.
+**M0 (walking skeleton) and M1 (authentication) are implemented.** The `docs/`
+(`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `adr/`) remain the specification —
+treat them as the source of truth and keep them updated when decisions change.
+
+- `backend/` — Spring Boot app. Modules under `com.kairon`: `common` (shared kernel:
+  `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
+  `PasswordEncoder`, `@CurrentUser`/`UserId`; `error` — the RFC 7807
+  `@RestControllerAdvice` + `ApiException`; `ratelimit` — the Bucket4j auth filter;
+  `id` — `Uuidv7`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
+  `repo`, `app` services `AuthService`/`RefreshTokenService`/`JwtAccessTokenService`/
+  `UserProfileService`, `web` controllers), and `meta` (the M0 `PingController`).
+  Migration `V001__identity.sql` now creates `app_user` **and** `refresh_token`.
+- `web/` — React SPA. Auth lives under `src/features/auth/` (Zustand `authStore`,
+  `AuthProvider` bootstrap, login/register/account pages) and `src/lib/api/`
+  (`client.ts` — the fetch wrapper with the single-flight 401→refresh→retry
+  interceptor). Tests use Vitest + MSW (`src/test/msw/`).
+- `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
+  app Secret wired into the Deployment.
+
+Next milestone is **M2 — Daily Todo** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

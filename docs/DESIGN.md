@@ -295,7 +295,10 @@ The backend's OpenAPI document is committed as an artifact in CI. From it:
 - **Tokens**:
   - **Access token** — JWT, ~15 min TTL, signed (HS256 with a rotated secret, or
     RS256 with a keypair if we later split services). Carries `sub` (user id),
-    `iat`, `exp`. Stateless validation.
+    `iss`, `iat`, `exp`. Stateless validation via Spring Security's Nimbus
+    resource-server filter. The configured secret (`kairon.security.jwt.secret`,
+    from `KAIRON_JWT_SECRET`) is hashed with SHA-256 to derive the 256-bit MAC
+    key, so any secret of reasonable entropy works without a length constraint.
   - **Refresh token** — opaque random string, ~30 day TTL, **stored hashed** in
     `refresh_token` with device/user-agent metadata. **Rotated on every use**;
     the old one is revoked; reuse of a revoked token revokes the whole family

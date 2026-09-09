@@ -47,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "kairon.databaseSecretName" . }}
                   key: SPRING_DATASOURCE_PASSWORD
+            - name: KAIRON_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kairon.appSecretName" . }}
+                  key: KAIRON_JWT_SECRET
           startupProbe:
             httpGet:
               path: /actuator/health/readiness

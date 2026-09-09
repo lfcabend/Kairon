@@ -1,36 +1,35 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { QueryClientProvider, QueryClient } from "@tanstack/react-query";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import { expect, test } from "vitest";
 
 import App from "@/App";
+import { useAuthStore } from "@/features/auth/authStore";
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
-test("renders the ping result once the API responds", async () => {
-  vi.spyOn(globalThis, "fetch").mockResolvedValue(
-    new Response(JSON.stringify({ pong: true, version: "1.2.3" }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }),
+const renderAt = (route: string) => {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter
+        initialEntries={[route]}
+        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
+      >
+        <App />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
+};
 
-  render(<App />);
-
-  await waitFor(() => {
-    expect(screen.getByTestId("ping-status")).toHaveTextContent("pong = true");
-  });
-  expect(screen.getByTestId("ping-status")).toHaveTextContent("version 1.2.3");
+test("an unauthenticated visit to a protected route lands on the sign-in screen", async () => {
+  renderAt("/");
+  expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
 });
 
-test("shows an error when the API cannot be reached", async () => {
-  vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
-
-  render(<App />);
-
-  await waitFor(() => {
-    expect(screen.getByTestId("ping-status")).toHaveTextContent(
-      "Could not reach the API: network down",
-    );
+test("an authenticated visit to the account route shows the account screen", async () => {
+  useAuthStore.setState({
+    accessToken: "access-1",
+    user: { id: "u1", email: "ada@example.com", displayName: "Ada", timezone: "UTC" },
   });
+  renderAt("/");
+  expect(await screen.findByRole("heading", { name: "Your account" })).toBeInTheDocument();
 });

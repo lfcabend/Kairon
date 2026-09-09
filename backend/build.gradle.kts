@@ -24,6 +24,15 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
+    // Auth (M1): Spring Security + a JWT resource server. The oauth2-resource-server
+    // starter pulls spring-security-oauth2-jose (Nimbus), which supplies both the
+    // JwtDecoder used to validate access tokens and the JwtEncoder used to mint them.
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    // Argon2id password hashing needs BouncyCastle on the classpath.
+    implementation(libs.bouncycastle.prov)
+    implementation(libs.bucket4j.core)
+
     // Spring Boot 4 only auto-configures Flyway when the dedicated module is present
     // (flyway-core on its own is a silent no-op).
     implementation("org.springframework.boot:spring-boot-starter-flyway")
@@ -34,6 +43,7 @@ dependencies {
     // Spring Boot 4 moved the slice-test auto-configurations out of the core test
     // starter into dedicated starters; @WebMvcTest lives in this one.
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
+    testImplementation("org.springframework.security:spring-security-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-postgresql")

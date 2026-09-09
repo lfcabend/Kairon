@@ -42,6 +42,14 @@ resources:
 # Spring profile the container runs with.
 springProfiles: prod
 
+# Auth (M1). The JWT signing secret is rendered into the Secret alongside the DB
+# password. Leave jwtSecret empty for a throwaway local install (a random one is
+# generated per `helm upgrade`, which invalidates any live sessions); for prod set
+# security.existingSecret to a Secret that carries KAIRON_JWT_SECRET (M7 secrets work).
+security:
+  jwtSecret: ""
+  existingSecret: ""
+
 # Non-secret app config, rendered into the ConfigMap.
 config:
   SPRING_DATASOURCE_URL: ""   # computed from the postgresql release name when empty

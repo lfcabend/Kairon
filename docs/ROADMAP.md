@@ -33,19 +33,19 @@ Prove the whole pipeline with almost no product in it.
 
 ## M1 — Authentication
 
-- [ ] `app_user` + `refresh_token` schema (`V001`).
-- [ ] `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`,
+- [x] `app_user` + `refresh_token` schema (`V001`).
+- [x] `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`,
       `POST /auth/logout`, `POST /auth/logout-all`. Argon2id hashing.
-- [ ] Access JWT (15 min) + rotating opaque refresh token (hashed, family-based
+- [x] Access JWT (15 min) + rotating opaque refresh token (hashed, family-based
       reuse detection). Refresh token set as httpOnly Secure SameSite=Strict
       cookie for web.
-- [ ] Spring Security: all `/api/v1/**` except `/auth/**` require a valid access
-      token; `@CurrentUser` resolver.
-- [ ] Bucket4j rate limiting on auth endpoints.
-- [ ] `GET /me`, `PATCH /me` (display name, timezone, preferences).
-- [ ] Web: register / login / logout flows, auth store (Zustand), TanStack Query
+- [x] Spring Security: all `/api/v1/**` except `/auth/**` (and `/ping`) require a
+      valid access token; `@CurrentUser` resolver.
+- [x] Bucket4j rate limiting on auth endpoints.
+- [x] `GET /me`, `PATCH /me` (display name, timezone, preferences).
+- [x] Web: register / login / logout flows, auth store (Zustand), TanStack Query
       client with a 401 → refresh → retry interceptor, protected routes.
-- [ ] Tests: integration test register → login → call `/me` → refresh → logout.
+- [x] Tests: integration test register → login → call `/me` → refresh → logout.
 
 ## M2 — Daily Todo
 

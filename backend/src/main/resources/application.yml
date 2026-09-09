@@ -4,6 +4,9 @@ spring:
   threads:
     virtual:
       enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/kairon}
     username: ${SPRING_DATASOURCE_USERNAME:kairon}
@@ -43,3 +46,25 @@ management:
 server:
   port: 8080
   shutdown: graceful
+
+kairon:
+  security:
+    jwt:
+      # Any string of reasonable entropy; it is SHA-256'd to the 256-bit HS256 key.
+      # Override in every real environment (Helm wires KAIRON_JWT_SECRET from a Secret).
+      secret: ${KAIRON_JWT_SECRET:dev-insecure-secret-change-me-please-0000000000}
+      issuer: kairon
+      access-token-ttl: PT15M
+    refresh-token:
+      ttl: P30D
+      cookie:
+        name: kairon_refresh
+        secure: true
+    rate-limit:
+      enabled: true
+      capacity: 10
+      refill-period: PT1M
+      paths:
+        - /api/v1/auth/login
+        - /api/v1/auth/register
+        - /api/v1/auth/refresh

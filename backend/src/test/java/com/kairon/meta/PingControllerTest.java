@@ -6,10 +6,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.test.web.servlet.MockMvc;
 
+// addFilters = false: /api/v1/ping is public (SecurityConfig permits it); the slice
+// only needs the controller, not the security chain.
 @WebMvcTest(PingController.class)
+@AutoConfigureMockMvc(addFilters = false)
 class PingControllerTest {
 
     @Autowired
