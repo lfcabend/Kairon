@@ -49,13 +49,17 @@ Prove the whole pipeline with almost no product in it.
 
 ## M2 — Daily Todo
 
-- [ ] `todo_item` schema (`V002`).
-- [ ] CRUD + `:complete`, `:reorder`, `:rollover`. Sparse `position` values.
-- [ ] `GET /todo?day=` and `GET /todo?from=&to=`.
-- [ ] Web: day view with date nav, quick-add (Enter), inline edit, complete
-      shortcut, drag/keyboard reorder, a "roll unfinished from yesterday" action.
-- [ ] Tests: `@DataJpaTest` + Testcontainers for the repo; MockMvc for the
-      controller; a Playwright happy path.
+- [x] `todo_item` schema (`V002`).
+- [x] CRUD + `:complete`, `:reorder`, `:rollover` (plus `rollover-preview` and
+      `:rollover-undo`). Sparse `position` values.
+- [x] `GET /todo?day=` and `GET /todo?from=&to=`.
+- [x] Web: day view with date nav, quick-add (Enter), inline edit, complete
+      shortcut, drag/keyboard reorder, and rollover in three user-selectable
+      modes (manual / pick / auto) — the sweep looks back over every skipped day
+      in a bounded window, not just "yesterday".
+- [x] Tests: `@DataJpaTest` + Testcontainers for the repo; service unit tests;
+      MockMvc for the controller; an `@SpringBootTest` flow test; ArchUnit rule
+      for the module; Vitest component tests; a Playwright happy path.
 
 ## M3 — Daily Journal
 

@@ -249,7 +249,10 @@ embedded in the Spring Boot jar for a single deployable.
   `/auth/*` and `/actuator/health`.
 - **Lists** use `page` / `size` / `sort` (Spring `Pageable`) and return a
   `{ content, page, totalElements }` envelope. Date-range endpoints take
-  `from` / `to` ISO dates.
+  `from` / `to` ISO dates. **Exception:** a fully-ordered, un-paginated
+  collection with a natural bound returns a **bare array** — `GET /todo?day=`
+  and `GET /todo?from=&to=` do this (a day's list is small and has no pagination
+  need; see docs/milestones/M2-daily-todo.md §5).
 - **IDs are UUIDv7** (time-ordered). Clients may generate IDs — needed for
   offline mobile creation later and safe for idempotent `PUT`.
 - **Optimistic concurrency**: entities carry a `version`; update DTOs echo it;
@@ -263,7 +266,7 @@ embedded in the Spring Boot jar for a single deployable.
 | --- | --- |
 | Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/logout-all` |
 | Profile | `GET /me`, `PATCH /me` (display name, timezone, preferences incl. `assistant.*` per-feature opt-ins) |
-| Todo | `GET /todo?day=`, `GET /todo?from=&to=`, `POST /todo`, `PATCH /todo/{id}`, `DELETE /todo/{id}`, `POST /todo/{id}:complete`, `POST /todo:rollover` (`{fromDay,toDay,ids?}`), `POST /todo:reorder` (`{day, orderedIds}`) |
+| Todo | `GET /todo?day=`, `GET /todo?from=&to=` (both bare arrays), `POST /todo`, `PATCH /todo/{id}`, `DELETE /todo/{id}`, `POST /todo/{id}:complete` (`{complete?}`), `POST /todo:reorder` (`{day, orderedIds}`), `GET /todo/rollover-preview?onDay=` → `{ sourceDays: [{ day, items }], totalItems }`, `POST /todo:rollover` (`{toDay, fromDay?, ids?}` — omit both to sweep the whole look-back window), `POST /todo:rollover-undo` (`{createdIds}`) |
 | Journal | `GET /journal?from=&to=`, `GET /journal/{id}`, `GET /journal?day=`, `GET /journal:search?q=`, `POST /journal`, `PATCH /journal/{id}`, `DELETE /journal/{id}` |
 | Projects | `GET /projects`, `POST /projects`, `GET /projects/{id}`, `PATCH /projects/{id}`, `DELETE /projects/{id}` |
 | Project tasks | `GET /projects/{id}/tasks`, `POST /projects/{id}/tasks`, `PATCH /tasks/{taskId}`, `DELETE /tasks/{taskId}`, `POST /projects/{id}/tasks:reorder` |

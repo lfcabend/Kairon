@@ -68,3 +68,9 @@ kairon:
         - /api/v1/auth/login
         - /api/v1/auth/register
         - /api/v1/auth/refresh
+  todo:
+    # How far back a rollover sweep reaches for stranded OPEN items (the list is
+    # worked irregularly, so this is a window, not "yesterday"). Also the span cap
+    # on GET /todo?from=&to=.
+    rollover-look-back-days: 14
+    range-max-days: 92

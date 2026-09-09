@@ -41,3 +41,10 @@ kairon:
       cookie:
         # The Vite dev server and bootRun both serve plain http on localhost.
         secure: false
+  # A dev-only seeded account (DevDataSeeder, local profile only). Used by the
+  # Playwright happy path; set seed-user: false to skip.
+  dev:
+    seed-user: true
+    seed-email: dev@kairon.local
+    seed-password: dev-password-please
+    seed-display-name: Dev User

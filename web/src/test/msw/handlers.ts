@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 
-import type { AuthResponse, Me } from "@/lib/api/types";
+import type { AuthResponse, Me, TodoItem } from "@/lib/api/types";
 
 export const testUser = {
   id: "018f5b3e-0000-7000-8000-0000000000aa",
@@ -22,12 +22,66 @@ export const meResponse: Me = {
   preferences: {},
 };
 
+export function resetMeResponse() {
+  Object.assign(meResponse, { ...testUser, status: "ACTIVE", preferences: {} });
+}
+
 const problem = (status: number, detail: string) =>
   HttpResponse.json({ status, detail }, { status });
 
+// --- in-memory todo store ------------------------------------------------
+
+type Row = TodoItem & { removed?: boolean };
+
+let todos: Row[] = [];
+let seq = 0;
+
+export function resetTodoStore() {
+  todos = [];
+  seq = 0;
+}
+
+export function seedTodos(items: Partial<TodoItem>[]) {
+  for (const item of items) todos.push(makeTodo(item));
+}
+
+export function allTodos(): Row[] {
+  return todos;
+}
+
+function makeTodo(partial: Partial<TodoItem>): Row {
+  seq += 1;
+  const now = new Date(2026, 0, 1, 0, 0, seq).toISOString();
+  return {
+    id: partial.id ?? `todo-${seq}`,
+    day: partial.day ?? "2026-09-09",
+    title: partial.title ?? `Task ${seq}`,
+    notes: partial.notes ?? null,
+    status: partial.status ?? "OPEN",
+    priority: partial.priority ?? 0,
+    position: partial.position ?? seq * 100,
+    estimateMinutes: partial.estimateMinutes ?? null,
+    sourceProjectTaskId: partial.sourceProjectTaskId ?? null,
+    rolledOverFromId: partial.rolledOverFromId ?? null,
+    completedAt: partial.completedAt ?? null,
+    createdAt: partial.createdAt ?? now,
+    updatedAt: now,
+    version: partial.version ?? 0,
+  };
+}
+
+const authed = (request: Request) =>
+  request.headers.get("Authorization")?.startsWith("Bearer ");
+
+const live = () => todos.filter((t) => !t.removed);
+
+function sortRows(rows: Row[]): Row[] {
+  return [...rows].sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position);
+}
+
 /**
  * Baseline happy-path handlers. Individual tests narrow behaviour with
- * `server.use(...)`.
+ * `server.use(...)` and seed rows with `seedTodos(...)`.
  */
 export const handlers = [
   http.get("/api/v1/ping", () => HttpResponse.json({ pong: true, version: "test" })),
@@ -50,17 +104,137 @@ export const handlers = [
   http.post("/api/v1/auth/logout-all", () => new HttpResponse(null, { status: 204 })),
 
   http.get("/api/v1/me", ({ request }) => {
-    if (request.headers.get("Authorization")?.startsWith("Bearer ")) {
-      return HttpResponse.json(meResponse);
-    }
+    if (authed(request)) return HttpResponse.json(meResponse);
     return problem(401, "Authentication required.");
   }),
 
   http.patch("/api/v1/me", async ({ request }) => {
-    if (!request.headers.get("Authorization")?.startsWith("Bearer ")) {
-      return problem(401, "Authentication required.");
-    }
+    if (!authed(request)) return problem(401, "Authentication required.");
     const patch = (await request.json()) as Partial<Me>;
-    return HttpResponse.json({ ...meResponse, ...patch });
+    Object.assign(meResponse, patch);
+    return HttpResponse.json(meResponse);
+  }),
+
+  // --- todo -----------------------------------------------------------
+
+  http.get("/api/v1/todo", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const day = url.searchParams.get("day");
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    let rows = live();
+    if (day) rows = rows.filter((t) => t.day === day);
+    else if (from && to) rows = rows.filter((t) => t.day >= from && t.day <= to);
+    else return problem(400, "Provide either `day` or both `from` and `to`.");
+    return HttpResponse.json(sortRows(rows));
+  }),
+
+  http.post("/api/v1/todo", async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as Partial<TodoItem> & { title: string };
+    if (!body.title?.trim()) return problem(400, "Title must not be blank.");
+    const maxPos = live()
+      .filter((t) => t.day === body.day)
+      .reduce((m, t) => Math.max(m, t.position), 0);
+    const created = makeTodo({ ...body, position: maxPos + 100 });
+    todos.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.patch("/api/v1/todo/:id", async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = todos.find((t) => t.id === params.id);
+    if (!row) return problem(404, "Todo item not found.");
+    const body = (await request.json()) as Partial<TodoItem>;
+    Object.assign(row, body, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/todo/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = todos.find((t) => t.id === params.id);
+    if (row) row.removed = true;
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(/\/api\/v1\/todo\/([^/]+):complete$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(new URL(request.url).pathname.split("/").pop()!.replace(":complete", ""));
+    const row = todos.find((t) => t.id === id);
+    if (!row) return problem(404, "Todo item not found.");
+    const body = (await request.json().catch(() => ({}))) as { complete?: boolean };
+    const complete = body.complete ?? true;
+    row.status = complete ? "DONE" : "OPEN";
+    row.completedAt = complete ? new Date().toISOString() : null;
+    return HttpResponse.json(row);
+  }),
+
+  http.post(/\/api\/v1\/todo:reorder$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { day: string; orderedIds: string[] };
+    const dayRows = live().filter((t) => t.day === body.day);
+    const ids = new Set(dayRows.map((t) => t.id));
+    if (body.orderedIds.length !== ids.size || !body.orderedIds.every((id) => ids.has(id))) {
+      return problem(400, "`orderedIds` must list exactly the non-deleted items for that day.");
+    }
+    body.orderedIds.forEach((id, i) => {
+      const row = todos.find((t) => t.id === id)!;
+      row.position = (i + 1) * 100;
+    });
+    return HttpResponse.json(sortRows(dayRows));
+  }),
+
+  http.get("/api/v1/todo/rollover-preview", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const onDay = new URL(request.url).searchParams.get("onDay")!;
+    const eligible = live().filter((t) => t.status === "OPEN" && t.day < onDay);
+    const byDay = new Map<string, Row[]>();
+    for (const t of eligible) {
+      if (!byDay.has(t.day)) byDay.set(t.day, []);
+      byDay.get(t.day)!.push(t);
+    }
+    const sourceDays = [...byDay.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([day, items]) => ({ day, items }));
+    return HttpResponse.json({ sourceDays, totalItems: eligible.length });
+  }),
+
+  http.post(/\/api\/v1\/todo:rollover$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { toDay: string; fromDay?: string; ids?: string[] };
+    let sources = live().filter((t) => t.status === "OPEN" && t.day < body.toDay);
+    if (body.ids) sources = sources.filter((t) => body.ids!.includes(t.id));
+    else if (body.fromDay) sources = sources.filter((t) => t.day === body.fromDay);
+    const rolledOver = sources.map((source) => {
+      source.status = "CANCELLED";
+      return makeTodo({
+        day: body.toDay,
+        title: source.title,
+        notes: source.notes,
+        priority: source.priority,
+        estimateMinutes: source.estimateMinutes,
+        rolledOverFromId: source.id,
+      });
+    });
+    todos.push(...rolledOver);
+    return HttpResponse.json({ rolledOver });
+  }),
+
+  http.post(/\/api\/v1\/todo:rollover-undo$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { createdIds: string[] };
+    const reopened: Row[] = [];
+    for (const id of body.createdIds) {
+      const created = todos.find((t) => t.id === id);
+      if (!created?.rolledOverFromId) continue;
+      created.removed = true;
+      const source = todos.find((t) => t.id === created.rolledOverFromId);
+      if (source) {
+        source.status = "OPEN";
+        reopened.push(source);
+      }
+    }
+    return HttpResponse.json({ reopened });
   }),
 ];

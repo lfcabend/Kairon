@@ -4,26 +4,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**M0 (walking skeleton) and M1 (authentication) are implemented.** The `docs/`
-(`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `adr/`) remain the specification —
-treat them as the source of truth and keep them updated when decisions change.
+**M0 (walking skeleton), M1 (authentication) and M2 (daily todo) are
+implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`,
+`milestones/`, `adr/`) remain the specification — treat them as the source of
+truth and keep them updated when decisions change.
 
 - `backend/` — Spring Boot app. Modules under `com.kairon`: `common` (shared kernel:
   `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
   `PasswordEncoder`, `@CurrentUser`/`UserId`; `error` — the RFC 7807
   `@RestControllerAdvice` + `ApiException`; `ratelimit` — the Bucket4j auth filter;
   `id` — `Uuidv7`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
-  `repo`, `app` services `AuthService`/`RefreshTokenService`/`JwtAccessTokenService`/
-  `UserProfileService`, `web` controllers), and `meta` (the M0 `PingController`).
-  Migration `V001__identity.sql` now creates `app_user` **and** `refresh_token`.
-- `web/` — React SPA. Auth lives under `src/features/auth/` (Zustand `authStore`,
-  `AuthProvider` bootstrap, login/register/account pages) and `src/lib/api/`
-  (`client.ts` — the fetch wrapper with the single-flight 401→refresh→retry
-  interceptor). Tests use Vitest + MSW (`src/test/msw/`).
+  `repo`, `app` services, `web` controllers, `dev` — the `local`-profile
+  `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView`, `domain`
+  `TodoItem`/`TodoStatus`, `repo`, `app` `TodoService`/`RolloverService`/
+  `TodoProperties`, `config`, `web` `TodoController`), and `meta` (the M0
+  `PingController`). Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
+  `V002__todo.sql` (`todo_item`).
+- `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
+  `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
+  `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
+  hooks + `todoKeys`). `src/components/AppLayout.tsx` is the top-nav shell wrapping
+  the protected routes. API access is hand-written types in `src/lib/api/types.ts`
+  plus `todo.ts`/`auth.ts` over `client.ts` (the single-flight 401→refresh→retry
+  fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy path in
+  `web/e2e/` (`npm run test:e2e`, needs a running full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment.
 
-Next milestone is **M2 — Daily Todo** (see `docs/ROADMAP.md`).
+Next milestone is **M3 — Daily Journal** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 
