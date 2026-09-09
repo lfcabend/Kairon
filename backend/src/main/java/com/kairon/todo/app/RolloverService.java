@@ -15,6 +15,8 @@ import com.kairon.todo.domain.TodoItem;
 import com.kairon.todo.domain.TodoStatus;
 import com.kairon.todo.repo.TodoItemRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class RolloverService {
 
+    private static final Logger log = LoggerFactory.getLogger(RolloverService.class);
     private static final int POSITION_GAP = 100;
 
     private final TodoItemRepository items;
@@ -70,6 +73,8 @@ public class RolloverService {
         List<SourceDay> sourceDays = byDay.entrySet().stream()
                 .map(e -> new SourceDay(e.getKey(), e.getValue()))
                 .toList();
+        log.debug("Rollover preview userId={} onDay={}: {} eligible item(s) across {} day(s)",
+                userId.value(), onDay, eligible.size(), sourceDays.size());
         return new RolloverPreview(sourceDays, eligible.size());
     }
 
@@ -84,6 +89,7 @@ public class RolloverService {
     public List<TodoItemView> rollover(UserId userId, RolloverCommand command) {
         LocalDate toDay = command.toDay();
         if (toDay == null) {
+            log.warn("Rollover rejected: no `toDay` userId={}", userId.value());
             throw ApiException.badRequest("`toDay` is required.");
         }
         List<TodoItem> sources = command.ids() != null && !command.ids().isEmpty()
@@ -98,6 +104,9 @@ public class RolloverService {
             created.add(TodoMapper.toView(items.save(carried)));
             position += POSITION_GAP;
         }
+        log.info("Rolled over {} item(s) to {} userId={} (mode={})",
+                created.size(), toDay, userId.value(),
+                command.ids() != null && !command.ids().isEmpty() ? "explicit" : "sweep");
         return created;
     }
 
@@ -112,6 +121,8 @@ public class RolloverService {
         if (command.createdIds() == null) {
             return reopened;
         }
+        int requested = command.createdIds().size();
+        int removed = 0;
         for (UUID createdId : command.createdIds()) {
             TodoItem created = items
                     .findByIdAndUserIdAndDeletedAtIsNull(createdId, userId.value())
@@ -125,7 +136,10 @@ public class RolloverService {
                         reopened.add(TodoMapper.toView(source));
                     });
             created.softDelete(clock.instant());
+            removed++;
         }
+        log.info("Rollover undo userId={}: removed {} of {} carried item(s), reopened {} source(s)",
+                userId.value(), removed, requested, reopened.size());
         return reopened;
     }
 

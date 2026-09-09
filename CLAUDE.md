@@ -13,7 +13,8 @@ truth and keep them updated when decisions change.
   `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
   `PasswordEncoder`, `@CurrentUser`/`UserId`; `error` — the RFC 7807
   `@RestControllerAdvice` + `ApiException`; `ratelimit` — the Bucket4j auth filter;
-  `id` — `Uuidv7`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
+  `id` — `Uuidv7`; `logging` — `CorrelationIdFilter`, per-request id in the MDC +
+  `X-Request-Id`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
   `repo`, `app` services, `web` controllers, `dev` — the `local`-profile
   `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView`, `domain`
   `TodoItem`/`TodoStatus`, `repo`, `app` `TodoService`/`RolloverService`/
@@ -130,6 +131,35 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 Docker builds one image (`docker/Dockerfile`, stages: `node` build → `gradle` build →
 `eclipse-temurin:25-jre`). Confirm exact task names against `Taskfile.yml` / `build.gradle.kts`
 once they exist.
+
+## Logging
+
+**Every new controller and application service must log — treat it as part of
+"done", not a follow-up.** SLF4J + Logback (Spring Boot's default starter; no
+extra framework). Conventions:
+
+- **Controllers**: one `log.debug(...)` on entry per handler with the route, the
+  `@CurrentUser` id, and the key path/query params — never request bodies.
+- **Application services**: `log.info(...)` for every state change (create, patch,
+  delete, complete, reorder, rollover, register, login, token rotation, logout)
+  including the affected row id(s) and `userId`; `log.warn(...)` for rejected or
+  suspicious operations (bad credentials, refresh-token reuse, version conflict,
+  validation failures that reach the service).
+- **Repositories** are Spring Data interfaces with no method bodies — persistence
+  visibility comes from the service-layer logs above plus `org.hibernate.SQL` at
+  DEBUG (already on in the `local` profile).
+- **Never log** passwords, raw or hashed tokens, JWTs, or full request/response
+  bodies. Emails may appear in identity logs (single-user-scale, the user's own
+  data); nothing else PII-ish.
+
+`CorrelationIdFilter` (`common.logging`) puts a per-request id in the MDC under
+`correlationId` and echoes it as the `X-Request-Id` response header; the web
+`client.ts` fetch wrapper sends that header so browser and server logs join up.
+The console shows the id via `logging.pattern.correlation`; the `prod` profile
+(`application-prod.yml`) switches the console to ECS JSON using Spring Boot's
+built-in structured logging (no `logstash-logback-encoder`). Frontend code logs
+through the `log` seam in `web/src/lib/log.ts` (level-gated `console` wrapper),
+never bare `console.*`.
 
 ## Testing approach
 

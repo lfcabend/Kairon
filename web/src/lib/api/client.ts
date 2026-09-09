@@ -1,8 +1,16 @@
 import { useAuthStore } from "@/features/auth/authStore";
+import { log } from "@/lib/log";
 
 import type { AuthResponse, ProblemDetail } from "./types";
 
 const BASE = "/api/v1";
+
+/** Correlation id echoed to the backend as `X-Request-Id`; joins browser and server logs. */
+function newRequestId(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 export class ApiError extends Error {
   readonly status: number;
@@ -33,8 +41,10 @@ export async function apiFetch<T>(path: string, opts: RequestOptions = {}): Prom
   const first = await rawFetch(path, opts);
 
   if (first.status === 401 && opts.auth !== false && !path.startsWith("/auth/")) {
+    log.debug(`401 on ${path} — attempting token refresh`);
     const refreshed = await ensureRefreshed();
     if (!refreshed) {
+      log.warn(`Refresh failed after 401 on ${path} — clearing session`);
       useAuthStore.getState().clearSession();
       return toResult<T>(first);
     }
@@ -53,12 +63,18 @@ async function rawFetch(path: string, opts: RequestOptions): Promise<Response> {
   if (opts.body !== undefined) {
     headers.set("Content-Type", "application/json");
   }
-  return fetch(BASE + path, {
-    method: opts.method ?? "GET",
+  const requestId = newRequestId();
+  headers.set("X-Request-Id", requestId);
+  const method = opts.method ?? "GET";
+  log.debug(`→ ${method} ${path}`, { requestId });
+  const res = await fetch(BASE + path, {
+    method,
     headers,
     credentials: "include",
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });
+  log.debug(`← ${res.status} ${method} ${path}`, { requestId });
+  return res;
 }
 
 let refreshInFlight: Promise<boolean> | null = null;
@@ -79,11 +95,17 @@ function ensureRefreshed(): Promise<boolean> {
 export async function tryRefreshSession(): Promise<boolean> {
   let res: Response;
   try {
-    res = await fetch(`${BASE}/auth/refresh`, { method: "POST", credentials: "include" });
-  } catch {
+    res = await fetch(`${BASE}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "X-Request-Id": newRequestId() },
+    });
+  } catch (err) {
+    log.warn("Refresh request errored", err);
     return false;
   }
   if (!res.ok) {
+    log.debug(`Refresh rejected with ${res.status}`);
     return false;
   }
   const data = (await res.json()) as AuthResponse;

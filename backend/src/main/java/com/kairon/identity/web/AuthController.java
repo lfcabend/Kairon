@@ -17,6 +17,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -35,6 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/auth")
 public class AuthController {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthController.class);
+
     private final AuthService authService;
     private final RefreshCookie refreshCookie;
 
@@ -46,6 +50,7 @@ public class AuthController {
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request,
             HttpServletRequest http) {
+        log.debug("POST /auth/register email={}", request.email());
         AuthResult result = authService.register(
                 new RegisterCommand(request.email(), request.password(), request.displayName(),
                         request.timezoneOrDefault()),
@@ -56,6 +61,7 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
             HttpServletRequest http) {
+        log.debug("POST /auth/login email={}", request.email());
         AuthResult result = authService.login(
                 new LoginCommand(request.email(), request.password()), userAgent(http));
         return withCredentials(HttpStatus.OK, result);
@@ -64,8 +70,9 @@ public class AuthController {
     @PostMapping("/refresh")
     public ResponseEntity<AuthResponse> refresh(@Nullable @RequestBody(required = false) RefreshRequest body,
             HttpServletRequest http) {
-        String token = refreshCookie.read(http)
-                .orElseGet(() -> body != null ? body.refreshToken() : null);
+        var cookieToken = refreshCookie.read(http);
+        String token = cookieToken.orElseGet(() -> body != null ? body.refreshToken() : null);
+        log.debug("POST /auth/refresh (cookie-borne={})", cookieToken.isPresent());
         AuthResult result = authService.refresh(token, userAgent(http));
         return withCredentials(HttpStatus.OK, result);
     }
@@ -75,6 +82,7 @@ public class AuthController {
             HttpServletRequest http) {
         String token = refreshCookie.read(http)
                 .orElseGet(() -> body != null ? body.refreshToken() : null);
+        log.debug("POST /auth/logout");
         authService.logout(token);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.clear().toString())
@@ -83,6 +91,7 @@ public class AuthController {
 
     @PostMapping("/logout-all")
     public ResponseEntity<Void> logoutAll(@CurrentUser UserId userId) {
+        log.debug("POST /auth/logout-all userId={}", userId.value());
         authService.logoutAll(userId);
         return ResponseEntity.noContent()
                 .header(HttpHeaders.SET_COOKIE, refreshCookie.clear().toString())

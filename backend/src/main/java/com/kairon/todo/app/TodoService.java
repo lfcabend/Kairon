@@ -16,6 +16,8 @@ import com.kairon.todo.domain.TodoItem;
 import com.kairon.todo.domain.TodoStatus;
 import com.kairon.todo.repo.TodoItemRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class TodoService implements TodoApi {
 
+    private static final Logger log = LoggerFactory.getLogger(TodoService.class);
     private static final int POSITION_GAP = 100;
 
     private final TodoItemRepository items;
@@ -63,11 +66,13 @@ public class TodoService implements TodoApi {
 
     @Transactional(readOnly = true)
     public List<TodoItemView> list(UserId userId, LocalDate day) {
-        return items
+        List<TodoItemView> views = items
                 .findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(userId.value(), day)
                 .stream()
                 .map(TodoMapper::toView)
                 .toList();
+        log.debug("Listed {} todo(s) userId={} day={}", views.size(), userId.value(), day);
+        return views;
     }
 
     @Transactional(readOnly = true)
@@ -79,12 +84,14 @@ public class TodoService implements TodoApi {
             throw ApiException.badRequest(
                     "Date range must not exceed " + properties.rangeMaxDays() + " days.");
         }
-        return items
+        List<TodoItemView> views = items
                 .findByUserIdAndDayBetweenAndDeletedAtIsNullOrderByDayAscPositionAsc(
                         userId.value(), from, to)
                 .stream()
                 .map(TodoMapper::toView)
                 .toList();
+        log.debug("Listed {} todo(s) userId={} range {}..{}", views.size(), userId.value(), from, to);
+        return views;
     }
 
     @Transactional
@@ -100,13 +107,17 @@ public class TodoService implements TodoApi {
                 position,
                 command.estimateMinutes(),
                 command.sourceProjectTaskId());
-        return TodoMapper.toView(items.save(item));
+        TodoItem saved = items.save(item);
+        log.info("Created todo {} userId={} day={}", saved.getId(), userId.value(), command.day());
+        return TodoMapper.toView(saved);
     }
 
     @Transactional
     public TodoItemView patch(UserId userId, UUID id, PatchCommand command) {
         TodoItem item = require(userId, id);
         if (command.expectedVersion() != null && command.expectedVersion() != item.getVersion()) {
+            log.warn("Patch rejected: version conflict on todo {} userId={} (expected {}, actual {})",
+                    id, userId.value(), command.expectedVersion(), item.getVersion());
             throw ApiException.conflict(
                     "This item was modified by another request. Reload and try again.");
         }
@@ -125,6 +136,7 @@ public class TodoService implements TodoApi {
         if (command.status() != null) {
             applyStatus(item, command.status());
         }
+        log.info("Patched todo {} userId={}", id, userId.value());
         return TodoMapper.toView(item);
     }
 
@@ -164,6 +176,7 @@ public class TodoService implements TodoApi {
         } else {
             item.reopen();
         }
+        log.info("Set todo {} complete={} userId={}", id, complete, userId.value());
         return TodoMapper.toView(item);
     }
 
@@ -176,6 +189,8 @@ public class TodoService implements TodoApi {
             byId.put(item.getId(), item);
         }
         if (orderedIds.size() != byId.size() || !byId.keySet().equals(new java.util.HashSet<>(orderedIds))) {
+            log.warn("Reorder rejected: userId={} day={} sent {} id(s), day holds {}",
+                    userId.value(), day, orderedIds.size(), byId.size());
             throw ApiException.badRequest(
                     "`orderedIds` must list exactly the non-deleted items for that day.");
         }
@@ -187,12 +202,14 @@ public class TodoService implements TodoApi {
             result.add(TodoMapper.toView(item));
             position += POSITION_GAP;
         }
+        log.info("Reordered {} todo(s) userId={} day={}", result.size(), userId.value(), day);
         return result;
     }
 
     @Transactional
     public void softDelete(UserId userId, UUID id) {
         require(userId, id).softDelete(clock.instant());
+        log.info("Soft-deleted todo {} userId={}", id, userId.value());
     }
 
     // --- TodoApi port ----------------------------------------------------------
@@ -219,7 +236,11 @@ public class TodoService implements TodoApi {
 
     private TodoItem require(UserId userId, UUID id) {
         return items.findByIdAndUserIdAndDeletedAtIsNull(id, userId.value())
-                .orElseThrow(() -> ApiException.notFound("Todo item not found."));
+                .orElseThrow(() -> {
+                    log.debug("Todo {} not visible to userId={} (missing, deleted, or foreign)",
+                            id, userId.value());
+                    return ApiException.notFound("Todo item not found.");
+                });
     }
 
     private int nextPosition(UUID userId, LocalDate day) {

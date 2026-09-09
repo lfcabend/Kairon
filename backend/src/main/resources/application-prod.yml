@@ -1,0 +1,9 @@
+# Profile the container runs with in Kubernetes (deploy/helm/kairon: springProfiles).
+# Logs go to stdout as ECS JSON so the cluster's collector can parse them without a
+# grok pattern; the per-request id from CorrelationIdFilter rides along as the
+# `correlationId` MDC field. Uses Spring Boot's built-in structured logging — no
+# logstash-logback-encoder dependency (docs/DESIGN.md §11).
+logging:
+  structured:
+    format:
+      console: ecs

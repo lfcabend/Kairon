@@ -1,5 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 
+// Keep the `log` seam quiet under test; individual tests can spy on `console` if
+// they need to assert on a specific message.
+import.meta.env.VITE_LOG_LEVEL = "silent";
+
 import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup } from "@testing-library/react";
 

@@ -27,6 +27,8 @@ import com.kairon.todo.web.TodoDtos.TodoItemResponse;
 import jakarta.validation.Valid;
 
 import org.jspecify.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -54,6 +56,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1")
 public class TodoController {
 
+    private static final Logger log = LoggerFactory.getLogger(TodoController.class);
+
     private final TodoService todos;
     private final RolloverService rollovers;
 
@@ -68,6 +72,7 @@ public class TodoController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate day,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) @Nullable LocalDate to) {
+        log.debug("GET /todo userId={} day={} from={} to={}", userId.value(), day, from, to);
         if (day != null) {
             return TodoItemResponse.from(todos.list(userId, day));
         }
@@ -80,6 +85,7 @@ public class TodoController {
     @PostMapping("/todo")
     @ResponseStatus(HttpStatus.CREATED)
     public TodoItemResponse create(@CurrentUser UserId userId, @Valid @RequestBody CreateTodoRequest request) {
+        log.debug("POST /todo userId={} day={}", userId.value(), request.day());
         return TodoItemResponse.from(todos.create(userId, new CreateCommand(
                 request.day(), request.title(), request.notes(), request.priority(),
                 request.estimateMinutes(), request.sourceProjectTaskId())));
@@ -88,6 +94,7 @@ public class TodoController {
     @PatchMapping("/todo/{id}")
     public TodoItemResponse patch(@CurrentUser UserId userId, @PathVariable UUID id,
             @Valid @RequestBody PatchTodoRequest request) {
+        log.debug("PATCH /todo/{} userId={}", id, userId.value());
         return TodoItemResponse.from(todos.patch(userId, id, new PatchCommand(
                 request.title(), request.notes(), request.priority(), request.estimateMinutes(),
                 request.status(), request.expectedVersion())));
@@ -96,6 +103,7 @@ public class TodoController {
     @DeleteMapping("/todo/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@CurrentUser UserId userId, @PathVariable UUID id) {
+        log.debug("DELETE /todo/{} userId={}", id, userId.value());
         todos.softDelete(userId, id);
     }
 
@@ -103,24 +111,31 @@ public class TodoController {
     public TodoItemResponse complete(@CurrentUser UserId userId, @PathVariable UUID id,
             @RequestBody(required = false) @Nullable CompleteRequest request) {
         boolean complete = request == null || request.orDefault();
+        log.debug("POST /todo/{}:complete userId={} complete={}", id, userId.value(), complete);
         return TodoItemResponse.from(todos.complete(userId, id, complete));
     }
 
     @PostMapping("/todo:reorder")
     public List<TodoItemResponse> reorder(@CurrentUser UserId userId,
             @Valid @RequestBody ReorderRequest request) {
+        log.debug("POST /todo:reorder userId={} day={} count={}",
+                userId.value(), request.day(), request.orderedIds().size());
         return TodoItemResponse.from(todos.reorder(userId, request.day(), request.orderedIds()));
     }
 
     @GetMapping("/todo/rollover-preview")
     public RolloverPreviewResponse rolloverPreview(@CurrentUser UserId userId,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate onDay) {
+        log.debug("GET /todo/rollover-preview userId={} onDay={}", userId.value(), onDay);
         return RolloverPreviewResponse.from(rollovers.preview(userId, onDay));
     }
 
     @PostMapping("/todo:rollover")
     public RolloverResponse rollover(@CurrentUser UserId userId,
             @Valid @RequestBody RolloverRequest request) {
+        log.debug("POST /todo:rollover userId={} toDay={} fromDay={} explicitIds={}",
+                userId.value(), request.toDay(), request.fromDay(),
+                request.ids() == null ? 0 : request.ids().size());
         return RolloverResponse.from(rollovers.rollover(userId,
                 new RolloverCommand(request.toDay(), request.fromDay(), request.ids())));
     }
@@ -128,6 +143,8 @@ public class TodoController {
     @PostMapping("/todo:rollover-undo")
     public RolloverUndoResponse rolloverUndo(@CurrentUser UserId userId,
             @Valid @RequestBody RolloverUndoRequest request) {
+        log.debug("POST /todo:rollover-undo userId={} count={}",
+                userId.value(), request.createdIds() == null ? 0 : request.createdIds().size());
         return RolloverUndoResponse.from(rollovers.undo(userId, new UndoCommand(request.createdIds())));
     }
 }

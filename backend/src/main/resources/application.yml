@@ -24,6 +24,15 @@ spring:
     # In Kubernetes (M7) Flyway will move to a Helm pre-upgrade Job and this flips
     # to false; for M0 the app runs migrations on startup in every environment.
 
+logging:
+  level:
+    com.kairon: INFO
+  pattern:
+    # CorrelationIdFilter puts a per-request id in the MDC; surface it in the plain
+    # console pattern. The `prod` profile swaps the console for ECS JSON, where MDC
+    # entries are emitted as fields and this pattern is unused.
+    correlation: "[%X{correlationId:-}] "
+
 management:
   endpoints:
     web:

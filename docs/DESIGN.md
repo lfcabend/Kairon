@@ -234,7 +234,7 @@ embedded in the Spring Boot jar for a single deployable.
 | DB on k8s | Bitnami **PostgreSQL** subchart (dev); **CloudNativePG** operator (prod) | |
 | Ingress / TLS | **ingress-nginx** + **cert-manager** | |
 | CI/CD | **GitHub Actions**, one image to **GHCR**, **Trivy** scan, **Renovate** | |
-| Observability | Actuator health groups, **Micrometer → Prometheus**, JSON logs (`logstash-logback-encoder`), correlation-id filter | |
+| Observability | Actuator health groups, **Micrometer → Prometheus**, JSON logs (Spring Boot built-in structured logging, ECS format), correlation-id filter | |
 
 ---
 
@@ -495,9 +495,21 @@ deploy/helm/kairon/
 - **Actuator** with health groups (`liveness`, `readiness`), `/info` (git sha,
   build time), `/prometheus`.
 - **Micrometer** → Prometheus; Grafana dashboards checked into `deploy/` later.
-- **Logging**: JSON via `logstash-logback-encoder`; a servlet filter puts a
-  correlation id in MDC and echoes it in an `X-Request-Id` response header.
-- **Errors**: optional GlitchTip/Sentry integration behind a config flag.
+- **Logging**: SLF4J + Logback (Spring Boot's default starter — no extra
+  framework). The `prod` profile emits ECS-format JSON to stdout via Spring
+  Boot's built-in structured logging (`logging.structured.format.console`); the
+  `local` profile stays plain text. `CorrelationIdFilter` (`common.logging`)
+  puts a per-request id in the MDC (`correlationId`) and echoes it in the
+  `X-Request-Id` response header; the web `client.ts` sends that header so
+  browser and server logs correlate. Controllers log at DEBUG on entry;
+  application services log at INFO for state changes and WARN for rejected or
+  suspicious operations. Never log credentials, tokens, or request bodies.
+- **Frontend logging**: a level-gated `console` wrapper (`web/src/lib/log.ts`);
+  no bare `console.*`. Level from `VITE_LOG_LEVEL`, else `debug` in dev / `warn`
+  in prod builds.
+- **Errors**: optional GlitchTip/Sentry integration behind a config flag —
+  `@sentry/react` on the web side pointed at a self-hosted GlitchTip, `log.error`
+  is the seam it hangs off.
 - **Runbook**: `deploy/RUNBOOK.md` — restore from backup, rotate JWT secret,
   roll back a Helm release, read logs.
 

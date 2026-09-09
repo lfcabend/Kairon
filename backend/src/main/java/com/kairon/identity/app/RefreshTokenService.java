@@ -47,6 +47,7 @@ public class RefreshTokenService {
         String raw = generateRawToken();
         RefreshToken saved = repository.save(
                 RefreshToken.issue(userId, hash(raw), userAgent, now.plus(properties.ttl())));
+        log.debug("Issued new refresh-token family {} userId={}", saved.getFamilyId(), userId);
         return new Issued(raw, saved);
     }
 
@@ -56,6 +57,8 @@ public class RefreshTokenService {
         String raw = generateRawToken();
         RefreshToken saved = repository.save(
                 current.rotate(hash(raw), userAgent, now.plus(properties.ttl())));
+        log.debug("Rotated refresh token in family {} userId={}",
+                current.getFamilyId(), current.getUserId());
         return new Issued(raw, saved);
     }
 
