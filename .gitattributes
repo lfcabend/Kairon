@@ -1,0 +1,15 @@
+# Normalise line endings: LF in the repo and on checkout everywhere, so the
+# gradlew shell script and YAML/SQL/JS keep working on Linux and in the Docker
+# build regardless of a contributor's core.autocrlf setting.
+* text=auto eol=lf
+
+# Windows-only scripts must stay CRLF.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+
+# The Gradle wrapper jar is binary.
+*.jar  binary
+
+# Keep generated lockfiles out of diffs by default.
+web/package-lock.json  linguist-generated=true
+gradle/wrapper/gradle-wrapper.properties  text eol=lf

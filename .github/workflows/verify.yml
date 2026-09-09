@@ -1,0 +1,63 @@
+name: verify
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    name: web (build + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run test
+      - run: npm run build
+
+  backend:
+    name: backend (gradle build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      # Runs the :web SPA build, unit + @WebMvcTest, Testcontainers @SpringBootTest
+      # (Docker is available on ubuntu-latest), and the ArchUnit rules.
+      - run: ./gradlew build --no-daemon
+
+  helm:
+    name: helm (lint + kubeconform)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Install kubeconform
+        run: |
+          curl -sSLo kubeconform.tar.gz https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz
+          tar xf kubeconform.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+      - run: helm dependency update deploy/helm/kairon
+      - run: helm lint deploy/helm/kairon -f deploy/helm/kairon/values-local.yaml
+      - name: kubeconform
+        run: |
+          helm template kairon deploy/helm/kairon -f deploy/helm/kairon/values-local.yaml \
+            | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.30.0

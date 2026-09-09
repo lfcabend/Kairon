@@ -1,0 +1,12 @@
+apiVersion: v2
+name: kairon
+description: Kairon — personal productivity system (REST API + SPA in one image).
+type: application
+version: 0.1.0
+appVersion: "0.0.1"
+
+dependencies:
+  - name: postgresql
+    version: "18.10.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled

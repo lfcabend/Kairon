@@ -1,0 +1,75 @@
+# Default values for the Kairon chart. Overlaid by values-<env>.yaml; prod-only
+# concerns (external DB, cert-manager TLS, HPA, the Flyway pre-upgrade Job) arrive
+# in M7.
+
+image:
+  repository: ghcr.io/lfcabend/kairon
+  tag: ""            # defaults to .Chart.AppVersion when empty
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: kairon.localtest.me
+  tls:
+    enabled: false
+    secretName: ""
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+# Spring profile the container runs with.
+springProfiles: prod
+
+# Non-secret app config, rendered into the ConfigMap.
+config:
+  SPRING_DATASOURCE_URL: ""   # computed from the postgresql release name when empty
+
+# Datasource credentials, rendered into the Secret. For a real deployment these
+# come from an existingSecret (M7); here they seed both the app and the subchart.
+database:
+  name: kairon
+  username: kairon
+  password: kairon
+  existingSecret: ""
+
+# Bitnami PostgreSQL subchart — on for local/kind, off in prod (external DB).
+# The subchart's default engine version is used for local dev; prod points at an
+# external PostgreSQL 16 (see docs/DESIGN.md §8.4) and sets postgresql.enabled=false.
+postgresql:
+  enabled: true
+  auth:
+    username: kairon
+    password: kairon
+    database: kairon
+  primary:
+    persistence:
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi

@@ -1,0 +1,87 @@
+version: "3"
+
+# Thin wrappers around the underlying tools (see docs/DESIGN.md §9). Requires
+# go-task: https://taskfile.dev
+#
+# Local dependencies (PostgreSQL) run in a local Kubernetes cluster (kind) via
+# this project's own Helm chart — there is no docker-compose. For a fast host
+# reload loop, `task db-forward` exposes the in-cluster Postgres on localhost:5432
+# so `task be` can reach it.
+
+vars:
+  HELM_RELEASE: kairon
+  HELM_CHART: deploy/helm/kairon
+  IMAGE: kairon:dev
+  # Where the dev PostgreSQL lives in the cluster. Override on the CLI, e.g.
+  #   task db-forward PG_NAMESPACE=default PG_SVC=kairon-postgresql
+  PG_NAMESPACE: '{{.PG_NAMESPACE | default "postgres"}}'
+  PG_SVC: '{{.PG_SVC | default "postgresql"}}'
+  PG_LOCAL_PORT: '{{.PG_LOCAL_PORT | default "5432"}}'
+  # go-task runs cmds through a built-in POSIX shell; on Windows a relative
+  # ./gradlew(.bat) does not resolve, so call the wrapper by absolute path.
+  GW: '{{if eq OS "windows"}}cmd /c "{{.TASKFILE_DIR}}\\gradlew.bat"{{else}}{{.TASKFILE_DIR}}/gradlew{{end}}'
+
+tasks:
+  default:
+    cmds:
+      - task --list
+    silent: true
+
+  up:
+    desc: Deploy the whole app (API + SPA + Postgres) to the current kind context.
+    deps: [helm-local]
+
+  down:
+    desc: Uninstall the Helm release from the current context.
+    cmds:
+      - helm uninstall {{.HELM_RELEASE}}
+
+  helm-local:
+    desc: helm dependency update + upgrade --install with the local values overlay.
+    cmds:
+      - helm dependency update {{.HELM_CHART}}
+      - helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml --wait
+
+  db-forward:
+    desc: Port-forward the in-cluster Postgres to localhost for host dev (keep running).
+    cmds:
+      - kubectl -n {{.PG_NAMESPACE}} port-forward svc/{{.PG_SVC}} {{.PG_LOCAL_PORT}}:5432
+
+  be:
+    desc: Run the backend on the host with the local Spring profile (needs db-forward).
+    cmds:
+      - "{{.GW}} :backend:bootRun --args='--spring.profiles.active=local'"
+
+  fe:
+    desc: Run the Vite dev server (proxies /api to localhost:8080).
+    dir: web
+    cmds:
+      - npm run dev
+
+  test:
+    desc: Run all tests (backend + web). Backend integration tests use Testcontainers.
+    cmds:
+      - "{{.GW}} test"
+      - "{{.GW}} :web:testWeb"
+
+  build:
+    desc: Full build — SPA + backend + all checks.
+    cmds:
+      - "{{.GW}} build"
+
+  jar:
+    desc: Package the single deployable jar.
+    cmds:
+      - "{{.GW}} :backend:bootJar"
+
+  image:
+    desc: Build the one Docker image (API + SPA).
+    cmds:
+      - docker build -f docker/Dockerfile -t {{.IMAGE}} .
+
+  helm-lint:
+    desc: Lint the chart and validate rendered manifests (needs kubeconform on PATH).
+    cmds:
+      - helm dependency update {{.HELM_CHART}}
+      - helm lint {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml
+      - helm template {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml | kubeconform -strict -summary -ignore-missing-schemas

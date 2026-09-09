@@ -1,0 +1,36 @@
+# Host dev loop. Expects PostgreSQL reachable on localhost:5432 — get it by
+# port-forwarding the in-cluster database (`task db-forward`). There is no
+# docker-compose in this project.
+#
+# Defaults assume a dedicated `kairon` role + database; override any of them with
+# the SPRING_DATASOURCE_* environment variables (env wins over this file) to point
+# at an existing instance, e.g. a Bitnami postgres running as the `postgres`
+# superuser.
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/kairon}
+    username: ${SPRING_DATASOURCE_USERNAME:kairon}
+    password: ${SPRING_DATASOURCE_PASSWORD:kairon}
+  jpa:
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+# Local dev only: expose every Actuator endpoint and show health component detail.
+# The base application.yml keeps prod locked to health + info.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+logging:
+  level:
+    com.kairon: DEBUG
+    org.flywaydb: DEBUG
+    org.hibernate.SQL: DEBUG

@@ -1,0 +1,27 @@
+# Local kind / minikube overlay: in-cluster Postgres, small footprint, plain HTTP
+# ingress on kairon.localtest.me (resolves to 127.0.0.1).
+
+image:
+  repository: kairon
+  tag: dev
+  pullPolicy: IfNotPresent
+
+springProfiles: prod
+
+ingress:
+  enabled: true
+  className: nginx
+  host: kairon.localtest.me
+  tls:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 384Mi
+  limits:
+    cpu: "1"
+    memory: 768Mi
+
+postgresql:
+  enabled: true

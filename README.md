@@ -48,9 +48,9 @@ Kairon/
 ├── backend/                  # Spring Boot service (Gradle, Java 25)
 ├── web/                      # React + Vite + TS SPA (Gradle :web builds it into the backend jar)
 ├── mobile/                   # Android + iOS apps (later)
-├── deploy/helm/kairon/       # Helm chart (app + PostgreSQL dependency)
+├── deploy/helm/kairon/       # Helm chart (app + PostgreSQL dependency); also the local dev DB (kind)
 ├── docker/                   # Dockerfile — one image: API + SPA
-├── docker-compose.yml        # local Postgres for development
+├── Taskfile.yml              # go-task wrappers for the common commands
 └── .github/workflows/        # CI/CD
 ```
 

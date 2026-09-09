@@ -20,6 +20,8 @@ web/.vite/
 *.pem
 secret*.yaml
 values-secret*.yaml
+# ...but the Helm chart's own (non-secret-bearing) Secret template is source:
+!deploy/helm/kairon/templates/secret.yaml
 
 # Helm
 deploy/helm/**/charts/

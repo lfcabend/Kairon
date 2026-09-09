@@ -1,0 +1,25 @@
+Kairon {{ .Chart.AppVersion }} is deploying as release "{{ .Release.Name }}".
+
+1. Watch the rollout:
+     kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "kairon.fullname" . }}
+
+{{- if .Values.ingress.enabled }}
+
+2. Open the app (kind + ingress-nginx):
+     http://{{ .Values.ingress.host }}/
+
+   Verify the walking skeleton:
+     curl http://{{ .Values.ingress.host }}/api/v1/ping
+{{- else }}
+
+2. No ingress is enabled. Port-forward instead:
+     kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kairon.fullname" . }} 8080:{{ .Values.service.port }}
+     curl http://localhost:8080/api/v1/ping
+{{- end }}
+
+{{- if .Values.postgresql.enabled }}
+
+3. PostgreSQL runs in-cluster from the Bitnami subchart
+   ({{ .Release.Name }}-postgresql). In production set postgresql.enabled=false
+   and point config.SPRING_DATASOURCE_URL at the external database.
+{{- end }}

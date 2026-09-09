@@ -449,18 +449,23 @@ deploy/helm/kairon/
 
 ## 9. Local development
 
-- **`docker-compose.yml`** — PostgreSQL 16 + Adminer. Nothing else; the app runs
-  on the host for fast reload.
+- **No `docker-compose`.** Local dependencies (PostgreSQL) run in a local
+  Kubernetes cluster (kind, or Docker Desktop's built-in Kubernetes) — either via
+  this project's own Helm chart (`task up`) or a standalone Postgres release. For
+  a fast host reload loop, `task db-forward` (`kubectl -n <ns> port-forward
+  svc/<name> 5432:5432`) exposes the in-cluster database on `localhost:5432`;
+  `application-local.yml` targets that, and `SPRING_DATASOURCE_*` env vars
+  override the connection details.
 - **Backend**: `./gradlew bootRun` with the `local` Spring profile
   (`application-local.yml` → `localhost:5432`, Flyway enabled, verbose logging,
   a dev-only seeded user behind a flag).
 - **Web**: `npm run dev` in `web/`; the Vite dev server (port 5173) proxies
   `/api` → `http://localhost:8080` for hot reload. In every non-dev environment
   the SPA is served by the backend from the jar — no dev server involved.
-- **`Taskfile.yml`** (go-task) wraps the common commands: `task up`, `task be`,
-  `task fe`, `task test`, `task gen-client`, `task helm-local`.
-- Spring profiles: `local` (host dev), `docker` (compose full-stack, optional),
-  `prod` (k8s).
+- **`Taskfile.yml`** (go-task) wraps the common commands: `task up`, `task down`,
+  `task db-forward`, `task be`, `task fe`, `task test`, `task gen-client`,
+  `task helm-local`.
+- Spring profiles: `local` (host dev), `prod` (k8s).
 
 ---
 
@@ -474,7 +479,7 @@ deploy/helm/kairon/
 | Integration | `@SpringBootTest` + Testcontainers for the critical flows (register→login→create todo→rollover). |
 | Architecture | **ArchUnit**: module boundary rules, "no entity in a controller signature", package layering. |
 | Frontend unit | Vitest + React Testing Library; **MSW** mocks the API from the OpenAPI spec. |
-| Frontend e2e | **Playwright** against the built jar (SPA + API) + a Testcontainers/compose Postgres. |
+| Frontend e2e | **Playwright** against the built jar (SPA + API) + a Testcontainers Postgres. |
 | Contract | The generated client failing to compile against a new spec is a build failure. |
 
 ---

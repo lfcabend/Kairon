@@ -400,7 +400,7 @@ tracking the roadmap:
 
 | Version | Contents |
 | --- | --- |
-| `V001__identity.sql` | `app_user`, `refresh_token` |
+| `V001__identity.sql` | `app_user` (M0); `refresh_token` appended in M1 |
 | `V002__todo.sql` | `todo_item` |
 | `V003__journal.sql` | `journal_entry` + `content_tsv` + GIN index |
 | `V004__projects.sql` | `project`, `project_task` |

@@ -1,0 +1,14 @@
+[versions]
+springBoot = "4.1.1"
+nodeGradle = "7.1.0"
+archunit = "1.4.1"
+
+[plugins]
+spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
+node-gradle = { id = "com.github.node-gradle.node", version.ref = "nodeGradle" }
+
+[libraries]
+spring-boot-dependencies = { module = "org.springframework.boot:spring-boot-dependencies", version.ref = "springBoot" }
+archunit-junit5 = { module = "com.tngtech.archunit:archunit-junit5", version.ref = "archunit" }
+flyway-database-postgresql = { module = "org.flywaydb:flyway-database-postgresql" }
+postgresql = { module = "org.postgresql:postgresql" }

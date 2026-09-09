@@ -12,8 +12,8 @@ Prove the whole pipeline with almost no product in it.
 
 - [ ] Monorepo layout created (`backend/`, `web/`, `deploy/`, `docker/`, `docs/`).
 - [ ] Spring Boot app boots: Actuator health, `local` profile, Flyway runs
-      `V001` (empty or `app_user` only), connects to Postgres from
-      `docker-compose`.
+      `V001` (`app_user`), connects to the in-cluster Postgres (Helm chart on
+      kind, port-forwarded for host dev — no docker-compose).
 - [ ] One trivial endpoint: `GET /api/v1/ping` → `{ "pong": true, "version": … }`.
 - [ ] React + Vite + TS shell: one page that calls `/api/v1/ping` and shows the
       result. Tailwind + shadcn/ui wired.
@@ -28,7 +28,8 @@ Prove the whole pipeline with almost no product in it.
       the ingress.
 - [ ] GitHub Actions: `verify` job green (web build/test, gradle build, helm
       lint, kubeconform).
-- [ ] `Taskfile.yml` with `up`, `be`, `fe`, `test`, `helm-local`.
+- [ ] `Taskfile.yml` with `up`, `down`, `db-forward`, `be`, `fe`, `test`,
+      `helm-local`.
 
 ## M1 — Authentication
 

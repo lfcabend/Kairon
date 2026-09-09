@@ -91,7 +91,7 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 
 | Task | Command |
 | --- | --- |
-| Local Postgres (+ Adminer) | `docker compose up -d` |
+| Local Postgres | in-cluster via the Helm chart on kind (`task up`); `kubectl port-forward svc/kairon-postgresql 5432:5432` (`task db-forward`) for host dev. **No docker-compose.** |
 | Run backend (host) | `./gradlew bootRun` with the `local` Spring profile |
 | Run web dev server | `npm run dev` in `web/` (port 5173, proxies `/api` → `localhost:8080`) |
 | Full build (runs `:web`, unit + Testcontainers + ArchUnit) | `./gradlew build` |
@@ -100,7 +100,7 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 | One backend test | `./gradlew test --tests 'com.kairon.todo.RolloverServiceTest'` |
 | Web tests | `npm run test` in `web/` |
 | One web test | `npx vitest run path/to/file.test.ts` in `web/` |
-| E2E | Playwright against the built jar + a Testcontainers/compose Postgres |
+| E2E | Playwright against the built jar + a Testcontainers Postgres |
 | Regenerate API client | from the backend OpenAPI spec (CI fails on drift) |
 | Deploy to local kind | `helm upgrade --install kairon deploy/helm/kairon -f values-local.yaml` |
 
