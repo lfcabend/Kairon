@@ -11,7 +11,28 @@ version: "3"
 vars:
   HELM_RELEASE: kairon
   HELM_CHART: deploy/helm/kairon
-  IMAGE: kairon:dev
+  # Local image reference. The tag is the git commit sha so every commit produces a
+  # distinct `kairon:<sha>` and `helm upgrade` always rolls the Deployment to it
+  # (no more stale-image confusion). A dirty working tree appends `-wip<utc-ts>`,
+  # which is re-evaluated per `task` invocation — so with uncommitted changes use
+  # `task up` (builds + loads + deploys as one run); the individual image / image-
+  # load / helm-local tasks only line up on a committed (clean) tree. Override the
+  # repo with IMAGE_REPO=… .
+  IMAGE_REPO: '{{.IMAGE_REPO | default "kairon"}}'
+  IMAGE_TAG:
+    sh: |
+      sha=$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)
+      if [ -z "$(git status --porcelain 2>/dev/null)" ]; then
+        printf '%s' "$sha"
+      else
+        printf '%s-wip%s' "$sha" "$(date -u +%Y%m%d%H%M%S 2>/dev/null || echo $RANDOM)"
+      fi
+  IMAGE: '{{.IMAGE_REPO}}:{{.IMAGE_TAG}}'
+  # The local Kubernetes node keeps its own containerd image store that a plain
+  # `docker build` does NOT populate (Docker Desktop and kind both). `task
+  # image-load` pushes the built image into it. Node container name: Docker Desktop
+  # = desktop-control-plane; kind = <cluster>-control-plane.
+  KUBE_NODE: '{{.KUBE_NODE | default "desktop-control-plane"}}'
   # Where the dev PostgreSQL lives in the cluster. Override on the CLI, e.g.
   #   task db-forward PG_NAMESPACE=default PG_SVC=kairon-postgresql
   PG_NAMESPACE: '{{.PG_NAMESPACE | default "postgres"}}'
@@ -30,8 +51,11 @@ tasks:
     silent: true
 
   up:
-    desc: Deploy the whole app (API + SPA + Postgres) to the current kind context.
-    deps: [helm-local]
+    desc: Build the image (tagged with the git sha), load it into the local node, and deploy.
+    cmds:
+      - task: image
+      - task: image-load
+      - task: helm-local
 
   down:
     desc: Uninstall the Helm release from the current context.
@@ -39,10 +63,16 @@ tasks:
       - helm uninstall {{.HELM_RELEASE}}
 
   helm-local:
-    desc: helm dependency update + upgrade --install with the local values overlay.
+    desc: helm dependency update + upgrade --install with the local overlay, pinned to the current image tag.
     cmds:
       - helm dependency update {{.HELM_CHART}}
-      - helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml --wait
+      - >-
+        helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}}
+        -f {{.HELM_CHART}}/values-local.yaml
+        --set image.repository={{.IMAGE_REPO}}
+        --set image.tag={{.IMAGE_TAG}}
+        --wait
+      - 'echo "deployed {{.IMAGE}}"'
 
   ingress:
     desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me).
@@ -90,9 +120,36 @@ tasks:
       - "{{.GW}} :backend:bootJar"
 
   image:
-    desc: Build the one Docker image (API + SPA).
+    desc: Build the one Docker image (API + SPA), tagged with the git sha (and a moving :dev alias).
     cmds:
-      - docker build -f docker/Dockerfile -t {{.IMAGE}} .
+      - docker build -f docker/Dockerfile -t {{.IMAGE}} -t {{.IMAGE_REPO}}:dev .
+      - 'echo "built {{.IMAGE}}"'
+
+  image-load:
+    desc: Push the built image into the local Kubernetes node's own image store.
+    cmds:
+      - |
+        if docker inspect {{.KUBE_NODE}} >/dev/null 2>&1; then
+          echo "loading {{.IMAGE}} into node {{.KUBE_NODE}}"
+          docker save {{.IMAGE}} | docker exec -i {{.KUBE_NODE}} ctr -n k8s.io images import -
+        elif command -v kind >/dev/null 2>&1; then
+          echo "loading {{.IMAGE}} via kind"
+          kind load docker-image {{.IMAGE}}
+        else
+          echo "No node container '{{.KUBE_NODE}}' and no kind CLI on PATH." >&2
+          echo "Set KUBE_NODE=<node-container-name> (e.g. kind-control-plane)." >&2
+          exit 1
+        fi
+
+  image-prune:
+    desc: Drop old kairon images from the local node, keeping the current tag and :dev.
+    cmds:
+      - >-
+        docker exec {{.KUBE_NODE}} sh -c
+        "ctr -n k8s.io images ls -q
+        | grep '^docker.io/library/{{.IMAGE_REPO}}:'
+        | grep -v ':{{.IMAGE_TAG}}$' | grep -v ':dev$'
+        | xargs -r ctr -n k8s.io images rm"
 
   manifests:
     desc: Render the chart to one plain-YAML file (build/manifests.yaml) for review (no cluster).
