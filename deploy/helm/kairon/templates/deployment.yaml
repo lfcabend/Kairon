@@ -22,6 +22,8 @@ spec:
       serviceAccountName: {{ include "kairon.serviceAccountName" . }}
       securityContext:
         runAsNonRoot: true
+        runAsUser: 10001        # matches the uid baked into docker/Dockerfile
+        runAsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:

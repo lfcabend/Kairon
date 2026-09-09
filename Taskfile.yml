@@ -17,6 +17,8 @@ vars:
   PG_NAMESPACE: '{{.PG_NAMESPACE | default "postgres"}}'
   PG_SVC: '{{.PG_SVC | default "postgresql"}}'
   PG_LOCAL_PORT: '{{.PG_LOCAL_PORT | default "5432"}}'
+  # Local port for `task app-forward` (the in-cluster kairon Service is :8080).
+  APP_LOCAL_PORT: '{{.APP_LOCAL_PORT | default "8080"}}'
   # go-task runs cmds through a built-in POSIX shell; on Windows a relative
   # ./gradlew(.bat) does not resolve, so call the wrapper by absolute path.
   GW: '{{if eq OS "windows"}}cmd /c "{{.TASKFILE_DIR}}\\gradlew.bat"{{else}}{{.TASKFILE_DIR}}/gradlew{{end}}'
@@ -42,10 +44,23 @@ tasks:
       - helm dependency update {{.HELM_CHART}}
       - helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml --wait
 
+  ingress:
+    desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me).
+    cmds:
+      - >-
+        helm upgrade --install ingress-nginx ingress-nginx
+        --repo https://kubernetes.github.io/ingress-nginx
+        --namespace ingress-nginx --create-namespace --wait
+
   db-forward:
     desc: Port-forward the in-cluster Postgres to localhost for host dev (keep running).
     cmds:
       - kubectl -n {{.PG_NAMESPACE}} port-forward svc/{{.PG_SVC}} {{.PG_LOCAL_PORT}}:5432
+
+  app-forward:
+    desc: Port-forward the deployed kairon Service to localhost (no ingress needed; keep running).
+    cmds:
+      - kubectl port-forward svc/{{.HELM_RELEASE}} {{.APP_LOCAL_PORT}}:8080
 
   be:
     desc: Run the backend on the host with the local Spring profile (needs db-forward).
@@ -78,6 +93,14 @@ tasks:
     desc: Build the one Docker image (API + SPA).
     cmds:
       - docker build -f docker/Dockerfile -t {{.IMAGE}} .
+
+  manifests:
+    desc: Render the chart to one plain-YAML file (build/manifests.yaml) for review (no cluster).
+    cmds:
+      - mkdir -p build
+      # Single file: app + Postgres subchart, every resource, in apply order.
+      # For one-file-per-resource instead, swap the redirect for: --output-dir build/manifests
+      - helm template {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml > build/manifests.yaml
 
   helm-lint:
     desc: Lint the chart and validate rendered manifests (needs kubeconform on PATH).

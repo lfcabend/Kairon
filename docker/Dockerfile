@@ -29,10 +29,13 @@ RUN chmod +x gradlew && \
 
 # ---- Stage 3: runtime -------------------------------------------------------
 FROM eclipse-temurin:25-jre AS runtime
-RUN groupadd --system kairon && useradd --system --gid kairon --home /app kairon
+# Fixed numeric uid/gid so Kubernetes' runAsNonRoot check can verify the user
+# without inspecting the image (must match deploy/helm/kairon deployment.yaml).
+RUN groupadd --system --gid 10001 kairon && \
+    useradd --system --uid 10001 --gid 10001 --home /app kairon
 WORKDIR /app
 COPY --from=build /app/backend/build/libs/kairon.jar app.jar
-USER kairon
+USER 10001:10001
 EXPOSE 8080
 ENV JAVA_OPTS=""
 ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

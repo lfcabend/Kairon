@@ -1,5 +1,12 @@
-# Local kind / minikube overlay: in-cluster Postgres, small footprint, plain HTTP
-# ingress on kairon.localtest.me (resolves to 127.0.0.1).
+# Local (docker-desktop / kind) overlay: small footprint, plain HTTP ingress on
+# http://localhost (the ingress-nginx controller binds the host's :80). Using the
+# bare "localhost" host avoids any /etc/hosts or public-DNS dependency.
+#
+# Database: reuse the standalone PostgreSQL already installed in the cluster
+# (Bitnami chart, Helm release "postgresql" in namespace "postgres"), which holds
+# a "kairon" database owned by the "kairon" role. The bundled subchart is off;
+# the app connects cross-namespace via the service FQDN below. The name/username/
+# password here must match that instance.
 
 image:
   repository: kairon
@@ -11,7 +18,7 @@ springProfiles: prod
 ingress:
   enabled: true
   className: nginx
-  host: kairon.localtest.me
+  host: localhost
   tls:
     enabled: false
 
@@ -24,4 +31,11 @@ resources:
     memory: 768Mi
 
 postgresql:
-  enabled: true
+  enabled: false
+
+database:
+  host: postgresql.postgres.svc.cluster.local
+  port: 5432
+  name: kairon
+  username: kairon
+  password: kairon

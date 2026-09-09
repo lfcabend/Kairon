@@ -53,6 +53,12 @@ database:
   username: kairon
   password: kairon
   existingSecret: ""
+  # In-cluster database host. Empty = use the bundled postgresql subchart
+  # ({release}-postgresql). Set to an FQDN (e.g.
+  # postgresql.postgres.svc.cluster.local) to reuse an external install; pair
+  # that with postgresql.enabled=false.
+  host: ""
+  port: 5432
 
 # Bitnami PostgreSQL subchart — on for local/kind, off in prod (external DB).
 # The subchart's default engine version is used for local dev; prod points at an
