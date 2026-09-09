@@ -1,0 +1,39 @@
+# Java / Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+*.class
+*.log
+bin/
+out/
+
+# Node / web
+node_modules/
+web/dist/
+web/.vite/
+*.local
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+secret*.yaml
+values-secret*.yaml
+
+# Helm
+deploy/helm/**/charts/
+deploy/helm/**/*.tgz
+
+# IDE / editor
+.idea/
+*.iml
+.vscode/
+*.swp
+.DS_Store
+
+# Test / coverage
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
