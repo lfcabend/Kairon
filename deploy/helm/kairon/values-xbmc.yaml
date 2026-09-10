@@ -1,0 +1,64 @@
+# xbmc (home k3s) overlay.
+#
+# Cluster:  single-node k3s "xbmc" @ 192.168.2.3 — containerd runtime, Traefik
+#           ingress (default ingressClass "traefik", LoadBalancer on the node IP),
+#           local-path default StorageClass.
+# Image:    pulled from GHCR (ghcr.io/lfcabend/kairon). Push a tag, then deploy
+#           with `--set image.tag=<tag>`. The GHCR package must be PUBLIC — the
+#           Deployment template does not wire imagePullSecrets yet, so a private
+#           package cannot be pulled without editing the chart.
+# Database: reuse the existing Bitnami PostgreSQL — Helm release "my-postgres" in
+#           namespace "postgres", service my-postgres-postgresql. That install
+#           only ships the "postgres" superuser and a "mydatabase" DB, so a
+#           dedicated login role + database must be created first (SQL is in the
+#           deploy notes). The bundled postgresql subchart stays OFF.
+
+image:
+  repository: ghcr.io/lfcabend/kairon
+  tag: ""                 # falls back to Chart.appVersion — always pass --set image.tag=<git-sha>
+  pullPolicy: IfNotPresent
+
+springProfiles: prod
+
+ingress:
+  enabled: true
+  className: traefik
+  host: xbmc              # bare LAN hostname; resolves to 192.168.2.3
+  tls:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 640Mi
+  limits:
+    cpu: "2"          # single k3s node has 2 cores; unthrottled startup is ~3x faster
+    memory: 1Gi
+
+# This node is slow on a cold start (Spring context init alone ~60s under the old
+# 1-core cap). Give the app up to 5 min to become ready before the kubelet kills it.
+startupProbe:
+  failureThreshold: 60
+  periodSeconds: 5
+
+# Left empty on purpose: the chart generates a JWT signing secret on first install
+# and then reuses the value already in the cluster on every later `helm upgrade`
+# (so live sessions are not dropped). Set security.existingSecret instead if you
+# want the secret managed outside Helm.
+security:
+  jwtSecret: ""
+
+# Use the standalone PostgreSQL already in the cluster, not the bundled subchart.
+postgresql:
+  enabled: false
+
+database:
+  host: my-postgres-postgresql.postgres.svc.cluster.local
+  port: 5432
+  name: kairon
+  username: kairon
+  # The password is kept OUT of git. Create the Secret out of band (once), then it
+  # survives every `helm upgrade` because the chart no longer manages it:
+  #   kubectl -n kairon create secret generic kairon-db \
+  #     --from-literal=SPRING_DATASOURCE_PASSWORD=<the kairon role's password>
+  existingSecret: kairon-db

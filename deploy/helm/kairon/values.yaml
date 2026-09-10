@@ -9,6 +9,13 @@ image:
 
 replicaCount: 1
 
+# Startup gate: failureThreshold * periodSeconds is the time the app has to answer
+# /actuator/health/readiness before the kubelet kills it. First boot runs Flyway
+# and initialises Hibernate, so this needs headroom on slower nodes.
+startupProbe:
+  failureThreshold: 30
+  periodSeconds: 5
+
 nameOverride: ""
 fullnameOverride: ""
 

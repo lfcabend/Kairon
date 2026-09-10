@@ -56,8 +56,8 @@ spec:
             httpGet:
               path: /actuator/health/readiness
               port: http
-            failureThreshold: 30
-            periodSeconds: 5
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
           livenessProbe:
             httpGet:
               path: /actuator/health/liveness
