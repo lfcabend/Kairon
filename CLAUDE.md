@@ -127,6 +127,7 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 | E2E | Playwright against the built jar + a Testcontainers Postgres |
 | Regenerate API client | from the backend OpenAPI spec (CI fails on drift) |
 | Deploy to local kind | `helm upgrade --install kairon deploy/helm/kairon -f values-local.yaml` |
+| Deploy to xbmc k3s | `task xbmc` — build + push `ghcr.io/lfcabend/kairon`, then `helm upgrade` with `values-xbmc.yaml` (kube-context `xbmc`, namespace `kairon`). Needs `docker login ghcr.io` and the out-of-band `kairon-db` Secret. |
 
 Docker builds one image (`docker/Dockerfile`, stages: `node` build → `gradle` build →
 `eclipse-temurin:25-jre`). Confirm exact task names against `Taskfile.yml` / `build.gradle.kts`

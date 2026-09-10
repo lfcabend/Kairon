@@ -28,6 +28,15 @@ vars:
         printf '%s-wip%s' "$sha" "$(date -u +%Y%m%d%H%M%S 2>/dev/null || echo $RANDOM)"
       fi
   IMAGE: '{{.IMAGE_REPO}}:{{.IMAGE_TAG}}'
+  # GHCR image for remote clusters. `task xbmc` builds + pushes here (needs
+  # `docker login ghcr.io` once) and deploys with values-xbmc.yaml, which already
+  # points image.repository at this same path.
+  GHCR_REPO: '{{.GHCR_REPO | default "ghcr.io/lfcabend/kairon"}}'
+  GHCR_IMAGE: '{{.GHCR_REPO}}:{{.IMAGE_TAG}}'
+  # Remote k3s deploy target. The kube-context is pinned on the helm call so a
+  # wrong current-context cannot misfire the deploy.
+  XBMC_CONTEXT: '{{.XBMC_CONTEXT | default "xbmc"}}'
+  XBMC_NAMESPACE: '{{.XBMC_NAMESPACE | default "kairon"}}'
   # The local Kubernetes node keeps its own containerd image store that a plain
   # `docker build` does NOT populate (Docker Desktop and kind both). `task
   # image-load` pushes the built image into it. Node container name: Docker Desktop
@@ -73,6 +82,27 @@ tasks:
         --set image.tag={{.IMAGE_TAG}}
         --wait
       - 'echo "deployed {{.IMAGE}}"'
+
+  image-push:
+    desc: Build the one image and push it to GHCR (ghcr.io/lfcabend/kairon:<sha> + :latest). Needs `docker login ghcr.io`.
+    cmds:
+      - docker build -f docker/Dockerfile -t {{.GHCR_IMAGE}} -t {{.GHCR_REPO}}:latest .
+      - docker push {{.GHCR_IMAGE}}
+      - docker push {{.GHCR_REPO}}:latest
+      - 'echo "pushed {{.GHCR_IMAGE}}"'
+
+  xbmc:
+    desc: Build, push to GHCR, and deploy to the xbmc k3s cluster (kube-context "xbmc", namespace "kairon").
+    cmds:
+      - task: image-push
+      - >-
+        helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}}
+        --kube-context {{.XBMC_CONTEXT}}
+        --namespace {{.XBMC_NAMESPACE}} --create-namespace
+        -f {{.HELM_CHART}}/values-xbmc.yaml
+        --set image.tag={{.IMAGE_TAG}}
+        --wait --timeout 8m
+      - 'echo "deployed {{.GHCR_IMAGE}} to context {{.XBMC_CONTEXT}}"'
 
   ingress:
     desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me).
