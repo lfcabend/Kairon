@@ -9,6 +9,14 @@ image:
 
 replicaCount: 1
 
+# Deployment update strategy. The app runs a single replica, so a RollingUpdate
+# briefly runs two pods (surge) — two JVMs booting at once starve each other on a
+# small node, the new pod misses its startup probe, and the old ReplicaSet never
+# scales down (see values-xbmc.yaml). "Recreate" stops the old pod first, trading
+# a few seconds of downtime — acceptable for a single-user app — for a clean roll.
+deploymentStrategy:
+  type: Recreate
+
 # Startup gate: failureThreshold * periodSeconds is the time the app has to answer
 # /actuator/health/readiness before the kubelet kills it. First boot runs Flyway
 # and initialises Hibernate, so this needs headroom on slower nodes.
