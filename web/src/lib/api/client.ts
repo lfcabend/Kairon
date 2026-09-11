@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/features/auth/authStore";
+import { randomId } from "@/lib/id";
 import { log } from "@/lib/log";
 
 import type { AuthResponse, ProblemDetail } from "./types";
@@ -7,9 +8,7 @@ const BASE = "/api/v1";
 
 /** Correlation id echoed to the backend as `X-Request-Id`; joins browser and server logs. */
 function newRequestId(): string {
-  return typeof crypto !== "undefined" && "randomUUID" in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return randomId();
 }
 
 export class ApiError extends Error {

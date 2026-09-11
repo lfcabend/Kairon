@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { todoApi } from "@/lib/api/todo";
 import type { CreateTodoBody, PatchTodoBody, TodoItem } from "@/lib/api/types";
+import { randomId } from "@/lib/id";
 
 import { todoKeys } from "./todoKeys";
 
@@ -23,7 +24,7 @@ export function useCreateTodo(date: string) {
     onMutate: async (body) => {
       await qc.cancelQueries({ queryKey: todoKeys.day(date) });
       const previous = qc.getQueryData<TodoItem[]>(todoKeys.day(date)) ?? [];
-      const tempId = `temp-${crypto.randomUUID()}`;
+      const tempId = `temp-${randomId()}`;
       const maxPos = previous.reduce((m, t) => Math.max(m, t.position), 0);
       const optimistic: TodoItem = {
         id: tempId,
