@@ -42,6 +42,7 @@ ingress:
   className: nginx
   annotations: {}
   host: kairon.localtest.me
+  extraHosts: []   # additional hostnames routed to the same backend, e.g. a Tailscale Funnel name
   tls:
     enabled: false
     secretName: ""

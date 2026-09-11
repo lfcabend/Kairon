@@ -15,6 +15,9 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
+        {{- range .Values.ingress.extraHosts }}
+        - {{ . | quote }}
+        {{- end }}
       secretName: {{ .Values.ingress.tls.secretName | default (printf "%s-tls" (include "kairon.fullname" .)) }}
   {{- end }}
   rules:
@@ -28,4 +31,16 @@ spec:
                 name: {{ include "kairon.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
+    {{- range .Values.ingress.extraHosts }}
+    - host: {{ . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "kairon.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+    {{- end }}
 {{- end }}
