@@ -101,7 +101,7 @@ tasks:
         --namespace {{.XBMC_NAMESPACE}} --create-namespace
         -f {{.HELM_CHART}}/values-xbmc.yaml
         --set image.tag={{.IMAGE_TAG}}
-        --wait --timeout 8m
+        --wait --timeout 65m
       - 'echo "deployed {{.GHCR_IMAGE}} to context {{.XBMC_CONTEXT}}"'
 
   ingress:

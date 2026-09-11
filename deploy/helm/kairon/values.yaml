@@ -24,6 +24,14 @@ startupProbe:
   failureThreshold: 30
   periodSeconds: 5
 
+# The Deployment controller's own rollout clock — independent of, and typically
+# tighter than, startupProbe's per-pod budget above. It does NOT reset on a pod
+# restart, so it must comfortably exceed startupProbe's failureThreshold *
+# periodSeconds (with room for at least one restart) or the rollout can be
+# marked "Failed: Progress deadline exceeded" even while a pod is still mid-boot.
+# Kubernetes' own default is 600s.
+progressDeadlineSeconds: 600
+
 nameOverride: ""
 fullnameOverride: ""
 

@@ -38,10 +38,20 @@ resources:
     memory: 1Gi
 
 # This node is slow on a cold start (Spring context init alone ~60s under the old
-# 1-core cap). Give the app up to 5 min to become ready before the kubelet kills it.
+# 1-core cap). During the M3 deploy the node was pegged at 99% CPU from something
+# running on the HOST, outside Kubernetes entirely (`kubectl top pods -A` summed
+# to a few hundred m against a reported 1999m/2000m node usage) — every restart
+# throws away all JIT/class-loading progress and starts the clock over, so a
+# tight budget here is actively counterproductive under that kind of contention.
+# 30 min gives one cold boot real room to finish even in that state.
 startupProbe:
-  failureThreshold: 60
+  failureThreshold: 360
   periodSeconds: 5
+
+# Comfortably above startupProbe's budget above (this clock does not reset on a
+# pod restart) so a slow-but-succeeding boot isn't cut off by the Deployment
+# controller independently of, and before, the pod's own startup probe gives up.
+progressDeadlineSeconds: 3600
 
 # Left empty on purpose: the chart generates a JWT signing secret on first install
 # and then reuses the value already in the cluster on every later `helm upgrade`
