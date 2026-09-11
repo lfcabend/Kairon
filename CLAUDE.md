@@ -4,10 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**M0 (walking skeleton), M1 (authentication) and M2 (daily todo) are
-implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`,
-`milestones/`, `adr/`) remain the specification — treat them as the source of
-truth and keep them updated when decisions change.
+**M0 (walking skeleton), M1 (authentication), M2 (daily todo) and M3 (daily
+journal) are implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`,
+`ROADMAP.md`, `milestones/`, `adr/`) remain the specification — treat them as
+the source of truth and keep them updated when decisions change.
 
 - `backend/` — Spring Boot app. Modules under `com.kairon`: `common` (shared kernel:
   `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
@@ -18,21 +18,32 @@ truth and keep them updated when decisions change.
   `repo`, `app` services, `web` controllers, `dev` — the `local`-profile
   `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView`, `domain`
   `TodoItem`/`TodoStatus`, `repo`, `app` `TodoService`/`RolloverService`/
-  `TodoProperties`, `config`, `web` `TodoController`), and `meta` (the M0
-  `PingController`). Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
-  `V002__todo.sql` (`todo_item`).
+  `TodoProperties`, `config`, `web` `TodoController`), `journal` (`api` port
+  `JournalApi`/`JournalEntryView`/`JournalSearchHitView`/`JournalSearchPage`,
+  `domain` `JournalEntry`, `repo` `JournalEntryRepository` (incl. the native
+  full-text `search` query + `JournalSearchRow` projection), `app`
+  `JournalService`/`JournalSearchService`/`JournalMapper`/`JournalProperties`,
+  `config`, `web` `JournalController`), and `meta` (the M0 `PingController`).
+  Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
+  `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
+  generated `content_tsv` + GIN index).
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
-  hooks + `todoKeys`). `src/components/AppLayout.tsx` is the top-nav shell wrapping
+  hooks + `todoKeys`); the journal under `src/features/journal/`
+  (`JournalDayView` + `JournalDateNav` (calendar popover with has-entry dots)/
+  `EntryList`/`EntryCard`/`EntryEditor` (Tiptap WYSIWYG)/`MoodPicker`,
+  `JournalSearchPage`, hooks in `useJournal.ts`/`useJournalSearch.ts` +
+  `journalKeys`). `src/components/AppLayout.tsx` is the top-nav shell wrapping
   the protected routes. API access is hand-written types in `src/lib/api/types.ts`
-  plus `todo.ts`/`auth.ts` over `client.ts` (the single-flight 401→refresh→retry
-  fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy path in
-  `web/e2e/` (`npm run test:e2e`, needs a running full stack).
+  plus `todo.ts`/`journal.ts`/`auth.ts` over `client.ts` (the single-flight
+  401→refresh→retry fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`);
+  Playwright happy paths in `web/e2e/` (`npm run test:e2e`, needs a running
+  full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment.
 
-Next milestone is **M3 — Daily Journal** (see `docs/ROADMAP.md`).
+Next milestone is **M4 — Projects (core)** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

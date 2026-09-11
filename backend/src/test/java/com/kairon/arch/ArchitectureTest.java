@@ -53,6 +53,13 @@ class ArchitectureTest {
             .as("other modules may depend only on com.kairon.todo.api");
 
     @ArchTest
+    static final ArchRule journalInternalsArePrivate = noClasses()
+            .that().resideOutsideOfPackage("com.kairon.journal..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("com.kairon.journal.domain..", "com.kairon.journal.repo..")
+            .as("other modules may depend only on com.kairon.journal.api");
+
+    @ArchTest
     static final ArchRule securityStackIsContainedToCommonAndIdentity = noClasses()
             .that().resideOutsideOfPackages("com.kairon.common..", "com.kairon.identity..")
             .should().dependOnClassesThat()

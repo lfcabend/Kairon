@@ -63,12 +63,13 @@ Prove the whole pipeline with almost no product in it.
 
 ## M3 — Daily Journal
 
-- [ ] `journal_entry` schema with `content_tsv` + GIN index (`V003`).
-- [ ] CRUD, `GET /journal?day=`, `GET /journal?from=&to=`,
+- [x] `journal_entry` schema with `content_tsv` + GIN index (`V003`).
+- [x] CRUD, `GET /journal?day=`, `GET /journal?from=&to=`,
       `GET /journal:search?q=` (websearch full-text, ranked).
-- [ ] Web: calendar navigation with "has entry" markers, markdown editor +
-      preview, multiple entries per day, search screen.
-- [ ] Tests: full-text search test with Testcontainers.
+- [x] Web: calendar navigation with "has entry" markers, minimal WYSIWYG
+      editor (bold/italic/heading, no raw markdown shown), multiple entries
+      per day, search screen.
+- [x] Tests: full-text search test with Testcontainers.
 
 ## M4 — Projects (core)
 

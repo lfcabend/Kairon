@@ -63,9 +63,14 @@ companion to [`DATA_MODEL.md`](DATA_MODEL.md) (schema detail) and
   are allowed (a morning plan and an evening reflection), ordered within the day.
 - Fields: optional title, markdown `content`, optional `mood` (small integer
   scale), timestamps.
-- Navigation: a calendar/date picker; "today" is the default. Days with entries
-  are marked.
-- **Search** across entry text (Postgres full-text search; see Data Model).
+- Navigation: a calendar popover (`shadcn` `Calendar`) with a dot on days that
+  have an entry, alongside the same `‹ › Today` controls as the Todo day view;
+  "today" is the default.
+- The entry is edited through a minimal **WYSIWYG** editor (Tiptap: bold,
+  italic, one heading level) — raw markdown syntax is never shown to the user,
+  though `content` stays plain markdown text on the wire and in storage.
+- **Search** across entry text (Postgres full-text search; see Data Model),
+  returning ranked, paginated hits with a highlighted snippet.
 - Entry history/revisions is a later enhancement, not in the first cut.
 
 ### 2.3 Projects
@@ -226,7 +231,8 @@ embedded in the Spring Boot jar for a single deployable.
 | Forms | **React Hook Form + Zod** | Zod schemas shared with API client types where possible. |
 | UI kit | **Tailwind CSS + shadcn/ui** (Radix primitives) | Own the components, no heavy dependency. |
 | Gantt | **`gantt-task-react`** (MIT) for MVP | Replace with custom SVG/visx if it limits us. Avoid GPL/commercial Gantt libs (dhtmlx). |
-| Markdown | `react-markdown` + `remark-gfm`; editor: `@uiw/react-md-editor` or a textarea + preview | |
+| Journal editor | **Tiptap** (`@tiptap/react` + `@tiptap/starter-kit`, a small extension subset) + `tiptap-markdown` | WYSIWYG only — bold/italic/one heading level, no raw-markdown mode; serializes to/from plain markdown text so `content` stays unchanged on the wire (docs/milestones/M3 D1). |
+| Date calendar | **`react-day-picker`** (via shadcn's `Calendar`) | Backs the journal date nav's has-entry popover; bridges to the project's own `YYYY-MM-DD` string helpers, no added date library (docs/milestones/M3 D2). |
 | API client | **`openapi-typescript`** for types + a generated fetch client (**orval**) | Regenerated from the backend spec in CI. |
 | Frontend tests | **Vitest** + React Testing Library, **MSW** for API mocks, **Playwright** e2e | |
 | Container | **Docker**, one image, multi-stage (node → gradle → `eclipse-temurin:25-jre`) | |
@@ -267,7 +273,7 @@ embedded in the Spring Boot jar for a single deployable.
 | Auth | `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `POST /auth/logout-all` |
 | Profile | `GET /me`, `PATCH /me` (display name, timezone, preferences incl. `assistant.*` per-feature opt-ins) |
 | Todo | `GET /todo?day=`, `GET /todo?from=&to=` (both bare arrays), `POST /todo`, `PATCH /todo/{id}`, `DELETE /todo/{id}`, `POST /todo/{id}:complete` (`{complete?}`), `POST /todo:reorder` (`{day, orderedIds}`), `GET /todo/rollover-preview?onDay=` → `{ sourceDays: [{ day, items }], totalItems }`, `POST /todo:rollover` (`{toDay, fromDay?, ids?}` — omit both to sweep the whole look-back window), `POST /todo:rollover-undo` (`{createdIds}`) |
-| Journal | `GET /journal?from=&to=`, `GET /journal/{id}`, `GET /journal?day=`, `GET /journal:search?q=`, `POST /journal`, `PATCH /journal/{id}`, `DELETE /journal/{id}` |
+| Journal | `GET /journal?day=`, `GET /journal?from=&to=` (both bare arrays), `GET /journal/entry-days?from=&to=` → `string[]` of ISO dates with ≥1 entry (calendar markers), `POST /journal`, `PATCH /journal/{id}`, `DELETE /journal/{id}`, `GET /journal:search?q=&page=&size=` → paginated `{ content: [{id, day, title, snippet, mood, createdAt}], page, totalElements }`, ranked by `ts_rank` with a `ts_headline` snippet per hit (no standalone `GET /journal/{id}` — a search hit navigates to its day, docs/milestones/M3 §9 Q1) |
 | Projects | `GET /projects`, `POST /projects`, `GET /projects/{id}`, `PATCH /projects/{id}`, `DELETE /projects/{id}` |
 | Project tasks | `GET /projects/{id}/tasks`, `POST /projects/{id}/tasks`, `PATCH /tasks/{taskId}`, `DELETE /tasks/{taskId}`, `POST /projects/{id}/tasks:reorder` |
 | Dependencies | `POST /tasks/{taskId}/dependencies`, `DELETE /dependencies/{depId}` |

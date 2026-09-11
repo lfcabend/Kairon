@@ -103,6 +103,49 @@ export interface RolloverPreview {
 
 export type RolloverMode = "manual" | "pick" | "auto";
 
+// --- Journal (M3) ------------------------------------------------------------
+
+export interface JournalEntry {
+  id: string;
+  day: string;
+  position: number;
+  title: string | null;
+  content: string;
+  mood: number | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface CreateJournalEntryBody {
+  day: string;
+  title?: string | null;
+  content?: string;
+  mood?: number | null;
+}
+
+export interface PatchJournalEntryBody {
+  title?: string | null;
+  content?: string;
+  mood?: number | null;
+  expectedVersion?: number;
+}
+
+export interface JournalSearchHit {
+  id: string;
+  day: string;
+  title: string | null;
+  snippet: string;
+  mood: number | null;
+  createdAt: string;
+}
+
+export interface JournalSearchPage {
+  content: JournalSearchHit[];
+  page: number;
+  totalElements: number;
+}
+
 /** RFC 7807 problem detail — the shape of every error body from the API. */
 export interface ProblemDetail {
   type?: string;

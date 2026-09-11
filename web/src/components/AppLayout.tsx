@@ -25,6 +25,9 @@ export function AppLayout() {
             <NavLink to="/day" className={linkClass}>
               Day
             </NavLink>
+            <NavLink to="/journal" className={linkClass}>
+              Journal
+            </NavLink>
             <NavLink to="/account" className={linkClass}>
               Account
             </NavLink>

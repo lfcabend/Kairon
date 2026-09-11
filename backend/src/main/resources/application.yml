@@ -83,3 +83,6 @@ kairon:
     # on GET /todo?from=&to=.
     rollover-look-back-days: 14
     range-max-days: 92
+  journal:
+    # Span cap on GET /journal?from=&to= and /journal/entry-days?from=&to=.
+    range-max-days: 92

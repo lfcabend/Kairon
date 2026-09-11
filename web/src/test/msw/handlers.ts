@@ -1,6 +1,6 @@
 import { HttpResponse, http } from "msw";
 
-import type { AuthResponse, Me, TodoItem } from "@/lib/api/types";
+import type { AuthResponse, JournalEntry, Me, TodoItem } from "@/lib/api/types";
 
 export const testUser = {
   id: "018f5b3e-0000-7000-8000-0000000000aa",
@@ -79,9 +79,47 @@ function sortRows(rows: Row[]): Row[] {
   return [...rows].sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position);
 }
 
+// --- in-memory journal store ---------------------------------------------
+
+type JournalRow = JournalEntry & { removed?: boolean };
+
+let journalEntries: JournalRow[] = [];
+let journalSeq = 0;
+
+export function resetJournalStore() {
+  journalEntries = [];
+  journalSeq = 0;
+}
+
+export function seedJournalEntries(entries: Partial<JournalEntry>[]) {
+  for (const entry of entries) journalEntries.push(makeJournalEntry(entry));
+}
+
+function makeJournalEntry(partial: Partial<JournalEntry>): JournalRow {
+  journalSeq += 1;
+  const now = new Date(2026, 0, 1, 0, 0, journalSeq).toISOString();
+  return {
+    id: partial.id ?? `journal-${journalSeq}`,
+    day: partial.day ?? "2026-09-09",
+    position: partial.position ?? journalSeq * 100,
+    title: partial.title ?? null,
+    content: partial.content ?? "",
+    mood: partial.mood ?? null,
+    createdAt: partial.createdAt ?? now,
+    updatedAt: now,
+    version: partial.version ?? 0,
+  };
+}
+
+const liveJournal = () => journalEntries.filter((e) => !e.removed);
+
+function sortJournalRows(rows: JournalRow[]): JournalRow[] {
+  return [...rows].sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position);
+}
+
 /**
  * Baseline happy-path handlers. Individual tests narrow behaviour with
- * `server.use(...)` and seed rows with `seedTodos(...)`.
+ * `server.use(...)` and seed rows with `seedTodos(...)`/`seedJournalEntries(...)`.
  */
 export const handlers = [
   http.get("/api/v1/ping", () => HttpResponse.json({ pong: true, version: "test" })),
@@ -236,5 +274,82 @@ export const handlers = [
       }
     }
     return HttpResponse.json({ reopened });
+  }),
+
+  // --- journal ----------------------------------------------------------
+
+  http.get("/api/v1/journal/entry-days", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const from = url.searchParams.get("from")!;
+    const to = url.searchParams.get("to")!;
+    const days = [...new Set(liveJournal().filter((e) => e.day >= from && e.day <= to).map((e) => e.day))].sort();
+    return HttpResponse.json(days);
+  }),
+
+  http.get(/\/api\/v1\/journal:search$/, ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const q = (url.searchParams.get("q") ?? "").trim();
+    const page = Number(url.searchParams.get("page") ?? "0");
+    const size = Number(url.searchParams.get("size") ?? "20");
+    if (!q) return problem(400, "`q` must not be blank.");
+    const needle = q.toLowerCase();
+    const matches = liveJournal().filter(
+      (e) => (e.title ?? "").toLowerCase().includes(needle) || e.content.toLowerCase().includes(needle),
+    );
+    const start = page * size;
+    const content = matches.slice(start, start + size).map((e) => {
+      const haystack = e.content || e.title || "";
+      const idx = haystack.toLowerCase().indexOf(needle);
+      const snippet =
+        idx === -1
+          ? haystack.slice(0, 80)
+          : haystack.slice(Math.max(0, idx - 20), idx) +
+            `<b>${haystack.slice(idx, idx + needle.length)}</b>` +
+            haystack.slice(idx + needle.length, idx + needle.length + 40);
+      return { id: e.id, day: e.day, title: e.title, snippet, mood: e.mood, createdAt: e.createdAt };
+    });
+    return HttpResponse.json({ content, page, totalElements: matches.length });
+  }),
+
+  http.get("/api/v1/journal", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const day = url.searchParams.get("day");
+    const from = url.searchParams.get("from");
+    const to = url.searchParams.get("to");
+    let rows = liveJournal();
+    if (day) rows = rows.filter((e) => e.day === day);
+    else if (from && to) rows = rows.filter((e) => e.day >= from && e.day <= to);
+    else return problem(400, "Provide either `day` or both `from` and `to`.");
+    return HttpResponse.json(sortJournalRows(rows));
+  }),
+
+  http.post("/api/v1/journal", async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as Partial<JournalEntry> & { day: string };
+    const maxPos = liveJournal()
+      .filter((e) => e.day === body.day)
+      .reduce((m, e) => Math.max(m, e.position), 0);
+    const created = makeJournalEntry({ ...body, position: maxPos + 100 });
+    journalEntries.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.patch("/api/v1/journal/:id", async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = journalEntries.find((e) => e.id === params.id);
+    if (!row) return problem(404, "Journal entry not found.");
+    const body = (await request.json()) as Partial<JournalEntry>;
+    Object.assign(row, body, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/journal/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = journalEntries.find((e) => e.id === params.id);
+    if (row) row.removed = true;
+    return new HttpResponse(null, { status: 204 });
   }),
 ];
