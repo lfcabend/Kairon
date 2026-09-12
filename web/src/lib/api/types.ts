@@ -272,6 +272,29 @@ export interface ProjectTasksPage {
   totalElements: number;
 }
 
+// --- About (/actuator/info) --------------------------------------------------
+
+/** Whatever `build-info.properties` carries; `commit` is Kairon's own addition. */
+export interface AboutBuildInfo {
+  version?: string;
+  time?: string;
+  commit?: string;
+  artifact?: string;
+  name?: string;
+  group?: string;
+}
+
+/** Deploy-time facts DeployInfoContributor adds — unknown outside Kubernetes. */
+export interface AboutDeployInfo {
+  image?: string;
+  deployedAt?: string;
+}
+
+export interface AboutInfo {
+  build?: AboutBuildInfo;
+  deploy?: AboutDeployInfo;
+}
+
 /** RFC 7807 problem detail — the shape of every error body from the API. */
 export interface ProblemDetail {
   type?: string;

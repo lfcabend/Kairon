@@ -511,8 +511,15 @@ deploy/helm/kairon/
 
 ## 11. Observability & operations
 
-- **Actuator** with health groups (`liveness`, `readiness`), `/info` (git sha,
-  build time), `/prometheus`.
+- **Actuator** with health groups (`liveness`, `readiness`), `/prometheus`.
+  `/info` (public — `SecurityConfig` permits it) carries `build` (version,
+  commit, build time — Spring Boot's `BuildProperties`/`build-info.properties`,
+  the commit added as an extra property sourced from a Gradle property that
+  `docker/Dockerfile` passes in, since `.dockerignore` excludes `.git` from the
+  image build context) and `deploy` (the running image ref and the deploy
+  timestamp — `com.kairon.meta.DeployInfoContributor`, reading env vars the
+  Helm chart sets at `helm upgrade` time). The web About page (`/about`) just
+  renders this endpoint.
 - **Micrometer** → Prometheus; Grafana dashboards checked into `deploy/` later.
 - **Logging**: SLF4J + Logback (Spring Boot's default starter — no extra
   framework). The `prod` profile emits ECS-format JSON to stdout via Spring

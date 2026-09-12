@@ -15,6 +15,11 @@ RUN npm run build
 
 # ---- Stage 2: build the jar ----------------------------------------------------
 FROM eclipse-temurin:25-jdk AS build
+# The commit this image is built from, baked into build-info.properties (and so
+# into /actuator/info) for the About page. Passed in rather than read from .git
+# directly: .dockerignore excludes .git from the build context (see Taskfile.yml,
+# which computes it on the host the same way for the image tag).
+ARG GIT_COMMIT=unknown
 WORKDIR /app
 COPY gradlew ./
 COPY gradle/ gradle/
@@ -24,7 +29,7 @@ COPY web/ web/
 # Drop in the already-built SPA so Gradle only has to package it.
 COPY --from=web /app/web/dist/ web/dist/
 RUN chmod +x gradlew && \
-    ./gradlew --no-daemon :backend:bootJar \
+    ./gradlew --no-daemon :backend:bootJar "-PkaironGitCommit=$GIT_COMMIT" \
       -x :web:buildWeb -x :web:npmInstall -x :web:npmSetup -x :web:nodeSetup
 
 # ---- Stage 3: runtime -------------------------------------------------------

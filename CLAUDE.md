@@ -31,7 +31,9 @@ the source of truth and keep them updated when decisions change.
   `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
   `ProjectsApi`)/`ProjectsProperties`/`SortParsing`, `config`, `web`
   `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`), and
-  `meta` (the M0 `PingController`).
+  `meta` (the M0 `PingController`; `DeployInfoContributor`, an `InfoContributor`
+  adding the running image ref + deploy time to `/actuator/info` for the About
+  page — the commit and build time are already there via `BuildProperties`).
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
   generated `content_tsv` + GIN index), `V004__projects.sql`
@@ -49,14 +51,22 @@ the source of truth and keep them updated when decisions change.
   `ProjectCard`/`ProjectFormDialog`/`CategoryManagerDialog`/`ProjectDetailPage`
   (Tabs: `TaskTree` ⇄ `TaskBoard`)/`TaskRow`/`TaskQuickAdd`/`TaskFormDialog`/
   `TaskCard`, hooks in `useProjectCategories.ts`/`useProjects.ts`/
-  `useProjectTasks.ts` + `projectKeys`). `src/components/AppLayout.tsx` is the
+  `useProjectTasks.ts` + `projectKeys`); the About page under
+  `src/features/about/` (`AboutPage`, rendering `/actuator/info` — build
+  version/commit/build-time + the running image ref/deploy time — via
+  `about.ts`, which calls that endpoint directly rather than through
+  `client.ts` since it's public and outside `/api/v1`).
+  `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes. API access is hand-written
   types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
-  `auth.ts` over `client.ts` (the single-flight 401→refresh→retry fetch
-  wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy paths in
-  `web/e2e/` (`npm run test:e2e`, needs a running full stack).
+  `auth.ts`/`about.ts` over `client.ts` (the single-flight 401→refresh→retry
+  fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy
+  paths in `web/e2e/` (`npm run test:e2e`, needs a running full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
-  app Secret wired into the Deployment.
+  app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
+  `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
+  always rolls the Deployment, even with no other change) and a `GIT_COMMIT`
+  Docker build arg (wired from `Taskfile.yml`'s `image`/`image-push` tasks).
 
 Next milestone is **M5 — Gantt & dependencies** (see `docs/ROADMAP.md`).
 

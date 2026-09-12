@@ -52,10 +52,30 @@ dependencies {
     testImplementation(libs.archunit.junit5)
 }
 
+// The commit the running jar was built from. `docker/Dockerfile` passes this in as
+// -PkaironGitCommit=... (from a build arg — .dockerignore excludes .git, so the
+// image build can't ask git itself); falls back to asking the local repo, which
+// covers `./gradlew build`/`bootRun` and `task jar` run straight from the working
+// tree.
+val kaironGitCommit: String = providers.gradleProperty("kaironGitCommit").orNull
+    ?.takeIf { it.isNotBlank() }
+    ?: runCatching {
+        providers.exec {
+            commandLine("git", "rev-parse", "HEAD")
+            isIgnoreExitValue = true
+        }.standardOutput.asText.get().trim()
+    }.getOrNull()?.takeIf { it.isNotBlank() } ?: "unknown"
+
 springBoot {
     // Emits META-INF/build-info.properties so BuildProperties is available at runtime
-    // (used by the /api/v1/ping "version" field).
-    buildInfo()
+    // (used by the /api/v1/ping "version" field, and surfaced in full — plus the
+    // deploy-time facts in DeployInfoContributor — at /actuator/info for the web
+    // About page; docs/DESIGN.md §11).
+    buildInfo {
+        properties {
+            additional.set(mapOf("commit" to kaironGitCommit))
+        }
+    }
 }
 
 // One predictable artifact: kairon.jar, and no extra "-plain" library jar.

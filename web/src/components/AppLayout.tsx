@@ -34,6 +34,9 @@ export function AppLayout() {
             <NavLink to="/account" className={linkClass}>
               Account
             </NavLink>
+            <NavLink to="/about" className={linkClass}>
+              About
+            </NavLink>
           </div>
           <span className="text-sm text-muted-foreground">{meQuery.data?.displayName ?? ""}</span>
         </div>

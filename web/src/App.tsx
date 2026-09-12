@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AppLayout } from "@/components/AppLayout";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
+import AboutPage from "@/features/about/AboutPage";
 import AccountPage from "@/features/auth/AccountPage";
 import LoginPage from "@/features/auth/LoginPage";
 import RegisterPage from "@/features/auth/RegisterPage";
@@ -25,6 +26,7 @@ export default function App() {
           <Route path="projects" element={<ProjectListPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="account" element={<AccountPage />} />
+          <Route path="about" element={<AboutPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

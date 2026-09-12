@@ -418,6 +418,13 @@ const projectHandlers = [
 export const handlers = [
   http.get("/api/v1/ping", () => HttpResponse.json({ pong: true, version: "test" })),
 
+  http.get("/actuator/info", () =>
+    HttpResponse.json({
+      build: { version: "test", time: "2026-01-01T00:00:00Z", commit: "abc1234" },
+      deploy: { image: "kairon:abc1234", deployedAt: "2026-01-01T00:05:00Z" },
+    }),
+  ),
+
   http.post("/api/v1/auth/register", () =>
     HttpResponse.json(authResponse("access-registered"), { status: 201 }),
   ),

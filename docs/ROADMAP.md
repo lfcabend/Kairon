@@ -80,6 +80,12 @@ Prove the whole pipeline with almost no product in it.
 - [x] Web: project list grouped by category with a category-management
       dialog, project detail with a task **list/tree** view and a simple
       **board** by status. No timeline yet.
+- [x] About page (pulled forward from M7): `/actuator/info` reports `build`
+      (version, commit, build time — `build-info.properties`, the commit
+      passed in as a Gradle property since `.dockerignore` excludes `.git`
+      from the image build) and `deploy` (running image ref, deploy
+      timestamp — `DeployInfoContributor`, sourced from env vars the Helm
+      chart sets at `helm upgrade` time).
 
 ## M5 — Gantt & dependencies
 
@@ -104,8 +110,9 @@ Prove the whole pipeline with almost no product in it.
       k8s.
 - [ ] Secrets via SOPS / sealed-secrets / external-secrets — none in git.
 - [ ] `pg_dump` backup CronJob + documented restore in `deploy/RUNBOOK.md`.
-- [ ] Observability: Prometheus scrape, JSON logs, correlation id, `/info` with
-      git sha.
+- [ ] Observability: Prometheus scrape, JSON logs, correlation id. (`/info`
+      with git sha + deploy facts landed in M4 — see the About page bullet
+      there.)
 - [ ] `package` + `deploy` CI jobs; single image to GHCR; Trivy scan; OpenAPI
       spec published and web client drift check.
 - [ ] Assisted scheduling (forward pass, optional critical path) — *optional

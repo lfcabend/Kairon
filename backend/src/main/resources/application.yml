@@ -48,9 +48,6 @@ management:
           include: livenessState
         readiness:
           include: readinessState,db
-  info:
-    git:
-      mode: full
 
 server:
   port: 8080

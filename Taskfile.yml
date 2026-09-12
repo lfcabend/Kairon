@@ -28,6 +28,11 @@ vars:
         printf '%s-wip%s' "$sha" "$(date -u +%Y%m%d%H%M%S 2>/dev/null || echo $RANDOM)"
       fi
   IMAGE: '{{.IMAGE_REPO}}:{{.IMAGE_TAG}}'
+  # Full commit sha, baked into the image's build-info.properties (-PkaironGitCommit
+  # in docker/Dockerfile) so /actuator/info can report exactly what the image was
+  # built from, independent of the (possibly -wip-suffixed) IMAGE_TAG above.
+  GIT_COMMIT:
+    sh: git rev-parse HEAD 2>/dev/null || echo unknown
   # GHCR image for remote clusters. `task xbmc` builds + pushes here (needs
   # `docker login ghcr.io` once) and deploys with values-xbmc.yaml, which already
   # points image.repository at this same path.
@@ -86,7 +91,7 @@ tasks:
   image-push:
     desc: Build the one image and push it to GHCR (ghcr.io/lfcabend/kairon:<sha> + :latest). Needs `docker login ghcr.io`.
     cmds:
-      - docker build -f docker/Dockerfile -t {{.GHCR_IMAGE}} -t {{.GHCR_REPO}}:latest .
+      - docker build -f docker/Dockerfile --build-arg GIT_COMMIT={{.GIT_COMMIT}} -t {{.GHCR_IMAGE}} -t {{.GHCR_REPO}}:latest .
       - docker push {{.GHCR_IMAGE}}
       - docker push {{.GHCR_REPO}}:latest
       - 'echo "pushed {{.GHCR_IMAGE}}"'
@@ -152,7 +157,7 @@ tasks:
   image:
     desc: Build the one Docker image (API + SPA), tagged with the git sha (and a moving :dev alias).
     cmds:
-      - docker build -f docker/Dockerfile -t {{.IMAGE}} -t {{.IMAGE_REPO}}:dev .
+      - docker build -f docker/Dockerfile --build-arg GIT_COMMIT={{.GIT_COMMIT}} -t {{.IMAGE}} -t {{.IMAGE_REPO}}:dev .
       - 'echo "built {{.IMAGE}}"'
 
   image-load:
