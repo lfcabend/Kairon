@@ -73,11 +73,13 @@ Prove the whole pipeline with almost no product in it.
 
 ## M4 — Projects (core)
 
-- [ ] `project` + `project_task` schema (`V004`).
-- [ ] Project CRUD; task CRUD with ≤2-level hierarchy, estimates, status,
-      progress, `:reorder`.
-- [ ] Web: project list, project detail with a task **list/tree** view and a
-      simple **board** by status. No timeline yet.
+- [x] `project_category` + `project` + `project_task` schema (`V004`).
+- [x] Project category CRUD + `:reorder`; project CRUD (optional category);
+      task CRUD with ≤2-level hierarchy, estimates, status, progress,
+      `:reorder`.
+- [x] Web: project list grouped by category with a category-management
+      dialog, project detail with a task **list/tree** view and a simple
+      **board** by status. No timeline yet.
 
 ## M5 — Gantt & dependencies
 

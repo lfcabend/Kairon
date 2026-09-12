@@ -1,6 +1,14 @@
 import { HttpResponse, http } from "msw";
 
-import type { AuthResponse, JournalEntry, Me, TodoItem } from "@/lib/api/types";
+import type {
+  AuthResponse,
+  JournalEntry,
+  Me,
+  Project,
+  ProjectCategory,
+  ProjectTask,
+  TodoItem,
+} from "@/lib/api/types";
 
 export const testUser = {
   id: "018f5b3e-0000-7000-8000-0000000000aa",
@@ -116,6 +124,292 @@ const liveJournal = () => journalEntries.filter((e) => !e.removed);
 function sortJournalRows(rows: JournalRow[]): JournalRow[] {
   return [...rows].sort((a, b) => a.day.localeCompare(b.day) || a.position - b.position);
 }
+
+// --- in-memory projects store ---------------------------------------------
+
+type CategoryRow = ProjectCategory;
+type ProjectRow = Project & { removed?: boolean };
+type TaskRow = ProjectTask & { removed?: boolean };
+
+let categories: CategoryRow[] = [];
+let categorySeq = 0;
+let projects: ProjectRow[] = [];
+let projectSeq = 0;
+let tasks: TaskRow[] = [];
+let taskSeq = 0;
+
+export function resetProjectsStore() {
+  categories = [];
+  categorySeq = 0;
+  projects = [];
+  projectSeq = 0;
+  tasks = [];
+  taskSeq = 0;
+}
+
+export function seedCategories(rows: Partial<ProjectCategory>[]): CategoryRow[] {
+  const created = rows.map(makeCategory);
+  categories.push(...created);
+  return created;
+}
+
+export function seedProjects(rows: Partial<Project>[]): ProjectRow[] {
+  const created = rows.map(makeProject);
+  projects.push(...created);
+  return created;
+}
+
+export function seedProjectTasks(rows: Partial<ProjectTask>[]): TaskRow[] {
+  const created = rows.map(makeTask);
+  tasks.push(...created);
+  return created;
+}
+
+function makeCategory(partial: Partial<ProjectCategory>): CategoryRow {
+  categorySeq += 1;
+  const now = new Date(2026, 0, 1, 0, 0, categorySeq).toISOString();
+  return {
+    id: partial.id ?? `category-${categorySeq}`,
+    name: partial.name ?? `Category ${categorySeq}`,
+    color: partial.color ?? "#6366f1",
+    position: partial.position ?? categorySeq * 100,
+    createdAt: partial.createdAt ?? now,
+    updatedAt: now,
+    version: partial.version ?? 0,
+  };
+}
+
+function makeProject(partial: Partial<Project>): ProjectRow {
+  projectSeq += 1;
+  const now = new Date(2026, 0, 1, 0, 0, projectSeq).toISOString();
+  return {
+    id: partial.id ?? `project-${projectSeq}`,
+    categoryId: partial.categoryId ?? null,
+    name: partial.name ?? `Project ${projectSeq}`,
+    description: partial.description ?? null,
+    status: partial.status ?? "PLANNING",
+    size: partial.size ?? null,
+    priorityRank: partial.priorityRank ?? projectSeq * 100,
+    color: partial.color ?? "#6366f1",
+    startDate: partial.startDate ?? null,
+    endDate: partial.endDate ?? null,
+    actualStart: partial.actualStart ?? null,
+    actualEnd: partial.actualEnd ?? null,
+    createdAt: partial.createdAt ?? now,
+    updatedAt: now,
+    version: partial.version ?? 0,
+  };
+}
+
+function makeTask(partial: Partial<ProjectTask>): TaskRow {
+  taskSeq += 1;
+  const now = new Date(2026, 0, 1, 0, 0, taskSeq).toISOString();
+  return {
+    id: partial.id ?? `task-${taskSeq}`,
+    projectId: partial.projectId ?? "",
+    parentTaskId: partial.parentTaskId ?? null,
+    name: partial.name ?? `Task ${taskSeq}`,
+    description: partial.description ?? null,
+    status: partial.status ?? "TODO",
+    isMilestone: partial.isMilestone ?? false,
+    plannedStart: partial.plannedStart ?? null,
+    plannedEnd: partial.plannedEnd ?? null,
+    estimateHours: partial.estimateHours ?? null,
+    actualHours: partial.actualHours ?? null,
+    progressPercent: partial.progressPercent ?? 0,
+    position: partial.position ?? taskSeq * 100,
+    createdAt: partial.createdAt ?? now,
+    updatedAt: now,
+    version: partial.version ?? 0,
+  };
+}
+
+const liveProjects = () => projects.filter((p) => !p.removed);
+const liveTasks = () => tasks.filter((t) => !t.removed);
+const byRank = (rows: ProjectRow[]) => [...rows].sort((a, b) => a.priorityRank - b.priorityRank);
+const byTaskPosition = (rows: TaskRow[]) => [...rows].sort((a, b) => a.position - b.position);
+
+const projectHandlers = [
+  http.get("/api/v1/project-categories", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    return HttpResponse.json([...categories].sort((a, b) => a.position - b.position));
+  }),
+
+  http.post("/api/v1/project-categories", async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as Partial<ProjectCategory>;
+    if (categories.some((c) => c.name === body.name)) {
+      return problem(409, `A category named "${body.name}" already exists.`);
+    }
+    const maxPos = categories.reduce((m, c) => Math.max(m, c.position), 0);
+    const created = makeCategory({ ...body, position: maxPos + 100 });
+    categories.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.patch("/api/v1/project-categories/:id", async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = categories.find((c) => c.id === params.id);
+    if (!row) return problem(404, "Project category not found.");
+    const body = (await request.json()) as Partial<ProjectCategory>;
+    Object.assign(row, body, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/project-categories/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    categories = categories.filter((c) => c.id !== params.id);
+    for (const p of projects) if (p.categoryId === params.id) p.categoryId = null;
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(/\/api\/v1\/project-categories:reorder$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { orderedIds: string[] };
+    const ids = new Set(categories.map((c) => c.id));
+    if (body.orderedIds.length !== ids.size || !body.orderedIds.every((id) => ids.has(id))) {
+      return problem(400, "`orderedIds` must list exactly the user's current categories.");
+    }
+    body.orderedIds.forEach((id, i) => {
+      categories.find((c) => c.id === id)!.position = (i + 1) * 100;
+    });
+    return HttpResponse.json([...categories].sort((a, b) => a.position - b.position));
+  }),
+
+  http.get(/\/api\/v1\/projects\/priority-ordered$/, ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    return HttpResponse.json(byRank(liveProjects().filter((p) => p.status !== "ARCHIVED")));
+  }),
+
+  http.get("/api/v1/projects", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const status = url.searchParams.get("status");
+    const categoryId = url.searchParams.get("categoryId");
+    const size = url.searchParams.get("size");
+    const includeArchived = url.searchParams.get("includeArchived") === "true";
+    const page = Number(url.searchParams.get("page") ?? "0");
+    const pageSize = Number(url.searchParams.get("pageSize") ?? "50");
+    let rows = liveProjects();
+    if (status) rows = rows.filter((p) => p.status === status);
+    else if (!includeArchived) rows = rows.filter((p) => p.status !== "ARCHIVED");
+    if (categoryId) rows = rows.filter((p) => p.categoryId === categoryId);
+    if (size) rows = rows.filter((p) => p.size === size);
+    rows = byRank(rows);
+    const start = page * pageSize;
+    return HttpResponse.json({
+      content: rows.slice(start, start + pageSize),
+      page,
+      totalElements: rows.length,
+    });
+  }),
+
+  http.post(/\/api\/v1\/projects:reorder$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { orderedIds: string[] };
+    const rankable = liveProjects().filter((p) => p.status !== "ARCHIVED");
+    const ids = new Set(rankable.map((p) => p.id));
+    if (body.orderedIds.length !== ids.size || !body.orderedIds.every((id) => ids.has(id))) {
+      return problem(400, "`orderedIds` must list exactly the user's current non-archived projects.");
+    }
+    body.orderedIds.forEach((id, i) => {
+      projects.find((p) => p.id === id)!.priorityRank = (i + 1) * 100;
+    });
+    return HttpResponse.json(byRank(rankable));
+  }),
+
+  http.post("/api/v1/projects", async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as Partial<Project> & { name: string };
+    if (!body.name?.trim()) return problem(400, "Name must not be blank.");
+    const maxRank = liveProjects()
+      .filter((p) => p.status !== "ARCHIVED")
+      .reduce((m, p) => Math.max(m, p.priorityRank), 0);
+    const created = makeProject({ ...body, priorityRank: maxRank + 100 });
+    projects.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.get("/api/v1/projects/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = liveProjects().find((p) => p.id === params.id);
+    if (!row) return problem(404, "Project not found.");
+    return HttpResponse.json(row);
+  }),
+
+  http.patch("/api/v1/projects/:id", async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = projects.find((p) => p.id === params.id);
+    if (!row) return problem(404, "Project not found.");
+    const body = (await request.json()) as Partial<Project>;
+    const { priorityRank: _ignored, ...rest } = body;
+    Object.assign(row, rest, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/projects/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = projects.find((p) => p.id === params.id);
+    if (row) row.removed = true;
+    for (const t of tasks) if (t.projectId === params.id) t.removed = true;
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.get(/\/api\/v1\/projects\/([^/]+)\/tasks$/, ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const projectId = params[0] as string;
+    const rows = byTaskPosition(liveTasks().filter((t) => t.projectId === projectId));
+    return HttpResponse.json({ content: rows, page: 0, totalElements: rows.length });
+  }),
+
+  http.post(/\/api\/v1\/projects\/([^/]+)\/tasks$/, async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const projectId = params[0] as string;
+    const body = (await request.json()) as Partial<ProjectTask> & { name: string };
+    if (!body.name?.trim()) return problem(400, "Name must not be blank.");
+    const siblings = liveTasks().filter(
+      (t) => t.projectId === projectId && t.parentTaskId === (body.parentTaskId ?? null),
+    );
+    const maxPos = siblings.reduce((m, t) => Math.max(m, t.position), 0);
+    const created = makeTask({ ...body, projectId, position: maxPos + 100 });
+    tasks.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+
+  http.patch("/api/v1/tasks/:id", async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = tasks.find((t) => t.id === params.id);
+    if (!row) return problem(404, "Task not found.");
+    const body = (await request.json()) as Partial<ProjectTask>;
+    Object.assign(row, body, { updatedAt: new Date().toISOString() });
+    return HttpResponse.json(row);
+  }),
+
+  http.delete("/api/v1/tasks/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const row = tasks.find((t) => t.id === params.id);
+    if (row) row.removed = true;
+    for (const t of tasks) if (t.parentTaskId === params.id) t.removed = true;
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(/\/api\/v1\/projects\/([^/]+)\/tasks:reorder$/, async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const projectId = params[0] as string;
+    const body = (await request.json()) as { parentTaskId: string | null; orderedIds: string[] };
+    const siblings = liveTasks().filter(
+      (t) => t.projectId === projectId && t.parentTaskId === body.parentTaskId,
+    );
+    const ids = new Set(siblings.map((t) => t.id));
+    if (body.orderedIds.length !== ids.size || !body.orderedIds.every((id) => ids.has(id))) {
+      return problem(400, "`orderedIds` must list exactly that sibling group's current members.");
+    }
+    body.orderedIds.forEach((id, i) => {
+      tasks.find((t) => t.id === id)!.position = (i + 1) * 100;
+    });
+    return HttpResponse.json(byTaskPosition(siblings));
+  }),
+];
 
 /**
  * Baseline happy-path handlers. Individual tests narrow behaviour with
@@ -352,4 +646,8 @@ export const handlers = [
     if (row) row.removed = true;
     return new HttpResponse(null, { status: 204 });
   }),
+
+  // --- projects (M4) -----------------------------------------------------
+
+  ...projectHandlers,
 ];

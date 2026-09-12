@@ -28,6 +28,8 @@ erDiagram
     app_user ||--o{ todo_item           : owns
     app_user ||--o{ journal_entry       : owns
     app_user ||--o{ project             : owns
+    app_user ||--o{ project_category    : owns
+    project_category ||--o{ project     : categorizes
     project  ||--o{ project_task        : contains
     project_task ||--o{ project_task    : "parent of"
     project_task ||--o{ task_dependency : "predecessor"
@@ -92,12 +94,25 @@ erDiagram
         timestamptz updated_at
         bigint version
     }
-    project {
+    project_category {
         uuid id PK
         uuid user_id FK
         varchar name
+        varchar color
+        int position
+        timestamptz created_at
+        timestamptz updated_at
+        bigint version
+    }
+    project {
+        uuid id PK
+        uuid user_id FK
+        uuid category_id FK
+        varchar name
         text description
         varchar status
+        varchar size
+        int priority_rank
         varchar color
         date start_date
         date end_date
@@ -254,22 +269,44 @@ Indexes: `index(user_id, day)`, **GIN** `index(content_tsv)` for search.
 `GET /journal:search?q=` uses `content_tsv @@ websearch_to_tsquery('simple', :q)`
 ranked by `ts_rank`.
 
+### `project_category`  (module: projects)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `user_id` | uuid FK → app_user | |
+| `name` | varchar(100) | **unique** per `user_id` |
+| `color` | varchar(7) | hex, for badges/section headers |
+| `position` | int | user-chosen display order; sparse (100, 200, …), reorderable — not alphabetical |
+| `created_at`,`updated_at`,`version` | | |
+
+Indexes: `unique(user_id, name)`, `index(user_id, position)`.
+A lightweight, user-managed grouping above `project` — "epic"-like, but with no
+fields of its own beyond identity and display (no dates, no status). **No soft
+delete**: unlike `project`/`project_task`, it isn't in the mobile-synced set
+(DATA_MODEL conventions above) and a client can always refetch the whole small
+list; deleting one is a real `DELETE` and un-categorizes (not deletes) any
+project that referenced it, via `project.category_id`'s `ON DELETE SET NULL`.
+
 ### `project`  (module: projects)
 
 | Column | Type | Notes |
 | --- | --- | --- |
 | `id` | uuid PK | |
 | `user_id` | uuid FK → app_user | |
+| `category_id` | uuid FK → project_category, null | optional grouping; `ON DELETE SET NULL` |
 | `name` | varchar(200) | |
 | `description` | text null | markdown |
 | `status` | varchar | `PLANNING` \| `ACTIVE` \| `ON_HOLD` \| `DONE` \| `ARCHIVED` |
+| `size` | varchar null | t-shirt sizing: `XS` \| `S` \| `M` \| `L` \| `XL`; optional, no default — a rough at-a-glance sense of scope, not a time estimate |
+| `priority_rank` | int | order within `user_id` (excluding `ARCHIVED` projects); sparse (100, 200, …), user-managed by dragging — lower sorts first (most important). **Not** a severity scale like `todo_item.priority`; a purely manual, relative ranking |
 | `color` | varchar(7) | hex, for Gantt/badges |
 | `start_date`,`end_date` | date null | planned window |
 | `actual_start`,`actual_end` | date null | filled as work happens |
 | `deleted_at` | timestamptz null | |
 | `created_at`,`updated_at`,`version` | | |
 
-Indexes: `index(user_id, status)`.
+Indexes: `index(user_id, status)`, `index(category_id)`.
 
 ### `project_task`  (module: projects)
 
@@ -403,7 +440,7 @@ tracking the roadmap:
 | `V001__identity.sql` | `app_user` (M0); `refresh_token` appended in M1 |
 | `V002__todo.sql` | `todo_item` |
 | `V003__journal.sql` | `journal_entry` + `content_tsv` + GIN index |
-| `V004__projects.sql` | `project`, `project_task` |
+| `V004__projects.sql` | `project_category`, `project`, `project_task` |
 | `V005__task_dependencies.sql` | `task_dependency` |
 | `V006__planning_links.sql` | any indexes needed by the "Today" aggregation |
 | `V007__assistant.sql` | `assistant_run`, `assistant_suggested_task` |

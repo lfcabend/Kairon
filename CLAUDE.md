@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Current state
 
-**M0 (walking skeleton), M1 (authentication), M2 (daily todo) and M3 (daily
-journal) are implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`,
+**M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
+journal), and M4 (projects core) are implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`,
 `ROADMAP.md`, `milestones/`, `adr/`) remain the specification — treat them as
 the source of truth and keep them updated when decisions change.
 
@@ -23,10 +23,20 @@ the source of truth and keep them updated when decisions change.
   `domain` `JournalEntry`, `repo` `JournalEntryRepository` (incl. the native
   full-text `search` query + `JournalSearchRow` projection), `app`
   `JournalService`/`JournalSearchService`/`JournalMapper`/`JournalProperties`,
-  `config`, `web` `JournalController`), and `meta` (the M0 `PingController`).
+  `config`, `web` `JournalController`), `projects` (`api` port `ProjectsApi`/
+  `ProjectView`/`ProjectTaskView`/`ProjectPage`/`ProjectTaskPage`, `domain`
+  `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
+  `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
+  `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query), `app`
+  `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
+  `ProjectsApi`)/`ProjectsProperties`/`SortParsing`, `config`, `web`
+  `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`), and
+  `meta` (the M0 `PingController`).
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
-  generated `content_tsv` + GIN index).
+  generated `content_tsv` + GIN index), `V004__projects.sql`
+  (`project_category` + `project` + `project_task`, plus the FK M2 left as a
+  bare `uuid` on `todo_item.source_project_task_id`).
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -34,16 +44,21 @@ the source of truth and keep them updated when decisions change.
   (`JournalDayView` + `JournalDateNav` (calendar popover with has-entry dots)/
   `EntryList`/`EntryCard`/`EntryEditor` (Tiptap WYSIWYG)/`MoodPicker`,
   `JournalSearchPage`, hooks in `useJournal.ts`/`useJournalSearch.ts` +
-  `journalKeys`). `src/components/AppLayout.tsx` is the top-nav shell wrapping
-  the protected routes. API access is hand-written types in `src/lib/api/types.ts`
-  plus `todo.ts`/`journal.ts`/`auth.ts` over `client.ts` (the single-flight
-  401→refresh→retry fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`);
-  Playwright happy paths in `web/e2e/` (`npm run test:e2e`, needs a running
-  full stack).
+  `journalKeys`); projects under `src/features/projects/` (`ProjectListPage`
+  (category sections + `ProjectPriorityList` for "Sort by: Priority")/
+  `ProjectCard`/`ProjectFormDialog`/`CategoryManagerDialog`/`ProjectDetailPage`
+  (Tabs: `TaskTree` ⇄ `TaskBoard`)/`TaskRow`/`TaskQuickAdd`/`TaskFormDialog`/
+  `TaskCard`, hooks in `useProjectCategories.ts`/`useProjects.ts`/
+  `useProjectTasks.ts` + `projectKeys`). `src/components/AppLayout.tsx` is the
+  top-nav shell wrapping the protected routes. API access is hand-written
+  types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
+  `auth.ts` over `client.ts` (the single-flight 401→refresh→retry fetch
+  wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy paths in
+  `web/e2e/` (`npm run test:e2e`, needs a running full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment.
 
-Next milestone is **M4 — Projects (core)** (see `docs/ROADMAP.md`).
+Next milestone is **M5 — Gantt & dependencies** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

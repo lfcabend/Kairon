@@ -146,6 +146,132 @@ export interface JournalSearchPage {
   totalElements: number;
 }
 
+// --- Projects (M4) -----------------------------------------------------------
+
+export type ProjectStatus = "PLANNING" | "ACTIVE" | "ON_HOLD" | "DONE" | "ARCHIVED";
+export type ProjectSize = "XS" | "S" | "M" | "L" | "XL";
+export type ProjectTaskStatus = "TODO" | "IN_PROGRESS" | "BLOCKED" | "DONE";
+
+export interface ProjectCategory {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface CreateProjectCategoryBody {
+  name: string;
+  color?: string;
+}
+
+export interface PatchProjectCategoryBody {
+  name?: string;
+  color?: string;
+  expectedVersion?: number;
+}
+
+export interface Project {
+  id: string;
+  categoryId: string | null;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  size: ProjectSize | null;
+  priorityRank: number;
+  color: string;
+  startDate: string | null;
+  endDate: string | null;
+  actualStart: string | null;
+  actualEnd: string | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface CreateProjectBody {
+  categoryId?: string | null;
+  name: string;
+  description?: string | null;
+  size?: ProjectSize | null;
+  color?: string;
+  startDate?: string | null;
+  endDate?: string | null;
+}
+
+/** Whole-form overwrite (D15) — every field is always sent; `priorityRank` never appears (D18). */
+export interface PatchProjectBody {
+  categoryId: string | null;
+  name: string;
+  description: string | null;
+  status: ProjectStatus;
+  size: ProjectSize | null;
+  color: string;
+  startDate: string | null;
+  endDate: string | null;
+  actualStart: string | null;
+  actualEnd: string | null;
+  expectedVersion?: number;
+}
+
+export interface ProjectsPage {
+  content: Project[];
+  page: number;
+  totalElements: number;
+}
+
+export interface ProjectTask {
+  id: string;
+  projectId: string;
+  parentTaskId: string | null;
+  name: string;
+  description: string | null;
+  status: ProjectTaskStatus;
+  isMilestone: boolean;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  estimateHours: number | null;
+  actualHours: number | null;
+  progressPercent: number;
+  position: number;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+export interface CreateProjectTaskBody {
+  name: string;
+  description?: string | null;
+  parentTaskId?: string | null;
+  plannedStart?: string | null;
+  plannedEnd?: string | null;
+  estimateHours?: number | null;
+  isMilestone?: boolean;
+}
+
+/** Whole-form overwrite (D15) — every field is always sent. */
+export interface PatchProjectTaskBody {
+  name: string;
+  description: string | null;
+  status: ProjectTaskStatus;
+  parentTaskId: string | null;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  estimateHours: number | null;
+  actualHours: number | null;
+  progressPercent: number;
+  isMilestone: boolean;
+  expectedVersion?: number;
+}
+
+export interface ProjectTasksPage {
+  content: ProjectTask[];
+  page: number;
+  totalElements: number;
+}
+
 /** RFC 7807 problem detail — the shape of every error body from the API. */
 export interface ProblemDetail {
   type?: string;

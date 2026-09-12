@@ -7,6 +7,8 @@ import LoginPage from "@/features/auth/LoginPage";
 import RegisterPage from "@/features/auth/RegisterPage";
 import { JournalDayView } from "@/features/journal/JournalDayView";
 import { JournalSearchPage } from "@/features/journal/JournalSearchPage";
+import { ProjectDetailPage } from "@/features/projects/ProjectDetailPage";
+import { ProjectListPage } from "@/features/projects/ProjectListPage";
 import { DayView } from "@/features/todo/DayView";
 
 export default function App() {
@@ -20,6 +22,8 @@ export default function App() {
           <Route path="day/:date?" element={<DayView />} />
           <Route path="journal/:date?" element={<JournalDayView />} />
           <Route path="journal/search" element={<JournalSearchPage />} />
+          <Route path="projects" element={<ProjectListPage />} />
+          <Route path="projects/:id" element={<ProjectDetailPage />} />
           <Route path="account" element={<AccountPage />} />
         </Route>
       </Route>

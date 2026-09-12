@@ -77,7 +77,19 @@ companion to [`DATA_MODEL.md`](DATA_MODEL.md) (schema detail) and
 
 A **project** is a small, self-contained effort with a planned window.
 
-- Project fields: name, description, status
+- Projects can be grouped under a user-managed **category** (`project_category`)
+  — an "epic"-like label with just a name, a colour, and a user-chosen display
+  order (not alphabetical: a catch-all like "Miscellaneous" can sit first).
+  Optional; a project without one is uncategorized.
+- A project can carry a **t-shirt size** (`XS`–`XL`) — a rough, optional
+  at-a-glance sense of scope, distinct from `estimate_hours` on its tasks
+  (which is a real number, per task, once the work is broken down).
+- A project also carries a **priority rank** — a manual, drag-ordered
+  ranking across all of a user's (non-archived) projects, not a severity
+  scale like `todo_item.priority`. Sorting the project list by priority
+  switches to a single flat, cross-category, drag-reorderable list, the
+  same interaction as Todo's day reorder.
+- Project fields: category (optional), size (optional), priority rank, name, description, status
   (`PLANNING` / `ACTIVE` / `ON_HOLD` / `DONE` / `ARCHIVED`), colour, planned
   `start_date` / `end_date`, actual start/end, timestamps.
 - A project has **tasks** (`project_task`):
@@ -274,8 +286,9 @@ embedded in the Spring Boot jar for a single deployable.
 | Profile | `GET /me`, `PATCH /me` (display name, timezone, preferences incl. `assistant.*` per-feature opt-ins) |
 | Todo | `GET /todo?day=`, `GET /todo?from=&to=` (both bare arrays), `POST /todo`, `PATCH /todo/{id}`, `DELETE /todo/{id}`, `POST /todo/{id}:complete` (`{complete?}`), `POST /todo:reorder` (`{day, orderedIds}`), `GET /todo/rollover-preview?onDay=` → `{ sourceDays: [{ day, items }], totalItems }`, `POST /todo:rollover` (`{toDay, fromDay?, ids?}` — omit both to sweep the whole look-back window), `POST /todo:rollover-undo` (`{createdIds}`) |
 | Journal | `GET /journal?day=`, `GET /journal?from=&to=` (both bare arrays), `GET /journal/entry-days?from=&to=` → `string[]` of ISO dates with ≥1 entry (calendar markers), `POST /journal`, `PATCH /journal/{id}`, `DELETE /journal/{id}`, `GET /journal:search?q=&page=&size=` → paginated `{ content: [{id, day, title, snippet, mood, createdAt}], page, totalElements }`, ranked by `ts_rank` with a `ts_headline` snippet per hit (no standalone `GET /journal/{id}` — a search hit navigates to its day, docs/milestones/M3 §9 Q1) |
-| Projects | `GET /projects`, `POST /projects`, `GET /projects/{id}`, `PATCH /projects/{id}`, `DELETE /projects/{id}` |
-| Project tasks | `GET /projects/{id}/tasks`, `POST /projects/{id}/tasks`, `PATCH /tasks/{taskId}`, `DELETE /tasks/{taskId}`, `POST /projects/{id}/tasks:reorder` |
+| Project categories | `GET /project-categories`, `POST /project-categories`, `PATCH /project-categories/{id}`, `DELETE /project-categories/{id}`, `POST /project-categories:reorder` (`{orderedIds}`) |
+| Projects | `GET /projects` (`status?`, `categoryId?`, `size?`, `page?`, `pageSize?`, `sort?`), `GET /projects/priority-ordered` (flat, `priority_rank` order, every non-archived project), `POST /projects`, `GET /projects/{id}`, `PATCH /projects/{id}` (whole-form save, excludes `priority_rank` — M4 D15/D18), `DELETE /projects/{id}` (cascades a soft-delete to its tasks), `POST /projects:reorder` (`{orderedIds}` — rewrites `priority_rank` across the user's non-archived projects) |
+| Project tasks | `GET /projects/{id}/tasks`, `POST /projects/{id}/tasks`, `PATCH /tasks/{taskId}` (whole-form save, incl. `parentTaskId` for reparenting — `null` moves a task back to top-level; M4 D5/D15), `DELETE /tasks/{taskId}`, `POST /projects/{id}/tasks:reorder` (`{parentTaskId?, orderedIds}`, scoped to that sibling group) |
 | Dependencies | `POST /tasks/{taskId}/dependencies`, `DELETE /dependencies/{depId}` |
 | Gantt | `GET /projects/{id}/gantt` → tasks + computed schedule + dependency edges |
 | Planning | `GET /planning/today?date=` → `{ todos, dueProjectTasks, journalPrompt }`; `POST /planning/today:promote` (`{projectTaskId, day}`) → new todo item |
