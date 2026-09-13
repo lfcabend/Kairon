@@ -133,6 +133,11 @@ public class ProjectTaskService implements ProjectsApi {
         }
         task.setEstimateHours(command.estimateHours());
         task.setActualHours(command.actualHours());
+        // Flush now so the @Version bump (which Hibernate otherwise defers to commit, after this
+        // method returns) is visible on `task` before it's mapped — the response's `version` is the
+        // `expectedVersion` the client sends on its *next* PATCH, so a stale value here made every
+        // second edit of the same row fail with a false optimistic-lock conflict.
+        tasks.saveAndFlush(task);
         log.info("Patched task {} userId={} projectId={}", taskId, userId.value(), project.getId());
         return ProjectTaskMapper.toView(task, project);
     }
@@ -156,8 +161,14 @@ public class ProjectTaskService implements ProjectsApi {
         for (UUID id : orderedIds) {
             ProjectTask task = byId.get(id);
             task.moveTo(position);
-            result.add(ProjectTaskMapper.toView(task, project));
             position += POSITION_GAP;
+        }
+        // One flush for the whole batch (see the comment in patch()) so every returned view's
+        // version already reflects its bump, instead of the client's next edit of any of these
+        // rows getting a false optimistic-lock conflict.
+        tasks.flush();
+        for (UUID id : orderedIds) {
+            result.add(ProjectTaskMapper.toView(byId.get(id), project));
         }
         log.info("Reordered {} task(s) userId={} projectId={} parentTaskId={}",
                 result.size(), userId.value(), projectId, parentTaskId);
