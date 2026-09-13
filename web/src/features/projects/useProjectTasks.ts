@@ -96,6 +96,25 @@ export function usePatchTask(projectId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: PatchProjectTaskBody }) => projectsApi.patchTask(id, body),
+    onMutate: async ({ id, body }) => {
+      await qc.cancelQueries({ queryKey: projectKeys.tasks(projectId) });
+      const previous = qc.getQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
+        projectKeys.tasks(projectId),
+      );
+      const { expectedVersion: _expectedVersion, ...fields } = body;
+      qc.setQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
+        projectKeys.tasks(projectId),
+        (data) =>
+          data && {
+            ...data,
+            content: data.content.map((t) => (t.id === id ? { ...t, ...fields } : t)),
+          },
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(projectKeys.tasks(projectId), ctx.previous);
+    },
     onSuccess: (updated) => {
       qc.setQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
         projectKeys.tasks(projectId),
@@ -120,6 +139,25 @@ export function useReorderTasks(projectId: string) {
   return useMutation({
     mutationFn: ({ parentTaskId, orderedIds }: { parentTaskId: string | null; orderedIds: string[] }) =>
       projectsApi.reorderTasks(projectId, parentTaskId, orderedIds),
+    onMutate: async ({ orderedIds }) => {
+      await qc.cancelQueries({ queryKey: projectKeys.tasks(projectId) });
+      const previous = qc.getQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
+        projectKeys.tasks(projectId),
+      );
+      const rank = new Map(orderedIds.map((id, i) => [id, (i + 1) * 100]));
+      qc.setQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
+        projectKeys.tasks(projectId),
+        (data) =>
+          data && {
+            ...data,
+            content: data.content.map((t) => (rank.has(t.id) ? { ...t, position: rank.get(t.id)! } : t)),
+          },
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) qc.setQueryData(projectKeys.tasks(projectId), ctx.previous);
+    },
     onSuccess: (reordered) => {
       qc.setQueryData<{ content: ProjectTask[]; page: number; totalElements: number }>(
         projectKeys.tasks(projectId),
