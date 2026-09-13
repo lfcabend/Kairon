@@ -5,6 +5,10 @@ import { defineConfig } from "vitest/config";
 // The SPA is served from the backend origin in every real environment; only the
 // dev server needs to reach the API, which it proxies to the Spring Boot app.
 export default defineConfig({
+  // The backend mounts the whole app under this path (server.servlet.context-path
+  // in application.yml) so several personal apps can share one host/Tailscale
+  // Funnel node. Must match that value and the Helm chart's ingress.path.
+  base: "/kairon/",
   plugins: [react()],
   resolve: {
     alias: {
@@ -14,7 +18,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/api": "http://localhost:8080",
+      "/kairon": "http://localhost:8080",
     },
   },
   build: {

@@ -13,7 +13,7 @@ type Status =
   | { state: "error"; message: string };
 
 async function fetchPing(): Promise<PingResult> {
-  const res = await fetch("/api/v1/ping");
+  const res = await fetch(`${import.meta.env.BASE_URL}api/v1/ping`);
   if (!res.ok) {
     throw new Error(`ping failed: HTTP ${res.status}`);
   }

@@ -211,7 +211,10 @@ embedded in the Spring Boot jar for a single deployable.
   keeps the bearer-token filter.
 - **Config.** The SPA calls the API at the relative path `/api/v1` — same origin,
   so no build-time or run-time API URL configuration is needed in any
-  environment.
+  environment. The whole app (SPA, API, actuator) is mounted under the fixed
+  `/kairon` context path (`server.servlet.context-path`, matched by the Vite
+  `base` and the Helm chart's `ingress.path`) so a host can serve several
+  personal apps side by side under one origin.
 - **Reversibility.** Because `web/` is already isolated, splitting it back out to
   its own nginx image later is a build-config change, not a rewrite.
 
@@ -485,7 +488,7 @@ deploy/helm/kairon/
   (`application-local.yml` → `localhost:5432`, Flyway enabled, verbose logging,
   a dev-only seeded user behind a flag).
 - **Web**: `npm run dev` in `web/`; the Vite dev server (port 5173) proxies
-  `/api` → `http://localhost:8080` for hot reload. In every non-dev environment
+  `/kairon` → `http://localhost:8080` for hot reload. In every non-dev environment
   the SPA is served by the backend from the jar — no dev server involved.
 - **`Taskfile.yml`** (go-task) wraps the common commands: `task up`, `task down`,
   `task db-forward`, `task be`, `task fe`, `task test`, `task gen-client`,

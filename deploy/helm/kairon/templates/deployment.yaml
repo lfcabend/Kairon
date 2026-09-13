@@ -67,18 +67,18 @@ spec:
                   key: KAIRON_JWT_SECRET
           startupProbe:
             httpGet:
-              path: /actuator/health/readiness
+              path: {{ .Values.ingress.path }}/actuator/health/readiness
               port: http
             failureThreshold: {{ .Values.startupProbe.failureThreshold }}
             periodSeconds: {{ .Values.startupProbe.periodSeconds }}
           livenessProbe:
             httpGet:
-              path: /actuator/health/liveness
+              path: {{ .Values.ingress.path }}/actuator/health/liveness
               port: http
             periodSeconds: 10
           readinessProbe:
             httpGet:
-              path: /actuator/health/readiness
+              path: {{ .Values.ingress.path }}/actuator/health/readiness
               port: http
             periodSeconds: 10
           resources:

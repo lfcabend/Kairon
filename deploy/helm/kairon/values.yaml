@@ -51,6 +51,10 @@ ingress:
   annotations: {}
   host: kairon.localtest.me
   extraHosts: []   # additional hostnames routed to the same backend, e.g. a Tailscale Funnel name
+  # Mount path for the app — must match the backend's server.servlet.context-path
+  # (backend/src/main/resources/application.yml) and the frontend's Vite `base`
+  # (web/vite.config.ts), so several personal apps can share one host.
+  path: /kairon
   tls:
     enabled: false
     secretName: ""

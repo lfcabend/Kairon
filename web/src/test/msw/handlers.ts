@@ -230,12 +230,12 @@ const byRank = (rows: ProjectRow[]) => [...rows].sort((a, b) => a.priorityRank -
 const byTaskPosition = (rows: TaskRow[]) => [...rows].sort((a, b) => a.position - b.position);
 
 const projectHandlers = [
-  http.get("/api/v1/project-categories", ({ request }) => {
+  http.get("/kairon/api/v1/project-categories", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     return HttpResponse.json([...categories].sort((a, b) => a.position - b.position));
   }),
 
-  http.post("/api/v1/project-categories", async ({ request }) => {
+  http.post("/kairon/api/v1/project-categories", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const body = (await request.json()) as Partial<ProjectCategory>;
     if (categories.some((c) => c.name === body.name)) {
@@ -247,7 +247,7 @@ const projectHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.patch("/api/v1/project-categories/:id", async ({ request, params }) => {
+  http.patch("/kairon/api/v1/project-categories/:id", async ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = categories.find((c) => c.id === params.id);
     if (!row) return problem(404, "Project category not found.");
@@ -256,7 +256,7 @@ const projectHandlers = [
     return HttpResponse.json(row);
   }),
 
-  http.delete("/api/v1/project-categories/:id", ({ request, params }) => {
+  http.delete("/kairon/api/v1/project-categories/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     categories = categories.filter((c) => c.id !== params.id);
     for (const p of projects) if (p.categoryId === params.id) p.categoryId = null;
@@ -281,7 +281,7 @@ const projectHandlers = [
     return HttpResponse.json(byRank(liveProjects().filter((p) => p.status !== "ARCHIVED")));
   }),
 
-  http.get("/api/v1/projects", ({ request }) => {
+  http.get("/kairon/api/v1/projects", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const url = new URL(request.url);
     const status = url.searchParams.get("status");
@@ -318,7 +318,7 @@ const projectHandlers = [
     return HttpResponse.json(byRank(rankable));
   }),
 
-  http.post("/api/v1/projects", async ({ request }) => {
+  http.post("/kairon/api/v1/projects", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const body = (await request.json()) as Partial<Project> & { name: string };
     if (!body.name?.trim()) return problem(400, "Name must not be blank.");
@@ -330,14 +330,14 @@ const projectHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.get("/api/v1/projects/:id", ({ request, params }) => {
+  http.get("/kairon/api/v1/projects/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = liveProjects().find((p) => p.id === params.id);
     if (!row) return problem(404, "Project not found.");
     return HttpResponse.json(row);
   }),
 
-  http.patch("/api/v1/projects/:id", async ({ request, params }) => {
+  http.patch("/kairon/api/v1/projects/:id", async ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = projects.find((p) => p.id === params.id);
     if (!row) return problem(404, "Project not found.");
@@ -347,7 +347,7 @@ const projectHandlers = [
     return HttpResponse.json(row);
   }),
 
-  http.delete("/api/v1/projects/:id", ({ request, params }) => {
+  http.delete("/kairon/api/v1/projects/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = projects.find((p) => p.id === params.id);
     if (row) row.removed = true;
@@ -376,7 +376,7 @@ const projectHandlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.patch("/api/v1/tasks/:id", async ({ request, params }) => {
+  http.patch("/kairon/api/v1/tasks/:id", async ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = tasks.find((t) => t.id === params.id);
     if (!row) return problem(404, "Task not found.");
@@ -385,7 +385,7 @@ const projectHandlers = [
     return HttpResponse.json(row);
   }),
 
-  http.delete("/api/v1/tasks/:id", ({ request, params }) => {
+  http.delete("/kairon/api/v1/tasks/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = tasks.find((t) => t.id === params.id);
     if (row) row.removed = true;
@@ -416,20 +416,20 @@ const projectHandlers = [
  * `server.use(...)` and seed rows with `seedTodos(...)`/`seedJournalEntries(...)`.
  */
 export const handlers = [
-  http.get("/api/v1/ping", () => HttpResponse.json({ pong: true, version: "test" })),
+  http.get("/kairon/api/v1/ping", () => HttpResponse.json({ pong: true, version: "test" })),
 
-  http.get("/actuator/info", () =>
+  http.get("/kairon/actuator/info", () =>
     HttpResponse.json({
       build: { version: "test", time: "2026-01-01T00:00:00Z", commit: "abc1234" },
       deploy: { image: "kairon:abc1234", deployedAt: "2026-01-01T00:05:00Z" },
     }),
   ),
 
-  http.post("/api/v1/auth/register", () =>
+  http.post("/kairon/api/v1/auth/register", () =>
     HttpResponse.json(authResponse("access-registered"), { status: 201 }),
   ),
 
-  http.post("/api/v1/auth/login", async ({ request }) => {
+  http.post("/kairon/api/v1/auth/login", async ({ request }) => {
     const body = (await request.json()) as { email: string; password: string };
     if (body.password === "wrong-password") {
       return problem(401, "Invalid email or password.");
@@ -437,17 +437,17 @@ export const handlers = [
     return HttpResponse.json(authResponse("access-login"));
   }),
 
-  http.post("/api/v1/auth/refresh", () => problem(401, "Missing refresh token.")),
+  http.post("/kairon/api/v1/auth/refresh", () => problem(401, "Missing refresh token.")),
 
-  http.post("/api/v1/auth/logout", () => new HttpResponse(null, { status: 204 })),
-  http.post("/api/v1/auth/logout-all", () => new HttpResponse(null, { status: 204 })),
+  http.post("/kairon/api/v1/auth/logout", () => new HttpResponse(null, { status: 204 })),
+  http.post("/kairon/api/v1/auth/logout-all", () => new HttpResponse(null, { status: 204 })),
 
-  http.get("/api/v1/me", ({ request }) => {
+  http.get("/kairon/api/v1/me", ({ request }) => {
     if (authed(request)) return HttpResponse.json(meResponse);
     return problem(401, "Authentication required.");
   }),
 
-  http.patch("/api/v1/me", async ({ request }) => {
+  http.patch("/kairon/api/v1/me", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const patch = (await request.json()) as Partial<Me>;
     Object.assign(meResponse, patch);
@@ -456,7 +456,7 @@ export const handlers = [
 
   // --- todo -----------------------------------------------------------
 
-  http.get("/api/v1/todo", ({ request }) => {
+  http.get("/kairon/api/v1/todo", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const url = new URL(request.url);
     const day = url.searchParams.get("day");
@@ -469,7 +469,7 @@ export const handlers = [
     return HttpResponse.json(sortRows(rows));
   }),
 
-  http.post("/api/v1/todo", async ({ request }) => {
+  http.post("/kairon/api/v1/todo", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const body = (await request.json()) as Partial<TodoItem> & { title: string };
     if (!body.title?.trim()) return problem(400, "Title must not be blank.");
@@ -481,7 +481,7 @@ export const handlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.patch("/api/v1/todo/:id", async ({ request, params }) => {
+  http.patch("/kairon/api/v1/todo/:id", async ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = todos.find((t) => t.id === params.id);
     if (!row) return problem(404, "Todo item not found.");
@@ -490,7 +490,7 @@ export const handlers = [
     return HttpResponse.json(row);
   }),
 
-  http.delete("/api/v1/todo/:id", ({ request, params }) => {
+  http.delete("/kairon/api/v1/todo/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = todos.find((t) => t.id === params.id);
     if (row) row.removed = true;
@@ -524,7 +524,7 @@ export const handlers = [
     return HttpResponse.json(sortRows(dayRows));
   }),
 
-  http.get("/api/v1/todo/rollover-preview", ({ request }) => {
+  http.get("/kairon/api/v1/todo/rollover-preview", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const onDay = new URL(request.url).searchParams.get("onDay")!;
     const eligible = live().filter((t) => t.status === "OPEN" && t.day < onDay);
@@ -579,7 +579,7 @@ export const handlers = [
 
   // --- journal ----------------------------------------------------------
 
-  http.get("/api/v1/journal/entry-days", ({ request }) => {
+  http.get("/kairon/api/v1/journal/entry-days", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const url = new URL(request.url);
     const from = url.searchParams.get("from")!;
@@ -614,7 +614,7 @@ export const handlers = [
     return HttpResponse.json({ content, page, totalElements: matches.length });
   }),
 
-  http.get("/api/v1/journal", ({ request }) => {
+  http.get("/kairon/api/v1/journal", ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const url = new URL(request.url);
     const day = url.searchParams.get("day");
@@ -627,7 +627,7 @@ export const handlers = [
     return HttpResponse.json(sortJournalRows(rows));
   }),
 
-  http.post("/api/v1/journal", async ({ request }) => {
+  http.post("/kairon/api/v1/journal", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const body = (await request.json()) as Partial<JournalEntry> & { day: string };
     const maxPos = liveJournal()
@@ -638,7 +638,7 @@ export const handlers = [
     return HttpResponse.json(created, { status: 201 });
   }),
 
-  http.patch("/api/v1/journal/:id", async ({ request, params }) => {
+  http.patch("/kairon/api/v1/journal/:id", async ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = journalEntries.find((e) => e.id === params.id);
     if (!row) return problem(404, "Journal entry not found.");
@@ -647,7 +647,7 @@ export const handlers = [
     return HttpResponse.json(row);
   }),
 
-  http.delete("/api/v1/journal/:id", ({ request, params }) => {
+  http.delete("/kairon/api/v1/journal/:id", ({ request, params }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = journalEntries.find((e) => e.id === params.id);
     if (row) row.removed = true;

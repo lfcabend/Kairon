@@ -7,23 +7,26 @@ import com.kairon.identity.app.RefreshTokenProperties;
 
 import jakarta.servlet.http.HttpServletRequest;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 /**
  * Builds and reads the refresh-token cookie: {@code HttpOnly}, {@code Secure}
  * (off only for local http dev), {@code SameSite=Strict}, and scoped to
- * {@code /api/v1/auth} so it is never sent to any other route. See docs/DESIGN.md §6.
+ * {@code <context-path>/api/v1/auth} so it is never sent to any other route.
+ * See docs/DESIGN.md §6.
  */
 @Component
 public class RefreshCookie {
 
-    static final String PATH = "/api/v1/auth";
-
     private final RefreshTokenProperties properties;
+    private final String path;
 
-    public RefreshCookie(RefreshTokenProperties properties) {
+    public RefreshCookie(RefreshTokenProperties properties,
+            @Value("${server.servlet.context-path:}") String contextPath) {
         this.properties = properties;
+        this.path = contextPath + "/api/v1/auth";
     }
 
     public String name() {
@@ -59,6 +62,6 @@ public class RefreshCookie {
                 .httpOnly(true)
                 .secure(properties.cookie().secure())
                 .sameSite("Strict")
-                .path(PATH);
+                .path(path);
     }
 }

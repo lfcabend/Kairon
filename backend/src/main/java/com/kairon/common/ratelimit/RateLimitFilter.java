@@ -44,7 +44,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
         if (!properties.enabled()) {
             return true;
         }
-        String path = request.getRequestURI();
+        String path = contextRelativePath(request);
         return properties.paths().stream().noneMatch(pattern -> pathMatcher.match(pattern, path));
     }
 
@@ -69,7 +69,16 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String key(HttpServletRequest request) {
-        return clientIp(request) + "|" + request.getRequestURI();
+        return clientIp(request) + "|" + contextRelativePath(request);
+    }
+
+    /**
+     * {@code getRequestURI()} includes the servlet context path (e.g. {@code /kairon}),
+     * but {@code kairon.security.rate-limit.paths} is written context-relative to match
+     * how Spring Security's own request matchers behave — strip it so both agree.
+     */
+    private static String contextRelativePath(HttpServletRequest request) {
+        return request.getRequestURI().substring(request.getContextPath().length());
     }
 
     private static String clientIp(HttpServletRequest request) {

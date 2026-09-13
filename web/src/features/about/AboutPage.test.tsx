@@ -28,7 +28,7 @@ test("renders the build and deploy facts from /actuator/info", async () => {
 });
 
 test("shows an error when the info endpoint cannot be reached", async () => {
-  server.use(http.get("/actuator/info", () => HttpResponse.error()));
+  server.use(http.get("/kairon/actuator/info", () => HttpResponse.error()));
 
   renderPage();
 

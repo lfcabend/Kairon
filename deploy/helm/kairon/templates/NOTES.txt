@@ -6,15 +6,15 @@ Kairon {{ .Chart.AppVersion }} is deploying as release "{{ .Release.Name }}".
 {{- if .Values.ingress.enabled }}
 
 2. Open the app (kind + ingress-nginx):
-     http://{{ .Values.ingress.host }}/
+     http://{{ .Values.ingress.host }}{{ .Values.ingress.path }}/
 
    Verify the walking skeleton:
-     curl http://{{ .Values.ingress.host }}/api/v1/ping
+     curl http://{{ .Values.ingress.host }}{{ .Values.ingress.path }}/api/v1/ping
 {{- else }}
 
 2. No ingress is enabled. Port-forward instead:
      kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "kairon.fullname" . }} 8080:{{ .Values.service.port }}
-     curl http://localhost:8080/api/v1/ping
+     curl http://localhost:8080{{ .Values.ingress.path }}/api/v1/ping
 {{- end }}
 
 {{- if .Values.postgresql.enabled }}

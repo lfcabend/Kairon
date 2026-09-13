@@ -7,7 +7,7 @@ import { HttpResponse, http } from "msw";
 
 test("renders the ping result once the API responds", async () => {
   server.use(
-    http.get("/api/v1/ping", () => HttpResponse.json({ pong: true, version: "1.2.3" })),
+    http.get("/kairon/api/v1/ping", () => HttpResponse.json({ pong: true, version: "1.2.3" })),
   );
 
   render(<PingCard />);
@@ -19,7 +19,7 @@ test("renders the ping result once the API responds", async () => {
 });
 
 test("shows an error when the API cannot be reached", async () => {
-  server.use(http.get("/api/v1/ping", () => HttpResponse.error()));
+  server.use(http.get("/kairon/api/v1/ping", () => HttpResponse.error()));
 
   render(<PingCard />);
 

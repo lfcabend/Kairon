@@ -4,7 +4,7 @@ import { log } from "@/lib/log";
 
 import type { AuthResponse, ProblemDetail } from "./types";
 
-const BASE = "/api/v1";
+const BASE = `${import.meta.env.BASE_URL}api/v1`;
 
 /** Correlation id echoed to the backend as `X-Request-Id`; joins browser and server logs. */
 function newRequestId(): string {

@@ -7,7 +7,7 @@ import type { AboutInfo } from "./types";
  */
 export const aboutApi = {
   info: async (): Promise<AboutInfo> => {
-    const res = await fetch("/actuator/info");
+    const res = await fetch(`${import.meta.env.BASE_URL}actuator/info`);
     if (!res.ok) {
       throw new Error(`about info failed: HTTP ${res.status}`);
     }

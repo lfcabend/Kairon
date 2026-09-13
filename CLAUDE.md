@@ -83,7 +83,10 @@ data — no assignees/teams/permissions): **Daily Todo**, **Daily Journal**, sma
 built into the Spring Boot jar and served as static resources, with a `WebMvcConfigurer`
 SPA fallback that returns `index.html` for any non-`/api/`, non-`/actuator/` GET that
 isn't a real file. One image, one origin: no nginx, no CORS, no runtime API-URL config.
-The API is served at the relative path `/api/v1`. See `docs/DESIGN.md` §3.3 / §8.
+The API is served at the relative path `/api/v1`, and the whole app (SPA, API,
+actuator) is mounted under the fixed `/kairon` context path (`server.servlet.context-path`,
+matched by the Vite `base` and the Helm chart's `ingress.path`) so a host can serve
+several personal apps side by side. See `docs/DESIGN.md` §3.3 / §8.
 
 **Gradle multi-project.** Root build with `:backend` and `:web` subprojects. `:web`
 uses the `com.github.node-gradle.node` plugin to run `npm ci && npm run build`, and its
@@ -153,7 +156,7 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 | --- | --- |
 | Local Postgres | in-cluster via the Helm chart on kind (`task up`); `kubectl port-forward svc/kairon-postgresql 5432:5432` (`task db-forward`) for host dev. **No docker-compose.** |
 | Run backend (host) | `./gradlew bootRun` with the `local` Spring profile |
-| Run web dev server | `npm run dev` in `web/` (port 5173, proxies `/api` → `localhost:8080`) |
+| Run web dev server | `npm run dev` in `web/` (port 5173, proxies `/kairon` → `localhost:8080`) |
 | Full build (runs `:web`, unit + Testcontainers + ArchUnit) | `./gradlew build` |
 | Package the single jar | `./gradlew :backend:bootJar` |
 | Backend tests | `./gradlew test` |

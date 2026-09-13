@@ -59,7 +59,7 @@ class AuthFlowIntegrationTest {
                 .andExpect(jsonPath("$.expiresInSeconds").value(900))
                 .andExpect(jsonPath("$.user.email").value("ada@example.com"))
                 .andExpect(cookie().httpOnly(COOKIE, true))
-                .andExpect(cookie().path(COOKIE, "/api/v1/auth"))
+                .andExpect(cookie().path(COOKIE, "/kairon/api/v1/auth"))
                 .andExpect(header().stringValues("Set-Cookie",
                         org.hamcrest.Matchers.hasItem(org.hamcrest.Matchers.containsString("SameSite=Strict"))))
                 .andReturn();

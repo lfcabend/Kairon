@@ -4,7 +4,7 @@ const DEV_EMAIL = process.env.E2E_EMAIL ?? "dev@kairon.local";
 const DEV_PASSWORD = process.env.E2E_PASSWORD ?? "dev-password-please";
 
 async function login(page: import("@playwright/test").Page) {
-  await page.goto("/login");
+  await page.goto("/kairon/login");
   await page.getByLabel("Email").fill(DEV_EMAIL);
   await page.getByLabel("Password").fill(DEV_PASSWORD);
   await page.getByRole("button", { name: "Sign in" }).click();
@@ -27,7 +27,7 @@ async function dragOnto(page: import("@playwright/test").Page, source: string, t
 
 test("create a category, projects and tasks, work the board and tree, then delete a project", async ({ page }) => {
   await login(page);
-  await page.goto("/projects");
+  await page.goto("/kairon/projects");
 
   // Category
   await page.getByRole("button", { name: "Manage categories" }).click();
@@ -69,7 +69,7 @@ test("create a category, projects and tasks, work the board and tree, then delet
   await expect(page.getByText("Order cabinets")).toBeVisible();
 
   // Priority sort: drag-reorder the two projects.
-  await page.goto("/projects");
+  await page.goto("/kairon/projects");
   await page.getByLabel("Sort by").click();
   await page.getByRole("option", { name: "Sort by: Priority" }).click();
   await expect(page.getByText("Kitchen remodel")).toBeVisible();

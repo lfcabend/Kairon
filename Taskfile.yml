@@ -110,7 +110,7 @@ tasks:
       - 'echo "deployed {{.GHCR_IMAGE}} to context {{.XBMC_CONTEXT}}"'
 
   ingress:
-    desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me).
+    desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me/kairon).
     cmds:
       - >-
         helm upgrade --install ingress-nginx ingress-nginx
@@ -133,7 +133,7 @@ tasks:
       - "{{.GW}} :backend:bootRun --args='--spring.profiles.active=local'"
 
   fe:
-    desc: Run the Vite dev server (proxies /api to localhost:8080).
+    desc: Run the Vite dev server (proxies /kairon to localhost:8080).
     dir: web
     cmds:
       - npm run dev

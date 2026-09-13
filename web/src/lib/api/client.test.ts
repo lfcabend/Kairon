@@ -12,7 +12,7 @@ test("a 401 triggers a refresh and one retry of the original request", async () 
   let meCalls = 0;
 
   server.use(
-    http.get("/api/v1/me", ({ request }) => {
+    http.get("/kairon/api/v1/me", ({ request }) => {
       meCalls += 1;
       const token = request.headers.get("Authorization");
       if (token === "Bearer fresh-token") {
@@ -20,7 +20,7 @@ test("a 401 triggers a refresh and one retry of the original request", async () 
       }
       return HttpResponse.json({ status: 401, detail: "expired" }, { status: 401 });
     }),
-    http.post("/api/v1/auth/refresh", () => HttpResponse.json(authResponse("fresh-token"))),
+    http.post("/kairon/api/v1/auth/refresh", () => HttpResponse.json(authResponse("fresh-token"))),
   );
 
   const result = await apiFetch<{ email: string }>("/me");
@@ -34,10 +34,10 @@ test("a failed refresh clears the session and surfaces the 401", async () => {
   useAuthStore.getState().setSession("stale-token", testUser);
 
   server.use(
-    http.get("/api/v1/me", () =>
+    http.get("/kairon/api/v1/me", () =>
       HttpResponse.json({ status: 401, detail: "expired" }, { status: 401 }),
     ),
-    http.post("/api/v1/auth/refresh", () =>
+    http.post("/kairon/api/v1/auth/refresh", () =>
       HttpResponse.json({ status: 401, detail: "no cookie" }, { status: 401 }),
     ),
   );
@@ -48,7 +48,7 @@ test("a failed refresh clears the session and surfaces the 401", async () => {
 
 test("problem+json bodies become ApiError with the detail message", async () => {
   server.use(
-    http.post("/api/v1/auth/register", () =>
+    http.post("/kairon/api/v1/auth/register", () =>
       HttpResponse.json(
         { status: 409, detail: "An account with that email already exists." },
         { status: 409 },

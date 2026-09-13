@@ -52,6 +52,11 @@ management:
 server:
   port: 8080
   shutdown: graceful
+  servlet:
+    # Mounts the whole app (API, actuator, and the SPA) under one path so several
+    # personal apps can share a host/Tailscale Funnel node. Must match the frontend's
+    # Vite `base` (web/vite.config.ts) and the Helm chart's `ingress.path`.
+    context-path: /kairon
 
 kairon:
   security:
