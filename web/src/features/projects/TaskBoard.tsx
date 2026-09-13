@@ -1,5 +1,6 @@
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   closestCorners,
@@ -7,12 +8,14 @@ import {
   useSensor,
   useSensors,
   type DragEndEvent,
+  type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { useState } from "react";
 
 import type { ProjectTask, ProjectTaskStatus } from "@/lib/api/types";
 
-import { TaskCard } from "./TaskCard";
+import { TaskCard, TaskCardOverlay } from "./TaskCard";
 import { usePatchTask, useReorderTasks } from "./useProjectTasks";
 
 interface Props {
@@ -50,6 +53,7 @@ function toPatchBody(task: ProjectTask, overrides: Partial<ProjectTask>) {
 export function TaskBoard({ projectId, tasks }: Props) {
   const patchTask = usePatchTask(projectId);
   const reorderTasks = useReorderTasks(projectId);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -62,7 +66,10 @@ export function TaskBoard({ projectId, tasks }: Props) {
   const columnTasks = (status: ProjectTaskStatus) =>
     tasks.filter((t) => t.status === status).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 
+  const handleDragStart = (event: DragStartEvent) => setActiveId(String(event.active.id));
+
   const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
     const { active, over } = event;
     if (!over) return;
     const activeTask = byId.get(String(active.id));
@@ -91,8 +98,16 @@ export function TaskBoard({ projectId, tasks }: Props) {
     reorderTasks.mutate({ parentTaskId: activeTask.parentTaskId, orderedIds: ids });
   };
 
+  const activeTask = activeId ? byId.get(activeId) : undefined;
+
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCorners} onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCorners}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveId(null)}
+    >
       <div className="grid grid-cols-4 gap-3 overflow-x-auto">
         {COLUMNS.map(({ status, label }) => (
           <Column key={status} status={status} label={label}>
@@ -111,6 +126,14 @@ export function TaskBoard({ projectId, tasks }: Props) {
           </Column>
         ))}
       </div>
+      <DragOverlay>
+        {activeTask ? (
+          <TaskCardOverlay
+            task={activeTask}
+            parentName={activeTask.parentTaskId ? nameById.get(activeTask.parentTaskId) : undefined}
+          />
+        ) : null}
+      </DragOverlay>
     </DndContext>
   );
 }

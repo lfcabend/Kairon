@@ -28,9 +28,34 @@ export function TaskCard({ task, parentName }: Props) {
       data-testid="task-card"
       className={cn(
         "cursor-grab space-y-1.5 rounded-md border bg-background p-2 text-sm shadow-sm",
-        sortable.isDragging && "opacity-60",
+        sortable.isDragging && "opacity-40",
       )}
     >
+      <CardBody task={task} parentName={parentName} />
+    </div>
+  );
+}
+
+/**
+ * Static clone rendered inside the board's `DragOverlay`. dnd-kit portals the overlay to
+ * `document.body`, so it floats above the board's `overflow-x-auto` column grid and tracks the
+ * pointer directly, instead of the real card's transform getting clipped/misplaced by that
+ * ancestor overflow as it crosses into another column.
+ */
+export function TaskCardOverlay({ task, parentName }: Props) {
+  return (
+    <div
+      data-testid="task-card-overlay"
+      className="cursor-grabbing space-y-1.5 rounded-md border bg-background p-2 text-sm shadow-lg ring-2 ring-ring"
+    >
+      <CardBody task={task} parentName={parentName} />
+    </div>
+  );
+}
+
+function CardBody({ task, parentName }: Props) {
+  return (
+    <>
       <div className="flex items-center gap-1.5">
         {task.isMilestone && <Diamond className="h-3 w-3 shrink-0 text-amber-500" aria-label="Milestone" />}
         <span className="flex-1">{task.name}</span>
@@ -46,6 +71,6 @@ export function TaskCard({ task, parentName }: Props) {
         )}
         {task.progressPercent > 0 && <Progress value={task.progressPercent} className="h-1.5 flex-1" />}
       </div>
-    </div>
+    </>
   );
 }
