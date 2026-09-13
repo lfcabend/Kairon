@@ -106,8 +106,12 @@ export function TaskRow({
         )}
 
         <DropdownMenu>
-          <DropdownMenuTrigger aria-label={`Status: ${STATUS_LABEL[task.status]}`}>
+          <DropdownMenuTrigger
+            aria-label={`Status: ${STATUS_LABEL[task.status]}`}
+            className="flex shrink-0 items-center gap-1.5 rounded px-1 py-0.5 text-xs text-muted-foreground hover:bg-muted"
+          >
             <span className={cn("inline-block h-2.5 w-2.5 rounded-full", STATUS_DOT[task.status])} />
+            {STATUS_LABEL[task.status]}
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start">
             {(Object.keys(STATUS_LABEL) as ProjectTaskStatus[]).map((s) => (
