@@ -4,16 +4,20 @@ import {
   KeyboardSensor,
   PointerSensor,
   closestCorners,
+  pointerWithin,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
+  type DragOverEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { useState } from "react";
 
 import type { ProjectTask, ProjectTaskStatus } from "@/lib/api/types";
+import { cn } from "@/lib/utils";
 
 import { TaskCard, TaskCardOverlay } from "./TaskCard";
 import { usePatchTask, useReorderTasks } from "./useProjectTasks";
@@ -49,11 +53,22 @@ function toPatchBody(task: ProjectTask, overrides: Partial<ProjectTask>) {
   };
 }
 
+/**
+ * `pointerWithin` first (does the pointer literally sit over this column/card?) with
+ * `closestCorners` as a fallback for the moment the pointer briefly clears every rect (e.g.
+ * a fast flick between columns) — the combination the dnd-kit multi-container examples use.
+ */
+const collisionDetectionStrategy: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+};
+
 /** Every task, top-level and subtask alike, as its own card grouped by status (D11). */
 export function TaskBoard({ projectId, tasks }: Props) {
   const patchTask = usePatchTask(projectId);
   const reorderTasks = useReorderTasks(projectId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [overStatus, setOverStatus] = useState<ProjectTaskStatus | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -66,16 +81,27 @@ export function TaskBoard({ projectId, tasks }: Props) {
   const columnTasks = (status: ProjectTaskStatus) =>
     tasks.filter((t) => t.status === status).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
 
-  const handleDragStart = (event: DragStartEvent) => setActiveId(String(event.active.id));
+  const resolveStatus = (overId: string): ProjectTaskStatus | undefined =>
+    STATUSES.includes(overId) ? (overId as ProjectTaskStatus) : byId.get(overId)?.status;
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveId(String(event.active.id));
+    setOverStatus(byId.get(String(event.active.id))?.status ?? null);
+  };
+
+  const handleDragOver = (event: DragOverEvent) => {
+    setOverStatus(event.over ? (resolveStatus(String(event.over.id)) ?? null) : null);
+  };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setActiveId(null);
+    setOverStatus(null);
     const { active, over } = event;
     if (!over) return;
     const activeTask = byId.get(String(active.id));
     if (!activeTask) return;
     const overId = String(over.id);
-    const destStatus = STATUSES.includes(overId) ? (overId as ProjectTaskStatus) : byId.get(overId)?.status;
+    const destStatus = resolveStatus(overId);
     if (!destStatus) return;
 
     if (destStatus !== activeTask.status) {
@@ -103,14 +129,18 @@ export function TaskBoard({ projectId, tasks }: Props) {
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCorners}
+      collisionDetection={collisionDetectionStrategy}
       onDragStart={handleDragStart}
+      onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
-      onDragCancel={() => setActiveId(null)}
+      onDragCancel={() => {
+        setActiveId(null);
+        setOverStatus(null);
+      }}
     >
-      <div className="grid grid-cols-4 gap-3 overflow-x-auto">
+      <div className="grid grid-cols-4 items-stretch gap-3 overflow-x-auto">
         {COLUMNS.map(({ status, label }) => (
-          <Column key={status} status={status} label={label}>
+          <Column key={status} status={status} label={label} isDropTarget={activeId !== null && overStatus === status}>
             <SortableContext
               items={columnTasks(status).map((t) => t.id)}
               strategy={verticalListSortingStrategy}
@@ -141,19 +171,29 @@ export function TaskBoard({ projectId, tasks }: Props) {
 function Column({
   status,
   label,
+  isDropTarget,
   children,
 }: {
   status: ProjectTaskStatus;
   label: string;
+  isDropTarget: boolean;
   children: React.ReactNode;
 }) {
+  // `setNodeRef` goes on this outer box (not just a wrapper around the cards) so the
+  // droppable hit-area covers the whole lane, including the empty space below a short
+  // column's cards — otherwise a column with few cards has a much smaller drop target
+  // than it visually appears to, and drops into that dead space miss it entirely.
   const { setNodeRef } = useDroppable({ id: status });
   return (
-    <div className="min-w-[180px] space-y-2 rounded-md bg-muted/40 p-2">
+    <div
+      ref={setNodeRef}
+      className={cn(
+        "flex min-w-[180px] flex-col gap-2 rounded-md border-2 border-transparent bg-muted/40 p-2 transition-colors",
+        isDropTarget && "border-primary bg-primary/5",
+      )}
+    >
       <h3 className="text-xs font-semibold text-muted-foreground">{label}</h3>
-      <div ref={setNodeRef} className="min-h-[2rem] space-y-2">
-        {children}
-      </div>
+      <div className="flex flex-1 flex-col gap-2">{children}</div>
     </div>
   );
 }
