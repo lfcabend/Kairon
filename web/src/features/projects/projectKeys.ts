@@ -6,4 +6,5 @@ export const projectKeys = {
   priorityOrdered: () => ["projects", "priority-ordered"] as const,
   detail: (id: string) => ["projects", "detail", id] as const,
   tasks: (projectId: string) => ["projects", "tasks", projectId] as const,
+  dependencies: (projectId: string) => ["projects", "dependencies", projectId] as const,
 };

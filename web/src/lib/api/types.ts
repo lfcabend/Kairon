@@ -272,6 +272,27 @@ export interface ProjectTasksPage {
   totalElements: number;
 }
 
+// --- Task dependencies (M5) ---------------------------------------------------
+
+export type TaskDependencyType = "FS" | "SS" | "FF" | "SF";
+
+export interface TaskDependency {
+  id: string;
+  predecessorId: string;
+  successorId: string;
+  type: TaskDependencyType;
+  lagDays: number;
+  violatesConstraint: boolean;
+  createdAt: string;
+}
+
+/** M5's form only creates `FS` edges with `lagDays: 0` (D2) — both default server-side when omitted. */
+export interface CreateTaskDependencyBody {
+  predecessorId: string;
+  type?: TaskDependencyType;
+  lagDays?: number;
+}
+
 // --- About (/actuator/info) --------------------------------------------------
 
 /** Whatever `build-info.properties` carries; `commit` is Kairon's own addition. */

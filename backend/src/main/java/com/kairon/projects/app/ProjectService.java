@@ -18,6 +18,7 @@ import com.kairon.projects.domain.ProjectStatus;
 import com.kairon.projects.repo.ProjectCategoryRepository;
 import com.kairon.projects.repo.ProjectRepository;
 import com.kairon.projects.repo.ProjectTaskRepository;
+import com.kairon.projects.repo.TaskDependencyRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,13 +45,15 @@ public class ProjectService {
     private final ProjectRepository projects;
     private final ProjectCategoryRepository categories;
     private final ProjectTaskRepository tasks;
+    private final TaskDependencyRepository dependencies;
     private final Clock clock;
 
     public ProjectService(ProjectRepository projects, ProjectCategoryRepository categories,
-            ProjectTaskRepository tasks, Clock clock) {
+            ProjectTaskRepository tasks, TaskDependencyRepository dependencies, Clock clock) {
         this.projects = projects;
         this.categories = categories;
         this.tasks = tasks;
+        this.dependencies = dependencies;
         this.clock = clock;
     }
 
@@ -161,6 +164,7 @@ public class ProjectService {
         int cascaded = 0;
         for (var task : tasks.findByProjectIdAndDeletedAtIsNull(id)) {
             task.softDelete(clock.instant());
+            dependencies.deleteAllForTask(task.getId());
             cascaded++;
         }
         log.info("Soft-deleted project {} userId={}, cascaded to {} task(s)", id, userId.value(), cascaded);

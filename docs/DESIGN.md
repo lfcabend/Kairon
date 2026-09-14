@@ -292,8 +292,7 @@ embedded in the Spring Boot jar for a single deployable.
 | Project categories | `GET /project-categories`, `POST /project-categories`, `PATCH /project-categories/{id}`, `DELETE /project-categories/{id}`, `POST /project-categories:reorder` (`{orderedIds}`) |
 | Projects | `GET /projects` (`status?`, `categoryId?`, `size?`, `page?`, `pageSize?`, `sort?`), `GET /projects/priority-ordered` (flat, `priority_rank` order, every non-archived project), `POST /projects`, `GET /projects/{id}`, `PATCH /projects/{id}` (whole-form save, excludes `priority_rank` — M4 D15/D18), `DELETE /projects/{id}` (cascades a soft-delete to its tasks), `POST /projects:reorder` (`{orderedIds}` — rewrites `priority_rank` across the user's non-archived projects) |
 | Project tasks | `GET /projects/{id}/tasks`, `POST /projects/{id}/tasks`, `PATCH /tasks/{taskId}` (whole-form save, incl. `parentTaskId` for reparenting — `null` moves a task back to top-level; M4 D5/D15), `DELETE /tasks/{taskId}`, `POST /projects/{id}/tasks:reorder` (`{parentTaskId?, orderedIds}`, scoped to that sibling group) |
-| Dependencies | `POST /tasks/{taskId}/dependencies`, `DELETE /dependencies/{depId}` |
-| Gantt | `GET /projects/{id}/gantt` → tasks + computed schedule + dependency edges |
+| Dependencies | `GET /projects/{id}/dependencies` → edges with a computed `violatesConstraint` flag, `POST /tasks/{taskId}/dependencies`, `DELETE /dependencies/{depId}` (M5 D7 — no combined `/gantt` endpoint; the Gantt tab composes this with the already-fetched project/task list, see `docs/milestones/M5-gantt-dependencies.md` §5) |
 | Planning | `GET /planning/today?date=` → `{ todos, dueProjectTasks, journalPrompt }`; `POST /planning/today:promote` (`{projectTaskId, day}`) → new todo item |
 | Assistant (later) | `POST /assistant/todo-suggestions` (`{day, horizon}`), `POST /assistant/summaries` (`{period: WEEK\|MONTH, date}`), `POST /assistant/journal-reflection` (`{weekOf}`) → each creates an `assistant_run`; `GET /assistant/runs/{id}`, `GET /assistant/runs?kind=&from=&to=`, `DELETE /assistant/runs/{id}`; `POST /assistant/suggested-tasks/{id}:accept` (→ new todo item), `POST /assistant/suggested-tasks/{id}:dismiss` |
 
@@ -360,8 +359,11 @@ The backend's OpenAPI document is committed as an artifact in CI. From it:
 ### 7.1 MVP — render what the user enters
 
 - The user sets `planned_start` / `planned_end` on each task explicitly.
-- `GET /projects/{id}/gantt` returns tasks (flattened, with hierarchy depth),
-  dependency edges, project window, and "today".
+- `GET /projects/{id}/dependencies` returns the dependency edges (each with a
+  computed `violatesConstraint`); the Gantt tab composes them with the task
+  list and project window already fetched for the Tree/Board tabs — no
+  combined endpoint (M5 D7, a deviation from an earlier sketch of this
+  section; "today" is computed client-side, M5 D8).
 - The web app renders bars, milestone diamonds, dependency arrows, a today line,
   and progress fill from `progress_percent`.
 - Editing a bar (drag ends / move) issues `PATCH /tasks/{id}`.

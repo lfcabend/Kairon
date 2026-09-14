@@ -58,6 +58,28 @@ if (!("ResizeObserver" in globalThis)) {
   Object.defineProperty(globalThis, "ResizeObserver", { value: ResizeObserverStub, writable: true });
 }
 
+// jsdom doesn't implement SVG geometry APIs; gantt-task-react's drag handling
+// calls createSVGPoint() on mount to translate pointer coordinates, and each
+// task bar's label measures itself with getBBox() to decide inside/outside placement.
+if (!("createSVGPoint" in SVGSVGElement.prototype)) {
+  Object.defineProperty(SVGSVGElement.prototype, "createSVGPoint", {
+    value: () => ({
+      x: 0,
+      y: 0,
+      matrixTransform() {
+        return this;
+      },
+    }),
+    writable: true,
+  });
+}
+if (!("getBBox" in SVGElement.prototype)) {
+  Object.defineProperty(SVGElement.prototype, "getBBox", {
+    value: () => ({ x: 0, y: 0, width: 0, height: 0 }),
+    writable: true,
+  });
+}
+
 beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
 
 afterEach(() => {

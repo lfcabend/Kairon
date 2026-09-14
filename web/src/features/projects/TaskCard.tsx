@@ -1,6 +1,6 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Diamond } from "lucide-react";
+import { Diamond, Pencil } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
 import type { ProjectTask } from "@/lib/api/types";
@@ -12,7 +12,7 @@ interface Props {
 }
 
 /** Board card: name, "in <parent>" chip if a subtask (D11), estimate, progress. */
-export function TaskCard({ task, parentName }: Props) {
+export function TaskCard({ task, parentName, onEdit }: Props & { onEdit: () => void }) {
   const sortable = useSortable({ id: task.id });
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
@@ -27,10 +27,24 @@ export function TaskCard({ task, parentName }: Props) {
       {...sortable.listeners}
       data-testid="task-card"
       className={cn(
-        "cursor-grab space-y-1.5 rounded-md border bg-background p-2 text-sm shadow-sm",
+        "group relative cursor-grab space-y-1.5 rounded-md border bg-background p-2 text-sm shadow-sm",
         sortable.isDragging && "opacity-40",
       )}
     >
+      <button
+        type="button"
+        aria-label="Edit task"
+        className="absolute right-1.5 top-1.5 text-muted-foreground opacity-0 hover:text-foreground group-hover:opacity-100"
+        // Stops dnd-kit's sortable listeners (attached above, on this same element) from
+        // treating the click as a drag activation — without this the button never fires.
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+      >
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
       <CardBody task={task} parentName={parentName} />
     </div>
   );
@@ -56,7 +70,7 @@ export function TaskCardOverlay({ task, parentName }: Props) {
 function CardBody({ task, parentName }: Props) {
   return (
     <>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 pr-5">
         {task.isMilestone && <Diamond className="h-3 w-3 shrink-0 text-amber-500" aria-label="Milestone" />}
         <span className="flex-1">{task.name}</span>
       </div>

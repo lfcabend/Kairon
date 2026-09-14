@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { GanttView } from "./GanttView";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import { TaskBoard } from "./TaskBoard";
 import { TaskFormDialog } from "./TaskFormDialog";
@@ -65,6 +66,7 @@ export function ProjectDetailPage() {
           <TabsList>
             <TabsTrigger value="tree">List / Tree</TabsTrigger>
             <TabsTrigger value="board">Board</TabsTrigger>
+            <TabsTrigger value="gantt">Gantt</TabsTrigger>
           </TabsList>
           <Button size="sm" onClick={() => setCreatingTask(true)}>
             + New task
@@ -79,6 +81,9 @@ export function ProjectDetailPage() {
           ) : (
             <TaskBoard projectId={id} tasks={tasks} />
           )}
+        </TabsContent>
+        <TabsContent value="gantt">
+          <GanttView projectId={id} />
         </TabsContent>
       </Tabs>
 

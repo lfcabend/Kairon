@@ -47,12 +47,11 @@ class ProjectsFlowIntegrationTest {
     @Autowired
     ProjectTaskRepository taskRepo;
 
-    private String register() throws Exception {
+    private String register(String email) throws Exception {
         MvcResult res = mvc.perform(post("/api/v1/auth/register")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"email":"projects-flow@example.com","password":"correct horse battery",
-                                 "displayName":"Flow","timezone":"Europe/Amsterdam"}"""))
+                        .content("{\"email\":\"" + email + "\",\"password\":\"correct horse battery\","
+                                + "\"displayName\":\"Flow\",\"timezone\":\"Europe/Amsterdam\"}"))
                 .andExpect(status().isCreated())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.accessToken");
@@ -69,10 +68,13 @@ class ProjectsFlowIntegrationTest {
     }
 
     private String createProject(String token, String name, String categoryId) throws Exception {
+        String body = categoryId == null
+                ? "{\"name\":\"" + name + "\"}"
+                : "{\"name\":\"" + name + "\",\"categoryId\":\"" + categoryId + "\"}";
         MvcResult res = mvc.perform(post("/api/v1/projects")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"name\":\"" + name + "\",\"categoryId\":\"" + categoryId + "\"}"))
+                        .content(body))
                 .andExpect(status().isCreated())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.id");
@@ -93,7 +95,7 @@ class ProjectsFlowIntegrationTest {
 
     @Test
     void categoriesProjectsAndTasksEndToEnd() throws Exception {
-        String token = register();
+        String token = register("projects-flow@example.com");
         String category = createCategory(token, "Home");
 
         String projectA = createProject(token, "Alpha", category);
@@ -151,5 +153,54 @@ class ProjectsFlowIntegrationTest {
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.categoryId").value(org.hamcrest.Matchers.nullValue()));
+    }
+
+    /**
+     * M5's addition (docs/milestones/M5-gantt-dependencies.md §7): an FS edge
+     * between two tasks, the reverse edge rejected as a cycle, then deleting the
+     * predecessor task hard-deletes the edge too (D5).
+     */
+    @Test
+    void taskDependenciesEndToEnd() throws Exception {
+        String token = register("projects-deps-flow@example.com");
+        String project = createProject(token, "Gamma", null);
+        String predecessor = createTask(token, project, "Design", null);
+        String successor = createTask(token, project, "Build", null);
+
+        MvcResult created = mvc.perform(post("/api/v1/tasks/" + successor + "/dependencies")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"predecessorId\":\"" + predecessor + "\"}"))
+                .andExpect(status().isCreated())
+                .andReturn();
+        String dependencyId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
+
+        mvc.perform(get("/api/v1/projects/" + project + "/dependencies")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].predecessorId").value(predecessor))
+                .andExpect(jsonPath("$[0].successorId").value(successor));
+
+        // The reverse edge would close a cycle (D3).
+        mvc.perform(post("/api/v1/tasks/" + predecessor + "/dependencies")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"predecessorId\":\"" + successor + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        // Deleting the predecessor task hard-deletes the edge (D5) — no dangling reference remains.
+        mvc.perform(delete("/api/v1/tasks/" + predecessor)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNoContent());
+
+        mvc.perform(get("/api/v1/projects/" + project + "/dependencies")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+
+        // The dependency id itself is gone too, not just absent from the list.
+        mvc.perform(delete("/api/v1/dependencies/" + dependencyId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
     }
 }

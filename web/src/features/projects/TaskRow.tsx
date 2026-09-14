@@ -13,7 +13,7 @@ import { Progress } from "@/components/ui/progress";
 import type { ProjectTask, ProjectTaskStatus } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-const STATUS_LABEL: Record<ProjectTaskStatus, string> = {
+export const STATUS_LABEL: Record<ProjectTaskStatus, string> = {
   TODO: "To do",
   IN_PROGRESS: "In progress",
   BLOCKED: "Blocked",

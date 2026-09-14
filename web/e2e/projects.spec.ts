@@ -82,3 +82,44 @@ test("create a category, projects and tasks, work the board and tree, then delet
   await expect(page).toHaveURL(/\/projects$/);
   await expect(page.getByText("Garage cleanup")).not.toBeVisible();
 });
+
+test("M5: add a dependency between two tasks and see it on the Gantt tab", async ({ page }) => {
+  await login(page);
+  await page.goto("/kairon/projects");
+
+  await page.getByRole("button", { name: "+ New project" }).click();
+  await page.getByLabel("Name").fill("Home network overhaul");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await page.getByText("Home network overhaul").click();
+
+  const quickAdd = page.getByLabel("Add a task");
+  await quickAdd.fill("Design");
+  await quickAdd.press("Enter");
+  await expect(page.getByText("Design")).toBeVisible();
+  await quickAdd.fill("Build");
+  await quickAdd.press("Enter");
+  await expect(page.getByText("Build")).toBeVisible();
+
+  // Give both tasks dates via the edit dialog so they render as Gantt bars.
+  async function setDates(taskName: string, start: string, end: string) {
+    await page.getByTestId("task-row").filter({ hasText: taskName }).getByLabel("More actions").click();
+    await page.getByRole("menuitem", { name: "Edit" }).click();
+    await page.getByLabel("Planned start").fill(start);
+    await page.getByLabel("Planned end").fill(end);
+    if (taskName === "Build") {
+      // The "Depends on" section only appears once the task exists — add Design as a predecessor here.
+      await page.getByLabel("Add dependency").click();
+      await page.getByRole("option", { name: "Design" }).click();
+    }
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+  }
+
+  await setDates("Design", "2026-09-01", "2026-09-10");
+  await setDates("Build", "2026-09-11", "2026-09-20");
+
+  await page.getByRole("tab", { name: "Gantt" }).click();
+  await expect(page.getByText("Design").first()).toBeVisible();
+  await expect(page.getByText("Build").first()).toBeVisible();
+  await expect(page.getByText("Unscheduled")).not.toBeVisible();
+});

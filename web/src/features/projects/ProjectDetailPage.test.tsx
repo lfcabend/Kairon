@@ -53,6 +53,20 @@ test("Tabs switch between tree and board without losing task state", async () =>
   expect(await screen.findByTestId("task-row")).toHaveTextContent("Run new drops");
 });
 
+test("the edit button on a board card opens the task form", async () => {
+  const user = userEvent.setup();
+  const project = seedProjects([{ name: "Home network overhaul" }])[0];
+  seedProjectTasks([{ projectId: project.id, name: "Run new drops" }]);
+  renderApp(`/projects/${project.id}`);
+
+  await user.click(await screen.findByRole("tab", { name: "Board" }));
+  await screen.findByTestId("task-card");
+  await user.click(screen.getByRole("button", { name: "Edit task" }));
+
+  expect(await screen.findByRole("heading", { name: "Edit task" })).toBeInTheDocument();
+  expect(screen.getByLabelText("Name")).toHaveValue("Run new drops");
+});
+
 test("the quick-add row creates a top-level task", async () => {
   const user = userEvent.setup();
   const project = seedProjects([{ name: "Home network overhaul" }])[0];

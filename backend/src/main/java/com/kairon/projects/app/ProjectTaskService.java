@@ -14,11 +14,13 @@ import com.kairon.common.security.UserId;
 import com.kairon.projects.api.ProjectTaskPage;
 import com.kairon.projects.api.ProjectTaskView;
 import com.kairon.projects.api.ProjectsApi;
+import com.kairon.projects.app.TaskResolution.TaskAndProject;
 import com.kairon.projects.domain.Project;
 import com.kairon.projects.domain.ProjectTask;
 import com.kairon.projects.domain.ProjectTaskStatus;
 import com.kairon.projects.repo.ProjectRepository;
 import com.kairon.projects.repo.ProjectTaskRepository;
+import com.kairon.projects.repo.TaskDependencyRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,13 +47,15 @@ public class ProjectTaskService implements ProjectsApi {
 
     private final ProjectTaskRepository tasks;
     private final ProjectRepository projects;
+    private final TaskDependencyRepository dependencies;
     private final ProjectsProperties properties;
     private final Clock clock;
 
     public ProjectTaskService(ProjectTaskRepository tasks, ProjectRepository projects,
-            ProjectsProperties properties, Clock clock) {
+            TaskDependencyRepository dependencies, ProjectsProperties properties, Clock clock) {
         this.tasks = tasks;
         this.projects = projects;
+        this.dependencies = dependencies;
         this.properties = properties;
         this.clock = clock;
     }
@@ -101,7 +105,7 @@ public class ProjectTaskService implements ProjectsApi {
 
     @Transactional
     public ProjectTaskView patch(UserId userId, UUID taskId, PatchCommand command) {
-        TaskAndProject resolved = requireTaskWithProject(userId, taskId);
+        TaskAndProject resolved = TaskResolution.requireTaskWithProject(tasks, projects, userId, taskId);
         ProjectTask task = resolved.task();
         Project project = resolved.project();
         if (command.expectedVersion() != null && command.expectedVersion() != task.getVersion()) {
@@ -177,14 +181,16 @@ public class ProjectTaskService implements ProjectsApi {
 
     @Transactional
     public void delete(UserId userId, UUID taskId) {
-        TaskAndProject resolved = requireTaskWithProject(userId, taskId);
+        TaskAndProject resolved = TaskResolution.requireTaskWithProject(tasks, projects, userId, taskId);
         ProjectTask task = resolved.task();
         Project project = resolved.project();
         task.softDelete(clock.instant());
+        dependencies.deleteAllForTask(taskId);
         int cascaded = 0;
         for (ProjectTask child : tasks
                 .findByProjectIdAndParentTaskIdAndDeletedAtIsNullOrderByPositionAsc(project.getId(), taskId)) {
             child.softDelete(clock.instant());
+            dependencies.deleteAllForTask(child.getId());
             cascaded++;
         }
         log.info("Soft-deleted task {} userId={} projectId={}, cascaded to {} subtask(s)",
@@ -216,30 +222,6 @@ public class ProjectTaskService implements ProjectsApi {
                             projectId, userId.value());
                     return ApiException.notFound("Project not found.");
                 });
-    }
-
-    private record TaskAndProject(ProjectTask task, Project project) {
-    }
-
-    /**
-     * Resolves a task with no project context yet — PATCH/DELETE /tasks/{taskId}
-     * carry no projectId in the URL, so the task is looked up globally first and
-     * then authorized via its own project. A foreign task's owning project won't
-     * resolve either, so both cases surface the same "Task not found." (no
-     * existence leak, docs/DESIGN.md §3.2).
-     */
-    private TaskAndProject requireTaskWithProject(UserId userId, UUID taskId) {
-        ProjectTask task = tasks.findByIdAndDeletedAtIsNull(taskId)
-                .orElseThrow(() -> {
-                    log.debug("Task {} not found", taskId);
-                    return ApiException.notFound("Task not found.");
-                });
-        Project project = projects.findByIdAndUserIdAndDeletedAtIsNull(task.getProjectId(), userId.value())
-                .orElseThrow(() -> {
-                    log.debug("Task {} not visible to userId={} (foreign project)", taskId, userId.value());
-                    return ApiException.notFound("Task not found.");
-                });
-        return new TaskAndProject(task, project);
     }
 
     /** Depth rule (§4.4): the referenced parent must exist in this project and itself be top-level. */

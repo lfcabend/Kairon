@@ -17,6 +17,7 @@ import com.kairon.projects.domain.Project;
 import com.kairon.projects.domain.ProjectTask;
 import com.kairon.projects.repo.ProjectRepository;
 import com.kairon.projects.repo.ProjectTaskRepository;
+import com.kairon.projects.repo.TaskDependencyRepository;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -42,13 +43,17 @@ class ProjectTaskServiceTest {
     @Mock
     ProjectRepository projects;
 
+    @Mock
+    TaskDependencyRepository dependencies;
+
     ProjectTaskService service;
 
     private Project project;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectTaskService(tasks, projects, new ProjectsProperties(0), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ProjectTaskService(tasks, projects, dependencies, new ProjectsProperties(0),
+                Clock.fixed(NOW, ZoneOffset.UTC));
         project = Project.create(USER.value(), null, "Project", null, "#6366f1", null, 100, null, null);
         org.mockito.Mockito.lenient().when(projects.findByIdAndUserIdAndDeletedAtIsNull(project.getId(), USER.value()))
                 .thenReturn(Optional.of(project));
@@ -178,6 +183,8 @@ class ProjectTaskServiceTest {
 
         assertThat(task.isDeleted()).isTrue();
         assertThat(child.isDeleted()).isTrue();
+        org.mockito.Mockito.verify(dependencies).deleteAllForTask(task.getId());
+        org.mockito.Mockito.verify(dependencies).deleteAllForTask(child.getId());
     }
 
     @Test

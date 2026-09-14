@@ -5,9 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Current state
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
-journal), and M4 (projects core) are implemented.** The `docs/` (`DESIGN.md`, `DATA_MODEL.md`,
-`ROADMAP.md`, `milestones/`, `adr/`) remain the specification — treat them as
-the source of truth and keep them updated when decisions change.
+journal), M4 (projects core), and M5 (Gantt & dependencies) are implemented.**
+The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
+remain the specification — treat them as the source of truth and keep them
+updated when decisions change.
 
 - `backend/` — Spring Boot app. Modules under `com.kairon`: `common` (shared kernel:
   `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
@@ -27,10 +28,16 @@ the source of truth and keep them updated when decisions change.
   `ProjectView`/`ProjectTaskView`/`ProjectPage`/`ProjectTaskPage`, `domain`
   `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
   `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
-  `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query), `app`
+  `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query)/
+  `TaskDependencyRepository` (M5), `app`
   `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
-  `ProjectsApi`)/`ProjectsProperties`/`SortParsing`, `config`, `web`
-  `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`), and
+  `ProjectsApi`)/`ProjectsProperties`/`SortParsing`/`TaskResolution` (M5, the
+  shared "resolve a task with no projectId in the URL" helper extracted out of
+  `ProjectTaskService`)/`TaskDependencyService`/`TaskDependencyView`/
+  `TaskDependencyMapper` (M5 — dependency CRUD incl. cycle rejection and the
+  computed `violatesConstraint` flag), `config`, `web`
+  `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`/
+  `TaskDependencyController` (M5)), and
   `meta` (the M0 `PingController`; `DeployInfoContributor`, an `InfoContributor`
   adding the running image ref + deploy time to `/actuator/info` for the About
   page — the commit and build time are already there via `BuildProperties`).
@@ -38,7 +45,10 @@ the source of truth and keep them updated when decisions change.
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
   generated `content_tsv` + GIN index), `V004__projects.sql`
   (`project_category` + `project` + `project_task`, plus the FK M2 left as a
-  bare `uuid` on `todo_item.source_project_task_id`).
+  bare `uuid` on `todo_item.source_project_task_id`), `V005__task_dependencies.sql`
+  (`task_dependency` — predecessor/successor edges, cycle-rejected in the
+  service, no soft delete; a task's soft delete or a project's cascade also
+  hard-deletes the edges touching it).
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -49,9 +59,13 @@ the source of truth and keep them updated when decisions change.
   `journalKeys`); projects under `src/features/projects/` (`ProjectListPage`
   (category sections + `ProjectPriorityList` for "Sort by: Priority")/
   `ProjectCard`/`ProjectFormDialog`/`CategoryManagerDialog`/`ProjectDetailPage`
-  (Tabs: `TaskTree` ⇄ `TaskBoard`)/`TaskRow`/`TaskQuickAdd`/`TaskFormDialog`/
-  `TaskCard`, hooks in `useProjectCategories.ts`/`useProjects.ts`/
-  `useProjectTasks.ts` + `projectKeys`); the About page under
+  (Tabs: `TaskTree` ⇄ `TaskBoard` ⇄ `GanttView`, M5)/`TaskRow`/`TaskQuickAdd`/
+  `TaskFormDialog` (edit mode embeds `TaskDependencySection`, M5's "Depends on"
+  picker)/`TaskCard`/`GanttView` (M5 — `gantt-task-react` bars/milestones/
+  dependency arrows/progress fill, an "Unscheduled" panel for undated tasks, a
+  soft FS-violation warning list; dragging a bar issues the same whole-form
+  `PATCH` as the form), hooks in `useProjectCategories.ts`/`useProjects.ts`/
+  `useProjectTasks.ts`/`useTaskDependencies.ts` (M5) + `projectKeys`); the About page under
   `src/features/about/` (`AboutPage`, rendering `/actuator/info` — build
   version/commit/build-time + the running image ref/deploy time — via
   `about.ts`, which calls that endpoint directly rather than through
@@ -68,7 +82,7 @@ the source of truth and keep them updated when decisions change.
   always rolls the Deployment, even with no other change) and a `GIT_COMMIT`
   Docker build arg (wired from `Taskfile.yml`'s `image`/`image-push` tasks).
 
-Next milestone is **M5 — Gantt & dependencies** (see `docs/ROADMAP.md`).
+Next milestone is **M6 — Today** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

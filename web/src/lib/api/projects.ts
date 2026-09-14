@@ -2,6 +2,7 @@ import type {
   CreateProjectBody,
   CreateProjectCategoryBody,
   CreateProjectTaskBody,
+  CreateTaskDependencyBody,
   PatchProjectBody,
   PatchProjectCategoryBody,
   PatchProjectTaskBody,
@@ -10,6 +11,7 @@ import type {
   ProjectTask,
   ProjectTasksPage,
   ProjectsPage,
+  TaskDependency,
 } from "./types";
 
 import { apiFetch } from "./client";
@@ -82,4 +84,12 @@ export const projectsApi = {
       method: "POST",
       body: { parentTaskId, orderedIds },
     }),
+
+  getDependencies: (projectId: string) =>
+    apiFetch<TaskDependency[]>(`/projects/${projectId}/dependencies`),
+
+  createDependency: (taskId: string, body: CreateTaskDependencyBody) =>
+    apiFetch<TaskDependency>(`/tasks/${taskId}/dependencies`, { method: "POST", body }),
+
+  deleteDependency: (id: string) => apiFetch<void>(`/dependencies/${id}`, { method: "DELETE" }),
 };

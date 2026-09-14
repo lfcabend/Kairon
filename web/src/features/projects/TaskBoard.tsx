@@ -20,6 +20,7 @@ import type { ProjectTask, ProjectTaskStatus } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { TaskCard, TaskCardOverlay } from "./TaskCard";
+import { TaskFormDialog } from "./TaskFormDialog";
 import { usePatchTask, useReorderTasks } from "./useProjectTasks";
 
 interface Props {
@@ -69,6 +70,7 @@ export function TaskBoard({ projectId, tasks }: Props) {
   const reorderTasks = useReorderTasks(projectId);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overStatus, setOverStatus] = useState<ProjectTaskStatus | null>(null);
+  const [editing, setEditing] = useState<ProjectTask | undefined>(undefined);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -77,6 +79,8 @@ export function TaskBoard({ projectId, tasks }: Props) {
 
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const nameById = new Map(tasks.map((t) => [t.id, t.name]));
+  const parentIds = new Set(tasks.filter((t) => t.parentTaskId).map((t) => t.parentTaskId));
+  const parentCandidates = tasks.filter((t) => t.parentTaskId == null && !parentIds.has(t.id));
 
   const columnTasks = (status: ProjectTaskStatus) =>
     tasks.filter((t) => t.status === status).sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
@@ -127,44 +131,56 @@ export function TaskBoard({ projectId, tasks }: Props) {
   const activeTask = activeId ? byId.get(activeId) : undefined;
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={collisionDetectionStrategy}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
-      onDragCancel={() => {
-        setActiveId(null);
-        setOverStatus(null);
-      }}
-    >
-      <div className="grid grid-cols-4 items-stretch gap-3 overflow-x-auto">
-        {COLUMNS.map(({ status, label }) => (
-          <Column key={status} status={status} label={label} isDropTarget={activeId !== null && overStatus === status}>
-            <SortableContext
-              items={columnTasks(status).map((t) => t.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              {columnTasks(status).map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  parentName={task.parentTaskId ? nameById.get(task.parentTaskId) : undefined}
-                />
-              ))}
-            </SortableContext>
-          </Column>
-        ))}
-      </div>
-      <DragOverlay>
-        {activeTask ? (
-          <TaskCardOverlay
-            task={activeTask}
-            parentName={activeTask.parentTaskId ? nameById.get(activeTask.parentTaskId) : undefined}
-          />
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={collisionDetectionStrategy}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={() => {
+          setActiveId(null);
+          setOverStatus(null);
+        }}
+      >
+        <div className="grid grid-cols-4 items-stretch gap-3 overflow-x-auto">
+          {COLUMNS.map(({ status, label }) => (
+            <Column key={status} status={status} label={label} isDropTarget={activeId !== null && overStatus === status}>
+              <SortableContext
+                items={columnTasks(status).map((t) => t.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                {columnTasks(status).map((task) => (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    parentName={task.parentTaskId ? nameById.get(task.parentTaskId) : undefined}
+                    onEdit={() => setEditing(task)}
+                  />
+                ))}
+              </SortableContext>
+            </Column>
+          ))}
+        </div>
+        <DragOverlay>
+          {activeTask ? (
+            <TaskCardOverlay
+              task={activeTask}
+              parentName={activeTask.parentTaskId ? nameById.get(activeTask.parentTaskId) : undefined}
+            />
+          ) : null}
+        </DragOverlay>
+      </DndContext>
+      {editing && (
+        <TaskFormDialog
+          open={Boolean(editing)}
+          onOpenChange={(open) => !open && setEditing(undefined)}
+          projectId={projectId}
+          task={editing}
+          parentCandidates={parentCandidates}
+        />
+      )}
+    </>
   );
 }
 

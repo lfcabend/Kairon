@@ -7,6 +7,7 @@ import type {
   Project,
   ProjectCategory,
   ProjectTask,
+  TaskDependency,
   TodoItem,
 } from "@/lib/api/types";
 
@@ -137,6 +138,8 @@ let projects: ProjectRow[] = [];
 let projectSeq = 0;
 let tasks: TaskRow[] = [];
 let taskSeq = 0;
+let dependencies: TaskDependency[] = [];
+let dependencySeq = 0;
 
 export function resetProjectsStore() {
   categories = [];
@@ -145,6 +148,38 @@ export function resetProjectsStore() {
   projectSeq = 0;
   tasks = [];
   taskSeq = 0;
+  dependencies = [];
+  dependencySeq = 0;
+}
+
+export function seedTaskDependencies(rows: Partial<TaskDependency>[]): TaskDependency[] {
+  const created = rows.map(makeDependency);
+  dependencies.push(...created);
+  return created;
+}
+
+function makeDependency(partial: Partial<TaskDependency>): TaskDependency {
+  dependencySeq += 1;
+  return {
+    id: partial.id ?? `dependency-${dependencySeq}`,
+    predecessorId: partial.predecessorId ?? "",
+    successorId: partial.successorId ?? "",
+    type: partial.type ?? "FS",
+    lagDays: partial.lagDays ?? 0,
+    violatesConstraint: false,
+    createdAt: partial.createdAt ?? new Date(2026, 0, 1, 0, 0, dependencySeq).toISOString(),
+  };
+}
+
+/** Mirrors the backend's D13 formula: an `FS` edge violates when the successor starts too early. */
+function withViolatesConstraint(edge: TaskDependency): TaskDependency {
+  if (edge.type !== "FS") return { ...edge, violatesConstraint: false };
+  const predecessor = tasks.find((t) => t.id === edge.predecessorId);
+  const successor = tasks.find((t) => t.id === edge.successorId);
+  if (!predecessor?.plannedEnd || !successor?.plannedStart) return { ...edge, violatesConstraint: false };
+  const predecessorEnd = new Date(predecessor.plannedEnd);
+  predecessorEnd.setDate(predecessorEnd.getDate() + edge.lagDays);
+  return { ...edge, violatesConstraint: new Date(successor.plannedStart) < predecessorEnd };
 }
 
 export function seedCategories(rows: Partial<ProjectCategory>[]): CategoryRow[] {
@@ -389,7 +424,16 @@ const projectHandlers = [
     if (!authed(request)) return problem(401, "Authentication required.");
     const row = tasks.find((t) => t.id === params.id);
     if (row) row.removed = true;
-    for (const t of tasks) if (t.parentTaskId === params.id) t.removed = true;
+    const cascadedIds = [params.id as string];
+    for (const t of tasks) {
+      if (t.parentTaskId === params.id) {
+        t.removed = true;
+        cascadedIds.push(t.id);
+      }
+    }
+    dependencies = dependencies.filter(
+      (d) => !cascadedIds.includes(d.predecessorId) && !cascadedIds.includes(d.successorId),
+    );
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -408,6 +452,55 @@ const projectHandlers = [
       tasks.find((t) => t.id === id)!.position = (i + 1) * 100;
     });
     return HttpResponse.json(byTaskPosition(siblings));
+  }),
+
+  http.get(/\/api\/v1\/projects\/([^/]+)\/dependencies$/, ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const projectId = params[0] as string;
+    const taskIds = new Set(liveTasks().filter((t) => t.projectId === projectId).map((t) => t.id));
+    const edges = dependencies.filter((d) => taskIds.has(d.predecessorId)).map(withViolatesConstraint);
+    return HttpResponse.json(edges);
+  }),
+
+  http.post(/\/api\/v1\/tasks\/([^/]+)\/dependencies$/, async ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const successorId = params[0] as string;
+    const successor = tasks.find((t) => t.id === successorId);
+    if (!successor) return problem(404, "Task not found.");
+    const body = (await request.json()) as { predecessorId: string; type?: string; lagDays?: number };
+    if (body.predecessorId === successorId) return problem(400, "A task can't depend on itself.");
+    const predecessor = tasks.find((t) => t.id === body.predecessorId && t.projectId === successor.projectId);
+    if (!predecessor) return problem(400, "Predecessor task not found in this project.");
+    if (dependencies.some((d) => d.predecessorId === body.predecessorId && d.successorId === successorId)) {
+      return problem(409, "This dependency already exists.");
+    }
+    // DFS from the new edge's successor — if the predecessor is already reachable, it's a cycle (D3).
+    const adjacency = new Map<string, string[]>();
+    for (const d of dependencies) adjacency.set(d.predecessorId, [...(adjacency.get(d.predecessorId) ?? []), d.successorId]);
+    const stack = [successorId];
+    const visited = new Set<string>();
+    while (stack.length > 0) {
+      const current = stack.pop()!;
+      if (current === body.predecessorId) return problem(400, "This would create a circular dependency.");
+      if (visited.has(current)) continue;
+      visited.add(current);
+      stack.push(...(adjacency.get(current) ?? []));
+    }
+    const created = makeDependency({
+      predecessorId: body.predecessorId,
+      successorId,
+      type: (body.type as TaskDependency["type"]) ?? "FS",
+      lagDays: body.lagDays ?? 0,
+    });
+    dependencies.push(created);
+    return HttpResponse.json(withViolatesConstraint(created), { status: 201 });
+  }),
+
+  http.delete("/kairon/api/v1/dependencies/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!dependencies.some((d) => d.id === params.id)) return problem(404, "Dependency not found.");
+    dependencies = dependencies.filter((d) => d.id !== params.id);
+    return new HttpResponse(null, { status: 204 });
   }),
 ];
 

@@ -52,11 +52,14 @@ class ProjectServiceTest {
     @Mock
     ProjectTaskRepository tasks;
 
+    @Mock
+    com.kairon.projects.repo.TaskDependencyRepository dependencies;
+
     ProjectService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectService(projects, categories, tasks, Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new ProjectService(projects, categories, tasks, dependencies, Clock.fixed(NOW, ZoneOffset.UTC));
     }
 
     private Project rankedProject(int priorityRank) {
@@ -199,6 +202,8 @@ class ProjectServiceTest {
         assertThat(project.isDeleted()).isTrue();
         assertThat(t1.isDeleted()).isTrue();
         assertThat(t2.isDeleted()).isTrue();
+        org.mockito.Mockito.verify(dependencies).deleteAllForTask(t1.getId());
+        org.mockito.Mockito.verify(dependencies).deleteAllForTask(t2.getId());
     }
 
     @Test

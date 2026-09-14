@@ -89,11 +89,13 @@ Prove the whole pipeline with almost no product in it.
 
 ## M5 — Gantt & dependencies
 
-- [ ] `task_dependency` schema (`V005`); cycle rejection in the service.
-- [ ] `GET /projects/{id}/gantt` returns tasks + edges + project window + today.
-- [ ] Web: Gantt (`gantt-task-react` or custom SVG) — bars, milestone diamonds,
-      dependency arrows, today line, progress fill; drag bar ends → `PATCH`.
-- [ ] Soft warning when an `FS` successor starts before its predecessor ends.
+- [x] `task_dependency` schema (`V005`); cycle rejection in the service.
+- [x] `GET /projects/{id}/dependencies` returns edges with a computed
+      `violatesConstraint` flag (D7 — no combined `/gantt` endpoint; the web
+      app composes it with the already-fetched project window and task list).
+- [x] Web: Gantt (`gantt-task-react`) — bars, milestone diamonds, dependency
+      arrows, today line, progress fill; drag bar ends → `PATCH`.
+- [x] Soft warning when an `FS` successor starts before its predecessor ends.
 
 ## M6 — Today
 

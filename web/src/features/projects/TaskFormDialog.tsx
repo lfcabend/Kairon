@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { ProjectTask, ProjectTaskStatus } from "@/lib/api/types";
 
+import { TaskDependencySection } from "./TaskDependencySection";
 import { useCreateTask, usePatchTask } from "./useProjectTasks";
 
 const NO_PARENT = "none";
@@ -244,6 +245,8 @@ export function TaskFormDialog({ open, onOpenChange, projectId, task, parentCand
               )}
             </div>
           )}
+
+          {task && <TaskDependencySection projectId={projectId} task={task} />}
 
           <DialogFooter>
             <Button type="submit" disabled={isSubmitting}>
