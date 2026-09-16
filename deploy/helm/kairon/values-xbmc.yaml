@@ -25,7 +25,7 @@ ingress:
   className: traefik
   host: xbmc              # bare LAN hostname; resolves to 192.168.2.3
   extraHosts:
-    - k3s-server.tail9ae0e9.ts.net   # Tailscale Funnel hostname (public internet access)
+    - xbmc.tail9ae0e9.ts.net   # Tailscale Funnel hostname (public internet access)
   tls:
     enabled: false
 
