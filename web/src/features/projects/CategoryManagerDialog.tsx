@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { ProjectCategory } from "@/lib/api/types";
+import { pickUniqueColor } from "@/lib/color";
 
 import { useProjectsByPriority } from "./useProjects";
 import {
@@ -48,7 +49,13 @@ export function CategoryManagerDialog({ open, onOpenChange, categories }: Props)
   const deleteCategory = useDeleteCategory();
   const { data: projects = [] } = useProjectsByPriority();
   const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState(() => pickUniqueColor(categories.map((c) => c.color)));
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) setNewColor(pickUniqueColor(categories.map((c) => c.color)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const sorted = [...categories].sort((a, b) => a.position - b.position);
 
@@ -110,10 +117,18 @@ export function CategoryManagerDialog({ open, onOpenChange, categories }: Props)
               e.preventDefault();
               const name = newName.trim();
               if (!name) return;
-              create.mutate({ name });
+              create.mutate({ name, color: newColor });
               setNewName("");
+              setNewColor(pickUniqueColor([...categories.map((c) => c.color), newColor]));
             }}
           >
+            <input
+              type="color"
+              aria-label="New category color"
+              className="h-9 w-9 shrink-0 rounded border border-input bg-background"
+              value={newColor}
+              onChange={(e) => setNewColor(e.target.value)}
+            />
             <Input
               value={newName}
               onChange={(e) => setNewName(e.target.value)}

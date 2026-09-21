@@ -172,6 +172,7 @@ export function ProjectListPage() {
         onOpenChange={setFormOpen}
         categories={categories}
         defaultCategoryId={formDefaultCategoryId}
+        existingColors={projects.map((p) => p.color)}
       />
       <CategoryManagerDialog open={managingCategories} onOpenChange={setManagingCategories} categories={categories} />
     </div>

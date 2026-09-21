@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Project, ProjectCategory, ProjectSize, ProjectStatus } from "@/lib/api/types";
+import { pickUniqueColor } from "@/lib/color";
 
 import { useCreateProject, usePatchProject } from "./useProjects";
 
@@ -40,13 +41,22 @@ interface Props {
   project?: Project;
   categories: ProjectCategory[];
   defaultCategoryId?: string;
+  /** Other projects' colors, so a new project doesn't default to the same color as one already in use. */
+  existingColors?: string[];
 }
 
 const STATUS_OPTIONS: ProjectStatus[] = ["PLANNING", "ACTIVE", "ON_HOLD", "DONE", "ARCHIVED"];
 const SIZE_OPTIONS: ProjectSize[] = ["XS", "S", "M", "L", "XL"];
 
 /** Create/edit dialog (D18: no priority field — priority only changes by dragging). */
-export function ProjectFormDialog({ open, onOpenChange, project, categories, defaultCategoryId }: Props) {
+export function ProjectFormDialog({
+  open,
+  onOpenChange,
+  project,
+  categories,
+  defaultCategoryId,
+  existingColors,
+}: Props) {
   const createProject = useCreateProject();
   const patchProject = usePatchProject();
 
@@ -58,7 +68,7 @@ export function ProjectFormDialog({ open, onOpenChange, project, categories, def
       description: project?.description ?? "",
       status: project?.status ?? "PLANNING",
       size: project?.size ?? NO_SIZE,
-      color: project?.color ?? "#6366f1",
+      color: project?.color ?? pickUniqueColor(existingColors ?? []),
       startDate: project?.startDate ?? "",
       endDate: project?.endDate ?? "",
     },
@@ -72,7 +82,7 @@ export function ProjectFormDialog({ open, onOpenChange, project, categories, def
         description: project?.description ?? "",
         status: project?.status ?? "PLANNING",
         size: project?.size ?? NO_SIZE,
-        color: project?.color ?? "#6366f1",
+        color: project?.color ?? pickUniqueColor(existingColors ?? []),
         startDate: project?.startDate ?? "",
         endDate: project?.endDate ?? "",
       });
