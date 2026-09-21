@@ -9,6 +9,17 @@ import { projectKeys } from "./projectKeys";
 
 const byPosition = (a: ProjectTask, b: ProjectTask) => a.position - b.position;
 
+/**
+ * Every `/planning/today` query, for any date — invalidated after any task
+ * create/patch/delete, since each can change which tasks are due/overdue
+ * (Today's `dueProjectTasks`). The default 30s `staleTime` (queryClient.ts)
+ * otherwise leaves Today showing a stale snapshot if you edit a task's dates
+ * elsewhere and switch back within that window.
+ */
+function invalidateTodayViews(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["planning", "today"] });
+}
+
 /** Fetches the whole project's tree (D1) and assembles it into levels for the tree/board views. */
 export function useProjectTasks(projectId: string) {
   const query = useQuery({
@@ -87,6 +98,7 @@ export function useCreateTask(projectId: string) {
             content: data.content.map((t) => (t.id === ctx?.tempId ? created : t)),
           },
       );
+      invalidateTodayViews(qc);
     },
   });
 }
@@ -120,6 +132,7 @@ export function usePatchTask(projectId: string) {
         projectKeys.tasks(projectId),
         (data) => data && { ...data, content: data.content.map((t) => (t.id === updated.id ? updated : t)) },
       );
+      invalidateTodayViews(qc);
     },
   });
 }
@@ -130,6 +143,7 @@ export function useDeleteTask(projectId: string) {
     mutationFn: (id: string) => projectsApi.removeTask(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: projectKeys.tasks(projectId) });
+      invalidateTodayViews(qc);
     },
   });
 }

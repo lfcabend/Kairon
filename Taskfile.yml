@@ -52,6 +52,13 @@ vars:
   PG_NAMESPACE: '{{.PG_NAMESPACE | default "postgres"}}'
   PG_SVC: '{{.PG_SVC | default "postgresql"}}'
   PG_LOCAL_PORT: '{{.PG_LOCAL_PORT | default "5432"}}'
+  # The bitnami postgresql chart's StatefulSet pod, for `task e2e`'s admin
+  # (superuser) psql calls to create/drop its own throwaway database.
+  PG_POD: '{{.PG_POD | default (printf "%s-0" .PG_SVC)}}'
+  # Role `task e2e` connects as (matches deploy/helm/kairon/values-local.yaml's
+  # database.username/password — a fixed local-only credential, not sensitive).
+  DB_USER: '{{.DB_USER | default "kairon"}}'
+  DB_PASSWORD: '{{.DB_PASSWORD | default "kairon"}}'
   # Local port for `task app-forward` (the in-cluster kairon Service is :8080).
   APP_LOCAL_PORT: '{{.APP_LOCAL_PORT | default "8080"}}'
   # go-task runs cmds through a built-in POSIX shell; on Windows a relative
@@ -143,6 +150,29 @@ tasks:
     cmds:
       - "{{.GW}} test"
       - "{{.GW}} :web:testWeb"
+
+  e2e:
+    desc: >-
+      Run the Playwright suite (web/e2e) end-to-end: creates a throwaway
+      "kairon_e2e" database on the in-cluster Postgres, runs the backend
+      (local profile) against it, runs the suite, then tears both down —
+      even on failure. Never touches the deployed release or its real data.
+      Runs as a real bash script (scripts/e2e.sh) rather than go-task's
+      built-in POSIX interpreter, which doesn't reliably run `trap`/background
+      jobs, so needs `bash` on PATH (present via Git for Windows).
+    vars:
+      E2E_DB: '{{.E2E_DB | default "kairon_e2e"}}'
+    env:
+      PG_NAMESPACE: "{{.PG_NAMESPACE}}"
+      PG_SVC: "{{.PG_SVC}}"
+      PG_POD: "{{.PG_POD}}"
+      PG_LOCAL_PORT: "{{.PG_LOCAL_PORT}}"
+      APP_LOCAL_PORT: "{{.APP_LOCAL_PORT}}"
+      DB_USER: "{{.DB_USER}}"
+      DB_PASSWORD: "{{.DB_PASSWORD}}"
+      E2E_DB: "{{.E2E_DB}}"
+    cmds:
+      - bash scripts/e2e.sh
 
   build:
     desc: Full build — SPA + backend + all checks.

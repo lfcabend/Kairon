@@ -54,9 +54,16 @@ test("create a category, projects and tasks, work the board and tree, then delet
   await quickAdd.press("Enter");
   await expect(page.getByText("Order cabinets")).toBeVisible();
 
+  // A task's first subtask has no inline "Expand" toggle yet (nothing to
+  // expand) — it's created via the "+ New task" dialog's parent picker,
+  // which is what puts the toggle there for next time.
+  await page.getByRole("button", { name: "+ New task" }).click();
+  await page.getByLabel("Name").fill("Measure the kitchen");
+  await page.getByLabel("Parent task").click();
+  await page.getByRole("option", { name: "Order cabinets" }).click();
+  await page.getByRole("button", { name: "Create task" }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
   await page.getByRole("button", { name: "Expand" }).click();
-  await page.getByLabel("Add a task").last().fill("Measure the kitchen");
-  await page.getByLabel("Add a task").last().press("Enter");
   await expect(page.getByText("Measure the kitchen")).toBeVisible();
 
   // Board: drag the task to In progress.

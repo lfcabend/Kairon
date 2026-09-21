@@ -10,9 +10,16 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: false,
+  // All specs share one dev-user account (docs/milestones), so different spec
+  // files running as separate workers race each other's writes (e.g. two
+  // files both creating a project named the same thing). Must stay serial.
+  workers: 1,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? "github" : "list",
+  // Locally, also write the interactive HTML report to playwright-report/ (view
+  // it with `npx playwright show-report`); `open: "never"` so a script running
+  // the suite (task e2e) doesn't get a browser tab popped mid-run.
+  reporter: process.env.CI ? "github" : [["list"], ["html", { open: "never" }]],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? "http://localhost:8080",
     trace: "on-first-retry",

@@ -14,6 +14,10 @@ async function login(page: import("@playwright/test").Page) {
 test("add a task, complete it, navigate a day, and roll it over", async ({ page }) => {
   await login(page);
 
+  // M6 made Today (not Day) the post-login landing page; this test exercises
+  // the Day view's date-nav specifically, so go there explicitly.
+  await page.getByRole("link", { name: "Todo" }).click();
+
   // Add a task on the previous day, then roll it forward to today.
   await page.getByRole("button", { name: "Previous day" }).click();
   const quickAdd = page.getByLabel("Add a task");

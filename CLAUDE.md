@@ -195,7 +195,7 @@ A `Taskfile.yml` (go-task) is planned to wrap the common commands; the underlyin
 | One backend test | `./gradlew test --tests 'com.kairon.todo.RolloverServiceTest'` |
 | Web tests | `npm run test` in `web/` |
 | One web test | `npx vitest run path/to/file.test.ts` in `web/` |
-| E2E | Playwright against the built jar + a Testcontainers Postgres |
+| E2E | `task e2e` — spins up a throwaway `kairon_e2e` database + backend (local profile), runs Playwright, tears both down |
 | Regenerate API client | from the backend OpenAPI spec (CI fails on drift) |
 | Deploy to local kind | `helm upgrade --install kairon deploy/helm/kairon -f values-local.yaml` |
 | Deploy to xbmc k3s | `task xbmc` — build + push `ghcr.io/lfcabend/kairon`, then `helm upgrade` with `values-xbmc.yaml` (kube-context `xbmc`, namespace `kairon`). Needs `docker login ghcr.io` and the out-of-band `kairon-db` Secret. |

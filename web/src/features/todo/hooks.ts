@@ -9,6 +9,18 @@ import { todoKeys } from "./todoKeys";
 const byOrder = (a: TodoItem, b: TodoItem) =>
   a.position - b.position || a.createdAt.localeCompare(b.createdAt);
 
+/**
+ * Every rollover-preview query, for any `onDay` — invalidated after any
+ * mutation that can change which items are "stranded open" (create,
+ * complete/reopen, a status-changing patch, delete). Without this, a
+ * rollover-preview fetched while viewing today goes stale the moment you
+ * change something on a *different* day and come back, since DayView never
+ * unmounts across a date change and the query key doesn't change either.
+ */
+function invalidateRolloverPreviews(qc: ReturnType<typeof useQueryClient>) {
+  void qc.invalidateQueries({ queryKey: ["todo", "rollover-preview"] });
+}
+
 export function useTodos(date: string) {
   return useQuery({
     queryKey: todoKeys.day(date),
@@ -52,6 +64,7 @@ export function useCreateTodo(date: string) {
       qc.setQueryData<TodoItem[]>(todoKeys.day(date), (list = []) =>
         list.map((t) => (t.id === ctx?.tempId ? created : t)).sort(byOrder),
       );
+      invalidateRolloverPreviews(qc);
     },
   });
 }
@@ -76,6 +89,7 @@ export function usePatchTodo(date: string) {
       qc.setQueryData<TodoItem[]>(todoKeys.day(date), (list = []) =>
         list.map((t) => (t.id === updated.id ? updated : t)).sort(byOrder),
       );
+      invalidateRolloverPreviews(qc);
     },
   });
 }
@@ -109,6 +123,7 @@ export function useCompleteTodo(date: string) {
       qc.setQueryData<TodoItem[]>(todoKeys.day(date), (list = []) =>
         list.map((t) => (t.id === updated.id ? updated : t)),
       );
+      invalidateRolloverPreviews(qc);
     },
   });
 }
@@ -152,6 +167,7 @@ export function useDeleteTodo(date: string) {
     onError: (_err, _id, ctx) => {
       if (ctx) qc.setQueryData(todoKeys.day(date), ctx.previous);
     },
+    onSuccess: () => invalidateRolloverPreviews(qc),
   });
 }
 

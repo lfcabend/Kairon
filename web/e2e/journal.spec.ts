@@ -14,7 +14,10 @@ async function login(page: import("@playwright/test").Page) {
 test("add a journal entry, bold some text, save, then find it via search", async ({ page }) => {
   await login(page);
 
-  await page.getByRole("link", { name: "Journal" }).click();
+  // A fixed past date, not "today" (the plain Journal nav link's default):
+  // today.spec.ts also writes to today's journal and expects a clean slate
+  // there, and the suite shares one dev-user account across spec files.
+  await page.goto("/kairon/journal/2024-01-15");
   await page.getByRole("button", { name: /New entry/i }).click();
 
   const editor = page.locator('[contenteditable="true"]');
