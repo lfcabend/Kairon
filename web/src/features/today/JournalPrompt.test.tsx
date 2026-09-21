@@ -46,12 +46,11 @@ test("quick-add on Enter creates an entry and switches to the continue link", as
   expect(screen.queryByLabelText("Quick journal entry")).not.toBeInTheDocument();
 });
 
-test("with an existing entry, no input is shown from the start", async () => {
+test("with an existing entry, no input is shown and a preview of it is shown instead", async () => {
   seedJournalEntries([{ day: TODAY, content: "Already wrote today." }]);
   renderApp("/today");
 
-  expect(
-    await screen.findByRole("link", { name: "You wrote in today's journal — continue →" }),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("Already wrote today.")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Continue in Journal →" })).toBeInTheDocument();
   expect(screen.queryByLabelText("Quick journal entry")).not.toBeInTheDocument();
 });

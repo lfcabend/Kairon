@@ -9,11 +9,11 @@ import { journalKeys } from "./journalKeys";
 const byOrder = (a: JournalEntry, b: JournalEntry) =>
   a.position - b.position || a.createdAt.localeCompare(b.createdAt);
 
-export function useJournalDay(date: string) {
+export function useJournalDay(date: string, enabled = true) {
   return useQuery({
     queryKey: journalKeys.day(date),
     queryFn: () => journalApi.list(date),
-    enabled: !!date,
+    enabled: !!date && enabled,
   });
 }
 

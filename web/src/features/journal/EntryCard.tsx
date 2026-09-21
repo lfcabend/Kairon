@@ -1,11 +1,12 @@
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { JournalEntry } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { EntryEditor } from "./EntryEditor";
+import { previewText } from "./textPreview";
 
 interface Props {
   entry: JournalEntry;
@@ -14,19 +15,19 @@ interface Props {
   onDelete: () => void;
 }
 
-/** Strips the minimal markdown syntax the editor can produce, for a plain-text list preview. */
-function previewText(content: string): string {
-  return content
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\*\*(.*?)\*\*/g, "$1")
-    .replace(/\*(.*?)\*/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 export function EntryCard({ entry, startExpanded, onSave, onDelete }: Props) {
   const [expanded, setExpanded] = useState(!!startExpanded);
   const snippet = previewText(entry.content);
+
+  // `startExpanded` can flip true a render *after* mount: the just-created
+  // entry lands in the list with its real id (remounting this card, since
+  // it's keyed by id) before the parent's `newEntryId` state catches up to
+  // match it — two separate, unbatched updates from the create mutation's
+  // hook-level cache write vs. its call-level onSuccess. The initial
+  // `useState` above only catches the case where both already agree.
+  useEffect(() => {
+    if (startExpanded) setExpanded(true);
+  }, [startExpanded]);
 
   return (
     <li className="rounded-md border px-3 py-2" data-testid="entry-card">
