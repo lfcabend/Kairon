@@ -1,7 +1,10 @@
 # M7 D7: daily pg_dump to the PVC above, gzipped and timestamped, with a
-# find-based prune for anything older than retentionDays. postgres:16-alpine
-# matches the app's PostgreSQL 16 (docs/DESIGN.md) so pg_dump's client/server
-# versions line up.
+# find-based prune for anything older than retentionDays. The pg_dump client
+# image's major version must be >= the server's (pg_dump refuses to dump a
+# newer server) — set via backup.pgDumpImage rather than hardcoded, since the
+# actually-running engine has already drifted past DESIGN.md's stated
+# "PostgreSQL 16" once (confirmed PostgreSQL 18.6 on both xbmc and local kind
+# during the M7 trial deploy — see docs/milestones/M7-hardening-prod.md).
 {{- if .Values.backup.enabled }}
 apiVersion: batch/v1
 kind: CronJob
@@ -21,7 +24,7 @@ spec:
           restartPolicy: OnFailure
           containers:
             - name: backup
-              image: postgres:16-alpine
+              image: {{ .Values.backup.pgDumpImage | quote }}
               env:
                 - name: PGHOST
                   value: {{ .Values.database.host | default (printf "%s-postgresql" .Release.Name) | quote }}

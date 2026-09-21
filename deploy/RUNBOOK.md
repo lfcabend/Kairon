@@ -90,6 +90,24 @@ kubectl -n kairon create secret generic kairon-db \
 unset and the chart generates + manages one itself (see "Rotate the JWT secret"
 above). Set it only if you want the JWT secret managed outside Helm entirely.
 
+## Make a brand-new GHCR package public
+
+GHCR defaults a container package to **private** the first time anything is
+ever pushed to it — there's no push-time flag to make it public up front. Both
+`ghcr.io/lfcabend/kairon` and `ghcr.io/lfcabend/kairon-migrator` (added in M7)
+must be public, since `values-xbmc.yaml` doesn't wire `imagePullSecrets`. If a
+new package (or a renamed one) ever shows up, flip it right after its first
+push:
+
+`https://github.com/users/lfcabend/packages/container/<package-name>/settings`
+→ Danger Zone → Change visibility → Public (type the package name to confirm).
+
+Symptom if this is missed: the migration Job (or the app Deployment) sits in
+`ImagePullBackOff` with `401 Unauthorized` in its events. Because the
+migration Job is a **pre-upgrade** Helm hook, this is safe to leave stuck for
+a few minutes while you fix it — the previous app version keeps serving
+traffic until the hook completes and the rollout proceeds.
+
 ## Roll back a Helm release
 
 ```sh

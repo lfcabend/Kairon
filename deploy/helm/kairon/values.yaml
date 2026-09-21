@@ -141,5 +141,11 @@ backup:
   enabled: false
   schedule: "0 3 * * *"     # daily 03:00
   retentionDays: 14
+  # pg_dump refuses to dump a server newer than itself, so this must track
+  # whatever Postgres major version is actually running (check with `kubectl
+  # exec ... -- psql -c 'select version()'` — the docs' stated "PostgreSQL 16"
+  # has already drifted from reality once; confirmed 18.6 during the M7 trial
+  # deploy, see docs/milestones/M7-hardening-prod.md).
+  pgDumpImage: postgres:18-alpine
   pvc:
     size: 2Gi

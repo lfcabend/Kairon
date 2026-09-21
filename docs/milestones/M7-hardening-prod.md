@@ -549,9 +549,22 @@ someone with repo-admin/Tailscale-admin access has to actually perform:
    repo secret.
 3. Create the `xbmc` GitHub Environment (Settings → Environments) — no required
    reviewers to start (D15); add them later if wanted.
-4. Confirm the `ghcr.io/lfcabend/kairon` and `ghcr.io/lfcabend/kairon-migrator`
-   packages stay public (Q3) — `values-xbmc.yaml`'s existing comment already notes
-   this constraint for the app image; it now applies to the migrator image too.
+4. **Make `ghcr.io/lfcabend/kairon-migrator` public** the first time it's ever
+   pushed — GHCR defaults a brand-new container package to **private**, and
+   there is no API/CLI flag on the push itself to make it public up front.
+   Confirmed the hard way during the real xbmc trial deploy for this milestone:
+   the first `task xbmc` run pushed the new package fine, but the
+   `kairon-migrate` pre-upgrade hook Job then sat in `ImagePullBackOff` against
+   the real cluster (`401 Unauthorized` pulling anonymously) until the package
+   was flipped to public by hand at
+   `https://github.com/users/lfcabend/packages/container/kairon-migrator/settings`
+   → Danger Zone → Change visibility → Public. Because it's a **pre-upgrade**
+   hook, this failure mode is safe — Helm blocks the app rollout until the hook
+   Job completes, so the previous (working) app version keeps serving traffic
+   the whole time — but it does stall the deploy until someone flips the
+   toggle. `values-xbmc.yaml`'s existing comment already notes the same
+   constraint for the app image; it now applies to the migrator image too, and
+   this is a one-time step per package, not per deploy.
 
 ---
 
