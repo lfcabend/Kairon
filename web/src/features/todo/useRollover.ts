@@ -3,9 +3,16 @@ import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 import { todoApi } from "@/lib/api/todo";
-import type { RolloverBody, RolloverMode, RolloverPreview } from "@/lib/api/types";
+import type { Me, RolloverBody, RolloverMode, RolloverPreview } from "@/lib/api/types";
 
 import { todoKeys } from "./todoKeys";
+
+/** Reads the user's rollover preference, defaulting to `manual` when unset. */
+export function getRolloverMode(me: Me | undefined): RolloverMode {
+  const value = (me?.preferences as { todo?: { rollover?: RolloverMode } } | undefined)?.todo
+    ?.rollover;
+  return value ?? "manual";
+}
 
 export function useRolloverPreview(date: string, enabled: boolean) {
   return useQuery({

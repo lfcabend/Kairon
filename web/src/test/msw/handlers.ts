@@ -504,6 +504,55 @@ const projectHandlers = [
   }),
 ];
 
+// --- planning / Today (M6) -------------------------------------------------
+
+/** Mirrors the backend's `findDueOrOverdue` predicate (docs/milestones/M6-today.md §4.1). */
+function dueOrOverdue(day: string): ProjectTask[] {
+  return liveTasks()
+    .filter(
+      (t) =>
+        (t.plannedStart && t.plannedEnd && t.plannedStart <= day && t.plannedEnd >= day) ||
+        (t.plannedEnd && t.plannedEnd < day && t.status !== "DONE"),
+    )
+    .map((t) => {
+      const project = liveProjects().find((p) => p.id === t.projectId);
+      return { ...t, projectName: project?.name, projectColor: project?.color };
+    })
+    .sort((a, b) => (a.plannedEnd ?? "").localeCompare(b.plannedEnd ?? ""));
+}
+
+const planningHandlers = [
+  http.get("/kairon/api/v1/planning/today", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const date = new URL(request.url).searchParams.get("date");
+    if (!date) return problem(400, "`date` is required.");
+    return HttpResponse.json({
+      date,
+      todos: sortRows(live().filter((t) => t.day === date)),
+      dueProjectTasks: dueOrOverdue(date),
+      journalPrompt: { hasEntry: liveJournal().some((e) => e.day === date) },
+    });
+  }),
+
+  http.post(/\/api\/v1\/planning\/today:promote$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { projectTaskId: string; day: string };
+    const task = liveTasks().find((t) => t.id === body.projectTaskId);
+    if (!task) return problem(404, "Task not found.");
+    const maxPos = live()
+      .filter((t) => t.day === body.day)
+      .reduce((m, t) => Math.max(m, t.position), 0);
+    const created = makeTodo({
+      day: body.day,
+      title: task.name,
+      position: maxPos + 100,
+      sourceProjectTaskId: task.id,
+    });
+    todos.push(created);
+    return HttpResponse.json(created, { status: 201 });
+  }),
+];
+
 /**
  * Baseline happy-path handlers. Individual tests narrow behaviour with
  * `server.use(...)` and seed rows with `seedTodos(...)`/`seedJournalEntries(...)`.
@@ -750,4 +799,8 @@ export const handlers = [
   // --- projects (M4) -----------------------------------------------------
 
   ...projectHandlers,
+
+  // --- planning / Today (M6) ----------------------------------------------
+
+  ...planningHandlers,
 ];

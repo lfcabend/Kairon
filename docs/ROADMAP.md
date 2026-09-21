@@ -99,9 +99,9 @@ Prove the whole pipeline with almost no product in it.
 
 ## M6 — Today
 
-- [ ] `GET /planning/today?date=` → `{ todos, dueProjectTasks, journalPrompt }`.
-- [ ] `POST /planning/today:promote` → creates a `todo_item` linked to the task.
-- [ ] Web: the "Today" landing screen assembling todos, due project tasks (with a
+- [x] `GET /planning/today?date=` → `{ todos, dueProjectTasks, journalPrompt }`.
+- [x] `POST /planning/today:promote` → creates a `todo_item` linked to the task.
+- [x] Web: the "Today" landing screen assembling todos, due project tasks (with a
       one-click "add to today"), and a journal quick-entry.
 
 ## M7 — Hardening & prod

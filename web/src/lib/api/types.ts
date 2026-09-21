@@ -225,6 +225,9 @@ export interface ProjectsPage {
 export interface ProjectTask {
   id: string;
   projectId: string;
+  /** Denormalized from the owning project on every `ProjectTaskView` response (list, create, patch, reorder, dueOrOverdue). */
+  projectName?: string;
+  projectColor?: string;
   parentTaskId: string | null;
   name: string;
   description: string | null;
@@ -291,6 +294,20 @@ export interface CreateTaskDependencyBody {
   predecessorId: string;
   type?: TaskDependencyType;
   lagDays?: number;
+}
+
+// --- Planning / Today (M6) -----------------------------------------------------
+
+export interface TodayResponse {
+  date: string;
+  todos: TodoItem[];
+  dueProjectTasks: ProjectTask[];
+  journalPrompt: { hasEntry: boolean };
+}
+
+export interface PromoteTaskBody {
+  projectTaskId: string;
+  day: string;
 }
 
 // --- About (/actuator/info) --------------------------------------------------

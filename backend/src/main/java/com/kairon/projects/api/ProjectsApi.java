@@ -2,6 +2,7 @@ package com.kairon.projects.api;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import com.kairon.common.security.UserId;
 
@@ -20,4 +21,7 @@ public interface ProjectsApi {
      * or that are overdue ({@code plannedEnd < day}) and not {@code DONE}.
      */
     List<ProjectTaskView> dueOrOverdue(UserId userId, LocalDate day);
+
+    /** Resolves a task the caller owns (via its project); 404 if missing or foreign. */
+    ProjectTaskView requireTask(UserId userId, UUID taskId);
 }

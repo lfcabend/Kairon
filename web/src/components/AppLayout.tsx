@@ -22,6 +22,9 @@ export function AppLayout() {
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <div className="flex items-center gap-1">
             <span className="mr-3 font-semibold tracking-tight">Kairon</span>
+            <NavLink to="/today" className={linkClass}>
+              Today
+            </NavLink>
             <NavLink to="/day" className={linkClass}>
               Day
             </NavLink>

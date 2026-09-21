@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Current state
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
-journal), M4 (projects core), and M5 (Gantt & dependencies) are implemented.**
+journal), M4 (projects core), M5 (Gantt & dependencies), and M6 (Today) are
+implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -31,13 +32,19 @@ updated when decisions change.
   `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query)/
   `TaskDependencyRepository` (M5), `app`
   `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
-  `ProjectsApi`)/`ProjectsProperties`/`SortParsing`/`TaskResolution` (M5, the
-  shared "resolve a task with no projectId in the URL" helper extracted out of
-  `ProjectTaskService`)/`TaskDependencyService`/`TaskDependencyView`/
-  `TaskDependencyMapper` (M5 — dependency CRUD incl. cycle rejection and the
-  computed `violatesConstraint` flag), `config`, `web`
+  `ProjectsApi`, incl. M6's `requireTask` — resolves a task the caller owns via
+  `TaskResolution`, 404 if missing/foreign)/`ProjectsProperties`/`SortParsing`/
+  `TaskResolution` (M5, the shared "resolve a task with no projectId in the
+  URL" helper extracted out of `ProjectTaskService`)/`TaskDependencyService`/
+  `TaskDependencyView`/`TaskDependencyMapper` (M5 — dependency CRUD incl. cycle
+  rejection and the computed `violatesConstraint` flag), `config`, `web`
   `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`/
-  `TaskDependencyController` (M5)), and
+  `TaskDependencyController` (M5)), `planning` (M6 — no `domain`/`repo`, no
+  migration: a pure aggregation over `todo`/`projects`/`journal` for the Today
+  screen. `app` `PlanningService` (`today` composes `TodoApi.forDay`/
+  `ProjectsApi.dueOrOverdue`/`JournalApi.hasEntryForDay`; `promote` calls
+  `ProjectsApi.requireTask` then `TodoApi.create` to link a project task into
+  today's todo list), `web` `PlanningController`/`PlanningDtos`), and
   `meta` (the M0 `PingController`; `DeployInfoContributor`, an `InfoContributor`
   adding the running image ref + deploy time to `/actuator/info` for the About
   page — the commit and build time are already there via `BuildProperties`).
@@ -48,7 +55,7 @@ updated when decisions change.
   bare `uuid` on `todo_item.source_project_task_id`), `V005__task_dependencies.sql`
   (`task_dependency` — predecessor/successor edges, cycle-rejected in the
   service, no soft delete; a task's soft delete or a project's cascade also
-  hard-deletes the edges touching it).
+  hard-deletes the edges touching it). M6 adds no migration.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -69,20 +76,31 @@ updated when decisions change.
   `src/features/about/` (`AboutPage`, rendering `/actuator/info` — build
   version/commit/build-time + the running image ref/deploy time — via
   `about.ts`, which calls that endpoint directly rather than through
-  `client.ts` since it's public and outside `/api/v1`).
+  `client.ts` since it's public and outside `/api/v1`); the Today landing
+  screen (M6) under `src/features/today/` (`TodayPage` — no date-nav, always
+  "today", reuses `RolloverPrompt`/`useAutoRollover`/`useRolloverPreview` from
+  `features/todo`/`TodayTasks` (today's interactive todo list, reusing
+  `DaySummary`/`QuickAdd`/`TodoList` and the `features/todo` hooks bound to
+  today's date)/`DueTasksPanel` (due/overdue project tasks with a one-click
+  "Add to today" that flips to "Added" once a matching todo is in the
+  `useTodos` cache)/`JournalPrompt` (inline quick-add, or a "Continue in
+  Journal →" link once today has an entry), hooks in `useToday.ts` +
+  `planningKeys`).
   `src/components/AppLayout.tsx` is the
-  top-nav shell wrapping the protected routes. API access is hand-written
+  top-nav shell wrapping the protected routes, "Today" first in the nav order
+  and the app's default landing route (M6). API access is hand-written
   types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
-  `auth.ts`/`about.ts` over `client.ts` (the single-flight 401→refresh→retry
-  fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`); Playwright happy
-  paths in `web/e2e/` (`npm run test:e2e`, needs a running full stack).
+  `auth.ts`/`about.ts`/`planning.ts` over `client.ts` (the single-flight
+  401→refresh→retry fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`);
+  Playwright happy paths in `web/e2e/` (`npm run test:e2e`, needs a running
+  full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
   always rolls the Deployment, even with no other change) and a `GIT_COMMIT`
   Docker build arg (wired from `Taskfile.yml`'s `image`/`image-push` tasks).
 
-Next milestone is **M6 — Today** (see `docs/ROADMAP.md`).
+Next milestone is **M7 — Hardening & prod** (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { authApi } from "@/lib/api/auth";
 import type { Me, RolloverMode } from "@/lib/api/types";
 
+import { getRolloverMode } from "../todo/useRollover";
 import { useAuthStore } from "./authStore";
 
 const schema = z.object({
@@ -26,12 +27,6 @@ const ROLLOVER_OPTIONS: { value: RolloverMode; label: string; hint: string }[] =
   { value: "pick", label: "Pick which", hint: "Show a banner; let me choose which tasks to carry." },
   { value: "auto", label: "Automatic", hint: "Roll unfinished tasks to today on their own, with an Undo." },
 ];
-
-function rolloverMode(me: Me | undefined): RolloverMode {
-  const value = (me?.preferences as { todo?: { rollover?: RolloverMode } } | undefined)?.todo
-    ?.rollover;
-  return value ?? "manual";
-}
 
 export default function AccountPage() {
   const navigate = useNavigate();
@@ -132,7 +127,7 @@ export default function AccountPage() {
         </p>
         <RadioGroup
           className="mt-4"
-          value={rolloverMode(meQuery.data)}
+          value={getRolloverMode(meQuery.data)}
           onValueChange={(value) => rolloverMutation.mutate(value as RolloverMode)}
           aria-label="Rollover behaviour"
         >

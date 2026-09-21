@@ -55,11 +55,16 @@ export function TodoList({
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const ids = open.map((t) => t.id);
-    const from = ids.indexOf(String(active.id));
-    const to = ids.indexOf(String(over.id));
+    const openIds = open.map((t) => t.id);
+    const from = openIds.indexOf(String(active.id));
+    const to = openIds.indexOf(String(over.id));
     if (from === -1 || to === -1) return;
-    ids.splice(to, 0, ids.splice(from, 1)[0]);
+    openIds.splice(to, 0, openIds.splice(from, 1)[0]);
+    // The backend's reorder endpoint requires the full day (every status), so
+    // splice the reordered open ids back into their original slots rather than
+    // dropping the done/cancelled ids.
+    let i = 0;
+    const ids = items.map((t) => (t.status === "OPEN" ? openIds[i++] : t.id));
     onReorder(ids);
   };
 

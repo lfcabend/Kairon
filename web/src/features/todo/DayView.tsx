@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
 import { authApi } from "@/lib/api/auth";
-import type { Me, RolloverMode, TodoItem } from "@/lib/api/types";
+import type { Me, TodoItem } from "@/lib/api/types";
 import { addDays, isValidIsoDate, todayInZone } from "@/lib/date";
 
 import { DateNav } from "./DateNav";
@@ -19,7 +19,7 @@ import {
   useReorderTodo,
   useTodos,
 } from "./hooks";
-import { useAutoRollover, useRolloverPreview } from "./useRollover";
+import { getRolloverMode, useAutoRollover, useRolloverPreview } from "./useRollover";
 
 function isTextTarget(el: EventTarget | null): boolean {
   return el instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(el.tagName);
@@ -40,9 +40,7 @@ export function DayView() {
   const items = useMemo(() => todosQuery.data ?? [], [todosQuery.data]);
   const openItems = useMemo(() => items.filter((t) => t.status === "OPEN"), [items]);
 
-  const mode: RolloverMode =
-    ((meQuery.data?.preferences as { todo?: { rollover?: RolloverMode } } | undefined)?.todo
-      ?.rollover as RolloverMode) ?? "manual";
+  const mode = getRolloverMode(meQuery.data);
   const isToday = !!date && date === today;
   const previewQuery = useRolloverPreview(date ?? "", isToday && !!date);
   useAutoRollover({ mode, isToday, today: today ?? "", preview: previewQuery.data });
@@ -69,11 +67,16 @@ export function DayView() {
       if (idx === -1) return;
       const target = idx + delta;
       if (target < 0 || target >= openItems.length) return;
-      const ids = openItems.map((t) => t.id);
-      ids.splice(target, 0, ids.splice(idx, 1)[0]);
+      const openIds = openItems.map((t) => t.id);
+      openIds.splice(target, 0, openIds.splice(idx, 1)[0]);
+      // The backend's reorder endpoint requires the full day (every status), so
+      // splice the reordered open ids back into their original slots rather than
+      // dropping the done/cancelled ids.
+      let i = 0;
+      const ids = items.map((t) => (t.status === "OPEN" ? openIds[i++] : t.id));
       reorder.mutate(ids);
     },
-    [openItems, selectedId, reorder],
+    [items, openItems, selectedId, reorder],
   );
 
   useEffect(() => {

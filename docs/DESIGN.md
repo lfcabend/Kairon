@@ -163,8 +163,8 @@ enforced boundaries. Rationale in [`adr/0001-architecture-and-stack.md`](adr/000
   - `todo` — daily todo items and rollover.
   - `journal` — journal entries and search.
   - `projects` — projects, tasks, dependencies, schedule/Gantt computation.
-  - `planning` — the "Today" aggregation. Reads from `todo` and `projects`
-    through their public APIs only.
+  - `planning` — the "Today" aggregation. Reads from `todo`, `projects`, and
+    `journal` through their public APIs only.
   - `assistant` — optional AI features (todo suggestions, execution summaries,
     journal reflection). Reads `todo`, `journal`, `projects`, and `planning`
     through their public `api` packages only, and is the **only** module that

@@ -200,6 +200,12 @@ public class ProjectTaskService implements ProjectsApi {
     // --- ProjectsApi port -------------------------------------------------------
 
     @Override
+    public ProjectTaskView requireTask(UserId userId, UUID taskId) {
+        TaskAndProject resolved = TaskResolution.requireTaskWithProject(tasks, projects, userId, taskId);
+        return ProjectTaskMapper.toView(resolved.task(), resolved.project());
+    }
+
+    @Override
     public List<ProjectTaskView> dueOrOverdue(UserId userId, LocalDate day) {
         List<ProjectTask> due = tasks.findDueOrOverdue(userId.value(), day);
         Map<UUID, Project> byProjectId = new HashMap<>();

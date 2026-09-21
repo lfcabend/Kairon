@@ -201,4 +201,39 @@ class ProjectTaskServiceTest {
 
         assertThat(ex.getStatus().value()).isEqualTo(404);
     }
+
+    @Test
+    void requireTaskReturnsAViewForAnOwnedTask() {
+        ProjectTask task = taskAt(null, 100);
+        when(tasks.findByIdAndDeletedAtIsNull(task.getId())).thenReturn(Optional.of(task));
+
+        ProjectTaskView view = service.requireTask(USER, task.getId());
+
+        assertThat(view.id()).isEqualTo(task.getId());
+        assertThat(view.projectName()).isEqualTo("Project");
+    }
+
+    @Test
+    void requireTaskIs404ForAMissingTask() {
+        UUID taskId = UUID.randomUUID();
+        when(tasks.findByIdAndDeletedAtIsNull(taskId)).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class, () -> service.requireTask(USER, taskId));
+
+        assertThat(ex.getStatus().value()).isEqualTo(404);
+    }
+
+    @Test
+    void requireTaskIs404ForATaskBelongingToAnotherUsersProject() {
+        Project foreignProject = Project.create(UUID.randomUUID(), null, "Foreign", null, "#6366f1", null, 100,
+                null, null);
+        ProjectTask task = ProjectTask.create(foreignProject.getId(), null, "t", null, 100);
+        when(tasks.findByIdAndDeletedAtIsNull(task.getId())).thenReturn(Optional.of(task));
+        when(projects.findByIdAndUserIdAndDeletedAtIsNull(foreignProject.getId(), USER.value()))
+                .thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class, () -> service.requireTask(USER, task.getId()));
+
+        assertThat(ex.getStatus().value()).isEqualTo(404);
+    }
 }

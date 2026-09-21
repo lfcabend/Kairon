@@ -25,7 +25,7 @@ test("an unauthenticated visit to a protected route lands on the sign-in screen"
   expect(await screen.findByRole("heading", { name: "Sign in" })).toBeInTheDocument();
 });
 
-test("an authenticated visit to / redirects to the day view", async () => {
+test("an authenticated visit to / redirects to the Today view", async () => {
   useAuthStore.setState({
     accessToken: "access-1",
     user: { id: "u1", email: "ada@example.com", displayName: "Ada", timezone: "UTC" },
