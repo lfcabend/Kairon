@@ -1,0 +1,44 @@
+# M7 D4/D6: Flyway migrations run as a Helm hook Job in every environment, ahead
+# of the app Deployment (which starts with SPRING_FLYWAY_ENABLED=false). The
+# before-hook-creation delete policy means a failed attempt doesn't block retrying
+# on the next `helm upgrade` — Helm just replaces the old (failed) Job.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "kairon.fullname" . }}-migrate
+  labels:
+    {{- include "kairon.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 2
+  template:
+    metadata:
+      labels:
+        {{- include "kairon.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          image: {{ include "kairon.migratorImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          args: ["migrate"]
+          env:
+            - name: FLYWAY_URL
+              value: {{ include "kairon.jdbcUrl" . | quote }}
+            - name: FLYWAY_USER
+              value: {{ .Values.database.username | quote }}
+            - name: FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kairon.databaseSecretName" . }}
+                  key: SPRING_DATASOURCE_PASSWORD

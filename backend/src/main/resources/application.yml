@@ -21,8 +21,11 @@ spring:
           time_zone: UTC
   flyway:
     enabled: true
-    # In Kubernetes (M7) Flyway will move to a Helm pre-upgrade Job and this flips
-    # to false; for M0 the app runs migrations on startup in every environment.
+    # true here is the default for host bootRun (the `local` profile, no k8s
+    # involved). In every k8s environment migrations run instead as a Helm
+    # pre-install/pre-upgrade hook Job (deploy/helm/kairon/templates/
+    # migration-job.yaml), and the chart's ConfigMap overrides this to false via
+    # SPRING_FLYWAY_ENABLED (M7 D4).
 
 logging:
   level:

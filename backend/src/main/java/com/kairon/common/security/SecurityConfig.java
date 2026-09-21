@@ -24,6 +24,14 @@ import org.springframework.security.web.SecurityFilterChain;
  *       {@code SameSite=Strict}.</li>
  *   <li>{@code /api/v1/auth/**} and {@code /api/v1/ping} are open; every other
  *       {@code /api/v1/**} route needs a valid access token.</li>
+ *   <li>Only {@code /actuator/health/**} and {@code /actuator/info} are open; every
+ *       other actuator path is denied outright regardless of what
+ *       {@code management.endpoints.web.exposure.include} is ever set to, so a
+ *       future values/config-only change can't silently make {@code /actuator/env}
+ *       or {@code /actuator/prometheus} public (M7 D10).</li>
+ *   <li>{@code /v3/api-docs/**} and {@code /swagger-ui/**} are deliberately public,
+ *       same reasoning as {@code /actuator/info}: it's documentation, not data
+ *       (M7 D13).</li>
  *   <li>Static assets and SPA fallback routes ({@code /login}, …) are open so the
  *       browser can load the app and route client-side.</li>
  *   <li>Auth failures render as {@code application/problem+json}.</li>
@@ -55,6 +63,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**", "/api/v1/ping").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/actuator/**").denyAll()
                         .requestMatchers("/api/v1/**").authenticated()
                         .anyRequest().permitAll())
                 .oauth2ResourceServer(oauth2 -> oauth2

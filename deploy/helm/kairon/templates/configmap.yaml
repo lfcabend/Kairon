@@ -8,3 +8,8 @@ data:
   SPRING_PROFILES_ACTIVE: {{ .Values.springProfiles | quote }}
   SPRING_DATASOURCE_URL: {{ include "kairon.jdbcUrl" . | quote }}
   SPRING_DATASOURCE_USERNAME: {{ .Values.database.username | quote }}
+  # M7 D4: migrations run as a Helm pre-install/pre-upgrade hook Job
+  # (templates/migration-job.yaml) in every k8s environment; the app itself never
+  # runs Flyway when deployed this way. application-local.yml (host bootRun, not a
+  # k8s deploy) is unaffected and keeps self-migrating on boot.
+  SPRING_FLYWAY_ENABLED: "false"

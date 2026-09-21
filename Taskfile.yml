@@ -28,6 +28,12 @@ vars:
         printf '%s-wip%s' "$sha" "$(date -u +%Y%m%d%H%M%S 2>/dev/null || echo $RANDOM)"
       fi
   IMAGE: '{{.IMAGE_REPO}}:{{.IMAGE_TAG}}'
+  # Local migrator image (M7 D5): Flyway CLI + this repo's SQL migrations, run as
+  # the Helm pre-install/pre-upgrade hook Job in every k8s environment, kind
+  # included. The chart's kairon.migratorImage helper defaults
+  # migrator.image.repository to "<image.repository>-migrator" and its tag to
+  # image.tag when unset, so no extra --set flags are needed here or in `xbmc`.
+  MIGRATOR_IMAGE: '{{.IMAGE_REPO}}-migrator:{{.IMAGE_TAG}}'
   # Full commit sha, baked into the image's build-info.properties (-PkaironGitCommit
   # in docker/Dockerfile) so /actuator/info can report exactly what the image was
   # built from, independent of the (possibly -wip-suffixed) IMAGE_TAG above.
@@ -38,6 +44,11 @@ vars:
   # points image.repository at this same path.
   GHCR_REPO: '{{.GHCR_REPO | default "ghcr.io/lfcabend/kairon"}}'
   GHCR_IMAGE: '{{.GHCR_REPO}}:{{.IMAGE_TAG}}'
+  # Migrator image (M7 D5): Flyway CLI + this repo's SQL migrations, run as the
+  # Helm pre-install/pre-upgrade hook Job (templates/migration-job.yaml). Built
+  # and pushed alongside the app image, tagged with the same commit sha.
+  GHCR_MIGRATOR_REPO: '{{.GHCR_MIGRATOR_REPO | default "ghcr.io/lfcabend/kairon-migrator"}}'
+  GHCR_MIGRATOR_IMAGE: '{{.GHCR_MIGRATOR_REPO}}:{{.IMAGE_TAG}}'
   # Remote k3s deploy target. The kube-context is pinned on the helm call so a
   # wrong current-context cannot misfire the deploy.
   XBMC_CONTEXT: '{{.XBMC_CONTEXT | default "xbmc"}}'
@@ -72,10 +83,12 @@ tasks:
     silent: true
 
   up:
-    desc: Build the image (tagged with the git sha), load it into the local node, and deploy.
+    desc: Build the app + migrator images (tagged with the git sha), load both into the local node, and deploy.
     cmds:
       - task: image
       - task: image-load
+      - task: migrator-image
+      - task: migrator-image-load
       - task: helm-local
 
   down:
@@ -103,10 +116,41 @@ tasks:
       - docker push {{.GHCR_REPO}}:latest
       - 'echo "pushed {{.GHCR_IMAGE}}"'
 
+  migrator-image:
+    desc: Build the Flyway migrator image (docker/migrator.Dockerfile) for local testing.
+    cmds:
+      - docker build -f docker/migrator.Dockerfile -t {{.MIGRATOR_IMAGE}} -t {{.IMAGE_REPO}}-migrator:dev .
+      - 'echo "built {{.MIGRATOR_IMAGE}}"'
+
+  migrator-image-load:
+    desc: Push the built migrator image into the local Kubernetes node's own image store.
+    cmds:
+      - |
+        if docker inspect {{.KUBE_NODE}} >/dev/null 2>&1; then
+          echo "loading {{.MIGRATOR_IMAGE}} into node {{.KUBE_NODE}}"
+          docker save {{.MIGRATOR_IMAGE}} | docker exec -i {{.KUBE_NODE}} ctr -n k8s.io images import -
+        elif command -v kind >/dev/null 2>&1; then
+          echo "loading {{.MIGRATOR_IMAGE}} via kind"
+          kind load docker-image {{.MIGRATOR_IMAGE}}
+        else
+          echo "No node container '{{.KUBE_NODE}}' and no kind CLI on PATH." >&2
+          echo "Set KUBE_NODE=<node-container-name> (e.g. kind-control-plane)." >&2
+          exit 1
+        fi
+
+  migrator-image-push:
+    desc: Build the migrator image and push it to GHCR. Needs `docker login ghcr.io`.
+    cmds:
+      - docker build -f docker/migrator.Dockerfile -t {{.GHCR_MIGRATOR_IMAGE}} -t {{.GHCR_MIGRATOR_REPO}}:latest .
+      - docker push {{.GHCR_MIGRATOR_IMAGE}}
+      - docker push {{.GHCR_MIGRATOR_REPO}}:latest
+      - 'echo "pushed {{.GHCR_MIGRATOR_IMAGE}}"'
+
   xbmc:
     desc: Build, push to GHCR, and deploy to the xbmc k3s cluster (kube-context "xbmc", namespace "kairon").
     cmds:
       - task: image-push
+      - task: migrator-image-push
       - >-
         helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}}
         --kube-context {{.XBMC_CONTEXT}}

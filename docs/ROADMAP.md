@@ -106,19 +106,48 @@ Prove the whole pipeline with almost no product in it.
 
 ## M7 — Hardening & prod
 
-- [ ] `values-prod.yaml`: external DB (`postgresql.enabled=false`), real host,
-      cert-manager TLS, resource limits, HPA.
-- [ ] Flyway as a Helm pre-upgrade hook Job; app starts with Flyway disabled in
-      k8s.
-- [ ] Secrets via SOPS / sealed-secrets / external-secrets — none in git.
-- [ ] `pg_dump` backup CronJob + documented restore in `deploy/RUNBOOK.md`.
-- [ ] Observability: Prometheus scrape, JSON logs, correlation id. (`/info`
-      with git sha + deploy facts landed in M4 — see the About page bullet
-      there.)
-- [ ] `package` + `deploy` CI jobs; single image to GHCR; Trivy scan; OpenAPI
-      spec published and web client drift check.
-- [ ] Assisted scheduling (forward pass, optional critical path) — *optional
-      here or deferred.*
+See [`milestones/M7-hardening-prod.md`](milestones/M7-hardening-prod.md) for the
+full plan and rationale (Status: Accepted). xbmc (home k3s, Tailscale Funnel) is
+the real deployed environment this milestone hardens; `values-prod.yaml` is kept
+as a separate, currently-unused overlay for a hypothetical future managed
+cluster. `imagePullSecrets` support (Q3) was explicitly skipped — the GHCR
+packages stay public.
+
+- [x] `values-prod.yaml`: external DB (`postgresql.enabled=false`), cert-manager
+      TLS, HPA, `RollingUpdate` — for a hypothetical future managed cluster, not
+      xbmc (D1/D2).
+- [x] Flyway as a Helm pre-install/pre-upgrade hook Job, for **every** k8s
+      environment (kind, xbmc, and the hypothetical prod) — a new
+      `docker/migrator.Dockerfile` (Flyway CLI + SQL); app starts with
+      `SPRING_FLYWAY_ENABLED=false` in k8s (D4–D6).
+- [x] Security fix: `SecurityConfig` explicitly denies every `/actuator/**` path
+      beyond `health`/`info`, closing a latent gap where any future
+      `management.endpoints.web.exposure.include` change would otherwise leak
+      publicly and unauthenticated (D10).
+- [x] Secrets stay manual (`existingSecret` + documented one-time
+      `kubectl create secret`, formalized in `deploy/RUNBOOK.md`) — no SOPS /
+      sealed-secrets / external-secrets (D9).
+- [x] `pg_dump` backup CronJob to a local PVC, enabled on xbmc; documented
+      restore + the accepted on-node single-point-of-failure risk in
+      `deploy/RUNBOOK.md` (D7/D8).
+- [x] Observability: `micrometer-registry-prometheus` dependency added but not
+      yet exposed/scraped (no confirmed Prometheus instance yet — D11); JSON
+      logs and correlation id already shipped (M0/M1). (`/info` with git sha +
+      deploy facts landed in M4 — see the About page bullet there.)
+- [x] `deploy.yml` CI: `package` (build + Trivy-scan the app image and the new
+      migrator image, push both to GHCR, publish the OpenAPI spec) then
+      `deploy` (auto `helm upgrade` against xbmc via a Tailscale-connected
+      runner) on merge to `main`, targeting a `xbmc` GitHub Environment (D12/D15).
+      The one-time setup only a repo-admin can do (Tailscale OAuth client,
+      `KUBECONFIG_XBMC` secret, the `xbmc` Environment itself) is documented in
+      the milestone plan §6.3, not done by this checkbox.
+- [x] `springdoc-openapi` added; Swagger UI and the raw spec made live and
+      public on the deployed app (same reasoning as `/actuator/info`), plus
+      published as a CI artifact — the generated web client swap
+      (`openapi-typescript`/orval) and its drift check are deferred to their
+      own follow-up, not bundled into this milestone (D13).
+- [ ] Assisted scheduling (forward pass, optional critical path) — dropped from
+      this milestone; stays an unscheduled backlog item (D14).
 
 ## M8 — Assistant foundations & todo suggestions
 
@@ -182,6 +211,149 @@ instance, so it ships after the mechanical features have proven the plumbing.
 - [ ] Offline cache with client-generated UUIDv7 ids; last-write-wins + `version`
       conflict surfacing.
 - [ ] (Interim) PWA wrapper of the web app.
+
+## M12 — Observability: Prometheus & Grafana
+
+Resolves M7's Q1 (`micrometer-registry-prometheus` and the `/actuator/prometheus`
+endpoint land in M7, but stay unexposed with no live scraper — see
+[`milestones/M7-hardening-prod.md`](milestones/M7-hardening-prod.md)). A real
+Prometheus instance and Grafana dashboards were named as a "later" in
+[`DESIGN.md`](DESIGN.md) §11 without a milestone; this is that milestone.
+
+- [ ] Deploy Prometheus into the xbmc cluster (or decide it scrapes from
+      elsewhere over Tailscale) — pick a footprint that fits xbmc's single
+      2-core node (a full `kube-prometheus-stack` may be too heavy; a standalone
+      Prometheus + a scrape config may be the better fit).
+- [ ] Expose `/actuator/prometheus` to that scraper without reopening it to the
+      public Ingress: add `prometheus` to
+      `management.endpoints.web.exposure.include` and a scoped allow in
+      `SecurityConfig` (narrower than removing M7 D10's `/actuator/**` deny
+      outright) — exact mechanism (network-policy-restricted, an internal-only
+      Service, or a separate management port) decided at design time.
+- [ ] Deploy Grafana; at least one dashboard (app-level: request rate/latency/
+      errors, JVM memory/GC; infra-level: node CPU/memory) checked into
+      `deploy/` as code, not hand-built in the UI.
+- [ ] `deploy/RUNBOOK.md` gains a "read the dashboards" / "what's the alert for
+      X" section once there's something to point at.
+
+## M13 — Observability: log aggregation with Loki
+
+Depends on M12 (needs Grafana already deployed). Logs already go to stdout as
+structured ECS JSON with a `correlationId` field (M0/M1) — this milestone makes
+them queryable and dashboard-able instead of `kubectl logs`-only.
+
+- [ ] Deploy Grafana Loki into the xbmc cluster, sized for its single 2-core
+      node (Loki only indexes labels, not full text, so it's far lighter than
+      an Elasticsearch-based alternative).
+- [ ] Deploy a log-shipping agent (Promtail, or Grafana Alloy) as a DaemonSet to
+      ship pod stdout — the app's existing ECS-JSON logs — into Loki, parsing
+      `correlationId` and log level out as labels.
+- [ ] Wire Loki as a Grafana data source (M12); at least one dashboard mixing
+      Loki log panels with Prometheus metric panels on the same timeline
+      (e.g. request latency next to the error logs from that same window,
+      correlated by `correlationId`), checked into `deploy/` as code.
+- [ ] At least one Grafana alert rule against a LogQL query (e.g. error-log
+      rate over N/min) as a concrete example of log-based alerting, not just
+      metric-based.
+- [ ] `deploy/RUNBOOK.md` gains a "search logs in Grafana" section,
+      complementing the plain `kubectl logs` steps M7 already documents.
+
+## M14 — CI: streamlined security scanning & reporting
+
+M7 added a Trivy image-vulnerability scan to `deploy.yml`, but its output only
+ever lands in that job's raw log lines — there's no persisted, browsable, or
+trackable report anywhere, and there's no static code analysis or linting
+gate at all yet (`verify.yml` runs tests/build, not a quality/lint scan). This
+milestone turns "a scan runs" into "a scan whose findings are visible and
+actionable," adds that missing code-quality gate, and cleans up the CI
+scanning setup along the way rather than letting near-duplicate scan steps get
+bolted on ad hoc later.
+
+- [ ] Both Trivy steps in `deploy.yml` (app image, migrator image) emit SARIF
+      (`format: sarif`) instead of (or alongside) the current table output,
+      uploaded via `github/codeql-action/upload-sarif`, one `category` per
+      image so the two don't overwrite each other's findings.
+- [ ] `package` job's `permissions:` block gains `security-events: write`,
+      required for the SARIF upload step.
+- [ ] Decide and implement the fail-the-build mechanism now that SARIF upload
+      needs the step to complete rather than exit non-zero: either run Trivy
+      twice per image (today's `exit-code: "1"` table-format gate + a separate
+      SARIF-format reporting run against the same already-built image), or a
+      single SARIF run with a follow-up step that parses the SARIF output and
+      exits non-zero on any HIGH/CRITICAL finding. Pick whichever keeps
+      `deploy.yml` simplest to read; document the choice here once made.
+- [ ] Confirm GitHub code scanning / Advanced Security is actually available
+      for this repo's visibility/plan before relying on the Security tab as
+      the primary place findings live — fall back to the artifact-upload
+      option below if not.
+- [ ] Streamline the two near-duplicate Trivy steps (app image, migrator
+      image) — a reusable composite action or a matrix job, whichever reads
+      cleaner — instead of copy-pasted step blocks that can drift apart.
+
+### Code quality & linting (SonarQube)
+
+Adds a static-analysis gate that doesn't exist yet — today `verify.yml` proves
+the app builds and its tests pass, not that the code meets any quality bar
+(complexity, duplication, code smells, security hotspots in source rather than
+in a built image).
+
+- [ ] **Decide SonarCloud vs. self-hosted SonarQube** before building anything
+      else here — this changes the whole shape of the work:
+  - *SonarCloud* (sonarcloud.io): free for public repos, zero extra
+    infrastructure, analysis runs as a normal `verify.yml` step via
+    `sonarsource/sonarqube-scan-action` (or the Gradle `org.sonarqube` plugin)
+    posting results to Sonar's own hosted dashboard. Simplest-viable option
+    if this repo stays public (it already must be, per M7 — the GHCR image
+    packages aren't private either).
+  - *Self-hosted SonarQube*: another workload on the xbmc k3s node (its own
+    Postgres-backed server, another Helm release, another thing to back up
+    and keep patched) — only worth it for data locality or if the repo ever
+    goes private without an Advanced-Security-equivalent budget. Given this
+    project's own bias toward the simplest viable option (see `CLAUDE.md`),
+    default to SonarCloud unless a concrete reason to self-host shows up.
+- [ ] Add the Sonar scan as a `verify.yml` job (PR-gating, not `deploy.yml` —
+    it's a code-quality check on every push/PR, not a release-time concern),
+    running after `./gradlew build` so it can pick up JaCoCo coverage +
+    compiled classes for the backend and the Vitest coverage output for `web/`
+    in one combined analysis (Sonar supports multi-language projects natively
+    — no need for two separate Sonar projects).
+- [ ] Backend: add `jacoco` to `backend/build.gradle.kts` so Sonar has real
+    coverage data to report, not just static analysis.
+- [ ] Configure a quality gate (Sonar's default "Sonar way" gate is a
+    reasonable starting point) and decide whether it's blocking (fails the PR
+    check) or advisory-only to start, tightened later once the existing
+    codebase's baseline is known — don't let day-one noise block every PR.
+- [ ] `sonar-project.properties` (or the Gradle plugin's config block) at the
+    repo root, scoping analysis to `backend/src/main` + `web/src`, excluding
+    generated code (`web/dist`, `build/`, `node_modules`).
+
+### Reporting
+
+Where scan results actually surface, once this milestone lands:
+
+- **GitHub Security tab** (primary, Trivy): each image's vulnerability
+  findings appear as code scanning alerts, filterable by severity and
+  trackable over time (new vs. already-known), one alert group per
+  `category`. This is the main destination — no more digging through Actions
+  logs to know what an image scan found.
+- **SonarCloud/SonarQube dashboard** (primary, code quality): bugs, code
+  smells, security hotspots, duplication, and coverage trends per commit/PR,
+  with a PR check comment summarizing new issues introduced by that PR
+  specifically (not the whole codebase's backlog) — the same "don't drown a
+  PR in pre-existing noise" principle as the quality-gate bullet above.
+- **Workflow run summary**: a short human-readable count ("N high, M
+  critical" for Trivy; "N new issues, quality gate passed/failed" for Sonar)
+  written to `$GITHUB_STEP_SUMMARY`, so a failed run shows *why* at a glance
+  on the run's own page, without opening the Security tab or the Sonar
+  dashboard.
+- **Artifact upload** (fallback, if code scanning isn't available on this
+  repo): the human-readable (`format: table`) Trivy report saved as a build
+  artifact per image, same pattern as the OpenAPI spec artifact from M7 —
+  browsable via the run's Artifacts list, subject to the same retention
+  window.
+- `deploy/RUNBOOK.md` gains a short "where to see the last scan's findings"
+  pointer once the mechanisms above are picked, so it's discoverable without
+  re-deriving it from `deploy.yml`/`verify.yml`.
 
 ### Backlog (unscheduled)
 

@@ -417,10 +417,13 @@ Kairon ships. (A GraalVM native image is a possible later optimisation.)
 ### 8.2 Kubernetes resources
 
 Per environment: **one** backend `Deployment` + `Service` (serves API *and*
-SPA), one `Ingress` (whole host → the backend service; TLS via cert-manager),
-`ConfigMap` (non-secret config), `Secret` (DB creds, JWT secret), optional
-`HorizontalPodAutoscaler`, `ServiceAccount`. Liveness = `/actuator/health/liveness`,
-readiness = `/actuator/health/readiness`. There is no web Deployment/Service.
+SPA), one `Ingress` (whole host → the backend service; TLS via cert-manager on a
+real managed cluster, off on xbmc's Tailscale Funnel), `ConfigMap` (non-secret
+config), `Secret` (DB creds, JWT secret), optional `HorizontalPodAutoscaler`
+(off on xbmc — a single 2-core node has nothing to scale onto), `ServiceAccount`,
+and (M7) a `PersistentVolumeClaim` + `CronJob` pair for on-node `pg_dump` backups
+(enabled on xbmc only). Liveness = `/actuator/health/liveness`, readiness =
+`/actuator/health/readiness`. There is no web Deployment/Service.
 
 ### 8.3 Helm chart (`deploy/helm/kairon/`)
 
@@ -432,7 +435,8 @@ deploy/helm/kairon/
 ├── Chart.yaml            # dependencies: postgresql (bitnami), condition postgresql.enabled
 ├── values.yaml           # sensible defaults
 ├── values-local.yaml     # kind/minikube: NodePort or local ingress, small resources, postgresql.enabled=true
-├── values-prod.yaml      # managed cluster: external DB, real host, TLS, HPA, resource limits
+├── values-xbmc.yaml      # the real deployed environment: home k3s, external Bitnami PostgreSQL, backups on
+├── values-prod.yaml      # hypothetical future managed cluster: external DB, real host, TLS, HPA (M7 D1 — unused today)
 ├── templates/
 │   ├── _helpers.tpl
 │   ├── deployment.yaml              # the single backend (API + SPA) workload
@@ -440,40 +444,57 @@ deploy/helm/kairon/
 │   ├── ingress.yaml                 # whole host → the service
 │   ├── configmap.yaml
 │   ├── secret.yaml               # from values / existingSecret ref
-│   ├── migration-job.yaml        # helm.sh/hook: pre-install,pre-upgrade ; runs Flyway
+│   ├── migration-job.yaml        # helm.sh/hook: pre-install,pre-upgrade ; runs Flyway, every environment
 │   ├── serviceaccount.yaml
-│   ├── hpa.yaml                  # {{- if .Values.backend.autoscaling.enabled }}
+│   ├── hpa.yaml                  # {{- if .Values.autoscaling.enabled }} — off everywhere but values-prod.yaml
+│   ├── backup-pvc.yaml           # {{- if .Values.backup.enabled }} — on in values-xbmc.yaml only
+│   ├── backup-cronjob.yaml       # pg_dump → the PVC above, gzipped + pruned by retentionDays
 │   └── NOTES.txt
 └── charts/                       # postgresql pulled by `helm dependency update`
 ```
 
 - **Migrations** run as a Helm **pre-upgrade / pre-install hook Job**
-  (`flyway migrate` against the DB) so schema changes land before new pods roll.
-  App itself starts with `spring.flyway.enabled=false` in k8s.
-- **Secrets**: the chart references an existing `Secret` by name in prod
-  (`existingSecret`), populated by **SOPS**, **sealed-secrets**, or
-  **external-secrets** — nothing sensitive in `values-*.yaml` or git.
+  (`flyway migrate` against the DB, via a dedicated `docker/migrator.Dockerfile`
+  image) in **every** k8s environment, not just prod — local kind and xbmc
+  included. The app itself always starts with `SPRING_FLYWAY_ENABLED=false` in
+  k8s (`ConfigMap`); only host `bootRun` (the `local` Spring profile, not a k8s
+  deploy) still self-migrates on boot.
+- **Secrets stay manual** (M7 D9): the chart references an existing `Secret` by
+  name (`existingSecret`) for both the DB password and the JWT secret, created
+  out of band with a one-time `kubectl create secret`. No SOPS / sealed-secrets /
+  external-secrets — see `deploy/RUNBOOK.md` for the exact commands, including
+  secret rotation.
 - **Config precedence**: `values.yaml` → `values-<env>.yaml` → `--set` on the
   command line.
-- `helm lint` and `helm template | kubeconform` run in CI.
+- `helm lint` and `helm template | kubeconform` run in CI against every overlay
+  (`values-local.yaml`, `values-xbmc.yaml`, `values-prod.yaml`).
 
 ### 8.4 Environments
 
 | Env | Cluster | DB | Ingress |
 | --- | --- | --- | --- |
 | **local** | kind / minikube / k3d | in-cluster Bitnami PostgreSQL | ingress-nginx, `kairon.localtest.me` |
-| **prod** | managed k8s | CloudNativePG or managed Postgres, `postgresql.enabled=false` | ingress-nginx + cert-manager, real domain |
+| **xbmc** (real, deployed today) | single-node home k3s, containerd + Traefik | standalone Bitnami PostgreSQL in-cluster, `postgresql.enabled=false` | Traefik + Tailscale Funnel, no TLS at the chart level (Funnel terminates it) |
+| **prod** (hypothetical, `values-prod.yaml`, M7 D1) | managed k8s | external managed Postgres, `postgresql.enabled=false` | ingress-nginx + cert-manager, real domain |
 
 ### 8.5 CI/CD (`.github/workflows/`)
 
-1. **verify** — `npm ci && npm run test` in `web/`; `./gradlew build` (which
-   also runs the `:web` build, unit + Testcontainers + ArchUnit tests);
-   `helm lint`; `kubeconform`.
-2. **package** — on `main`: build + push a single `ghcr.io/<owner>/kairon` image
-   tagged with the commit SHA and semver; Trivy scan; publish the OpenAPI spec
-   artifact; regenerate the web client and fail if it drifts.
-3. **deploy** (manual / tag) — `helm upgrade --install kairon deploy/helm/kairon
-   -f values-<env>.yaml --set image.tag=<sha>`.
+1. **verify** — PR-gating only; never builds, pushes, or deploys. `npm ci && npm
+   run test` in `web/`; `./gradlew build` (which also runs the `:web` build,
+   unit + Testcontainers + ArchUnit tests); `helm lint` + `helm template |
+   kubeconform` against every values overlay.
+2. **deploy** (M7 D12) — on push to `main` (after `verify` has already passed on
+   the merged PR): a `package` job builds + Trivy-scans both the app image and
+   the migrator image, pushes both to GHCR tagged with the commit SHA, and
+   publishes the live OpenAPI spec as a build artifact; a `deploy` job joins the
+   xbmc tailnet and runs `helm upgrade --install kairon deploy/helm/kairon -f
+   values-xbmc.yaml --set image.tag=<sha>` against it. Auto-deploys on every
+   merge, same as `task xbmc` today — no manual-approval gate yet, though the
+   job targets a named GitHub Environment (`xbmc`) so adding one later is a
+   repo-settings change, not a workflow rewrite. A generated web API client
+   (`openapi-typescript`/orval) and its CI drift check are **not** part of this
+   milestone — the spec is published now as the prerequisite for that migration
+   whenever it happens (M7 D13).
 
 ---
 
@@ -516,16 +537,33 @@ deploy/helm/kairon/
 
 ## 11. Observability & operations
 
-- **Actuator** with health groups (`liveness`, `readiness`), `/prometheus`.
-  `/info` (public — `SecurityConfig` permits it) carries `build` (version,
-  commit, build time — Spring Boot's `BuildProperties`/`build-info.properties`,
-  the commit added as an extra property sourced from a Gradle property that
+- **Actuator** with health groups (`liveness`, `readiness`). Only
+  `/actuator/health/**` and `/actuator/info` are public; `SecurityConfig`
+  explicitly denies every other `/actuator/**` path regardless of what
+  `management.endpoints.web.exposure.include` is ever set to (M7 D10) — closing
+  a latent gap where a future config-only change could otherwise leak
+  `/actuator/env` or `/actuator/prometheus` to the open internet via the
+  Tailscale Funnel hostname. `/info` carries `build` (version, commit, build
+  time — Spring Boot's `BuildProperties`/`build-info.properties`, the commit
+  added as an extra property sourced from a Gradle property that
   `docker/Dockerfile` passes in, since `.dockerignore` excludes `.git` from the
   image build context) and `deploy` (the running image ref and the deploy
   timestamp — `com.kairon.meta.DeployInfoContributor`, reading env vars the
   Helm chart sets at `helm upgrade` time). The web About page (`/about`) just
   renders this endpoint.
-- **Micrometer** → Prometheus; Grafana dashboards checked into `deploy/` later.
+- **API docs**: `springdoc-openapi` (M7 D13) serves Swagger UI
+  (`/swagger-ui/index.html`) and the raw spec (`/v3/api-docs`) live on the
+  deployed app, deliberately public (same reasoning as `/actuator/info` — it's
+  documentation, not data) and explicitly allow-listed in `SecurityConfig`
+  rather than falling through the SPA catch-all by accident. The spec is also
+  published as a CI build artifact on every deploy. A generated web API client
+  and its drift check are a deferred follow-up, not part of M7.
+- **Micrometer** → `micrometer-registry-prometheus` is on the classpath (M7
+  D11), but `/actuator/prometheus` is not yet exposed and stays closed behind
+  the actuator deny above — there's no real Prometheus/Grafana consumer yet.
+  Standing those up, wiring live scraping, and checking dashboards into
+  `deploy/` is its own milestone (**M12**, `docs/ROADMAP.md`), so this isn't
+  shipped half-open ahead of having anything to point it at.
 - **Logging**: SLF4J + Logback (Spring Boot's default starter — no extra
   framework). The `prod` profile emits ECS-format JSON to stdout via Spring
   Boot's built-in structured logging (`logging.structured.format.console`); the
@@ -541,8 +579,9 @@ deploy/helm/kairon/
 - **Errors**: optional GlitchTip/Sentry integration behind a config flag —
   `@sentry/react` on the web side pointed at a self-hosted GlitchTip, `log.error`
   is the seam it hangs off.
-- **Runbook**: `deploy/RUNBOOK.md` — restore from backup, rotate JWT secret,
-  roll back a Helm release, read logs.
+- **Runbook**: `deploy/RUNBOOK.md` — restore from backup, rotate the JWT secret,
+  rotate the DB password, create the required secrets on a fresh cluster, roll
+  back a Helm release, read logs, and the accepted on-node-backup risk (M7 D8).
 
 ---
 
@@ -699,11 +738,10 @@ Decisions still open:
 - Whether assistant monthly token budgets need to be per-feature rather than
   per-user, and whether a public deployment should require a zero-retention
   Anthropic organisation for the instance key.
-- **Spring Boot 4 ecosystem readiness** — confirm the Boot 4 / Framework 7
-  compatible lines of `springdoc-openapi`, the Bucket4j starter, and MapStruct's
-  annotation processor at scaffold time (M0). If `springdoc` is not ready, fall
-  back to generating the OpenAPI spec from controller annotations via the
-  build-time plugin, or hand-maintain it briefly.
+- **Spring Boot 4 ecosystem readiness** for MapStruct's annotation processor and
+  the Bucket4j starter — `springdoc-openapi` 3.x's Boot 4 / Framework 7 line was
+  confirmed and adopted in M7 (`gradle/libs.versions.toml`'s `springdoc` version,
+  re-checked whenever Spring Boot is bumped).
 
 ---
 

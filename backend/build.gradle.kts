@@ -24,6 +24,15 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
+    // M7 D11: dependency only — `prometheus` is deliberately left out of
+    // management.endpoints.web.exposure.include until a real scraper exists
+    // (M12), and SecurityConfig's actuator deny (D10) keeps the endpoint closed
+    // even if a future config change tries to expose it.
+    implementation("io.micrometer:micrometer-registry-prometheus")
+    // M7 D13: Swagger UI + the raw OpenAPI spec, made deliberately public
+    // (SecurityConfig) — see the class Javadoc there.
+    implementation(libs.springdoc.openapi.starter.webmvc.ui)
+
     // Auth (M1): Spring Security + a JWT resource server. The oauth2-resource-server
     // starter pulls spring-security-oauth2-jose (Nimbus), which supplies both the
     // JwtDecoder used to validate access tokens and the JwtEncoder used to mint them.

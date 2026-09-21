@@ -1,0 +1,16 @@
+# M7 D7: local-PVC pg_dump backups. Off by default; enabled in values-xbmc.yaml,
+# the environment holding real data today. Off-node replication is out of scope —
+# see the "Known risk" section in deploy/RUNBOOK.md.
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "kairon.fullname" . }}-backups
+  labels:
+    {{- include "kairon.labels" . | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ .Values.backup.pvc.size }}
+{{- end }}

@@ -1,0 +1,53 @@
+# M7 D7: daily pg_dump to the PVC above, gzipped and timestamped, with a
+# find-based prune for anything older than retentionDays. postgres:16-alpine
+# matches the app's PostgreSQL 16 (docs/DESIGN.md) so pg_dump's client/server
+# versions line up.
+{{- if .Values.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "kairon.fullname" . }}-backup
+  labels:
+    {{- include "kairon.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            {{- include "kairon.selectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              env:
+                - name: PGHOST
+                  value: {{ .Values.database.host | default (printf "%s-postgresql" .Release.Name) | quote }}
+                - name: PGPORT
+                  value: {{ .Values.database.port | default 5432 | quote }}
+                - name: PGDATABASE
+                  value: {{ .Values.database.name | quote }}
+                - name: PGUSER
+                  value: {{ .Values.database.username | quote }}
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "kairon.databaseSecretName" . }}
+                      key: SPRING_DATASOURCE_PASSWORD
+              command:
+                - sh
+                - -c
+                - >-
+                  set -eu;
+                  pg_dump | gzip > /backups/kairon-$(date +%Y%m%dT%H%M%S).sql.gz;
+                  find /backups -name 'kairon-*.sql.gz' -mtime +{{ .Values.backup.retentionDays }} -delete
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: {{ include "kairon.fullname" . }}-backups
+{{- end }}

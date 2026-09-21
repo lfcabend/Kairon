@@ -56,8 +56,15 @@ jobs:
           tar xf kubeconform.tar.gz
           sudo mv kubeconform /usr/local/bin/
       - run: helm dependency update deploy/helm/kairon
+      # values-prod.yaml (M7) has no live cluster to deploy to yet, but still gets
+      # linted/rendered here so its templates (HPA, migration Job) are caught by
+      # CI the same as every other overlay.
       - run: helm lint deploy/helm/kairon -f deploy/helm/kairon/values-local.yaml
+      - run: helm lint deploy/helm/kairon -f deploy/helm/kairon/values-xbmc.yaml
+      - run: helm lint deploy/helm/kairon -f deploy/helm/kairon/values-prod.yaml
       - name: kubeconform
         run: |
-          helm template kairon deploy/helm/kairon -f deploy/helm/kairon/values-local.yaml \
-            | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.30.0
+          for values in values-local.yaml values-xbmc.yaml values-prod.yaml; do
+            helm template kairon deploy/helm/kairon -f "deploy/helm/kairon/$values" \
+              | kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.30.0
+          done

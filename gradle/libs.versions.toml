@@ -4,6 +4,10 @@ nodeGradle = "7.1.0"
 archunit = "1.4.1"
 bucket4j = "8.14.0"
 bouncycastle = "1.81"
+# Not part of the Spring Boot BOM, so pinned explicitly (M7 D13). Re-check the
+# latest 3.x release compatible with the Spring Boot version above whenever it's
+# bumped — springdoc's major version tracks Spring Boot's own.
+springdoc = "3.1.0"
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
@@ -19,3 +23,4 @@ postgresql = { module = "org.postgresql:postgresql" }
 bucket4j-core = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bucket4j" }
 # BouncyCastle is not managed by the Spring Boot BOM; needed for Argon2id hashing.
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
+springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }

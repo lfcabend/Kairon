@@ -3,10 +3,13 @@
 # Cluster:  single-node k3s "xbmc" @ 192.168.2.3 — containerd runtime, Traefik
 #           ingress (default ingressClass "traefik", LoadBalancer on the node IP),
 #           local-path default StorageClass.
-# Image:    pulled from GHCR (ghcr.io/lfcabend/kairon). Push a tag, then deploy
-#           with `--set image.tag=<tag>`. The GHCR package must be PUBLIC — the
-#           Deployment template does not wire imagePullSecrets yet, so a private
-#           package cannot be pulled without editing the chart.
+# Image:    pulled from GHCR (ghcr.io/lfcabend/kairon and, since M7,
+#           ghcr.io/lfcabend/kairon-migrator for the Flyway migration Job). Push a
+#           tag, then deploy with `--set image.tag=<tag>` (the migrator image tag
+#           follows automatically — see kairon.migratorImage in _helpers.tpl).
+#           Both GHCR packages must be PUBLIC — the chart does not wire
+#           imagePullSecrets, so a private package cannot be pulled without
+#           editing the chart (M7 Q3 — deferred, not planned).
 # Database: reuse the existing Bitnami PostgreSQL — Helm release "my-postgres" in
 #           namespace "postgres", service my-postgres-postgresql. That install
 #           only ships the "postgres" superuser and a "mydatabase" DB, so a
@@ -52,6 +55,17 @@ startupProbe:
 # pod restart) so a slow-but-succeeding boot isn't cut off by the Deployment
 # controller independently of, and before, the pod's own startup probe gives up.
 progressDeadlineSeconds: 3600
+
+# M7 D7: on-node pg_dump backups. Single point of failure by explicit choice
+# (local-path PVC, same node as the database) — see deploy/RUNBOOK.md's "Known
+# risk" section. 2Gi / 14 days is a starting point; revisit once real dumps exist
+# to measure against.
+backup:
+  enabled: true
+  schedule: "0 3 * * *"
+  retentionDays: 14
+  pvc:
+    size: 2Gi
 
 # Left empty on purpose: the chart generates a JWT signing secret on first install
 # and then reuses the value already in the cluster on every later `helm upgrade`

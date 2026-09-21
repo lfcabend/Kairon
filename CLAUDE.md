@@ -5,8 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Current state
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
-journal), M4 (projects core), M5 (Gantt & dependencies), and M6 (Today) are
-implemented.**
+journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), and M7
+(hardening & prod) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -99,8 +99,28 @@ updated when decisions change.
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
   always rolls the Deployment, even with no other change) and a `GIT_COMMIT`
   Docker build arg (wired from `Taskfile.yml`'s `image`/`image-push` tasks).
+  M7 (see `docs/milestones/M7-hardening-prod.md`) adds: a new
+  `docker/migrator.Dockerfile` (Flyway CLI + this repo's SQL migrations) built
+  and pushed alongside the app image, run by the chart's new
+  `templates/migration-job.yaml` (a `pre-install,pre-upgrade` Helm hook) in
+  every k8s environment — the app itself now always starts with
+  `SPRING_FLYWAY_ENABLED=false` in k8s; `templates/hpa.yaml` (off everywhere
+  except the new `values-prod.yaml`, a still-unused overlay for a hypothetical
+  future managed cluster — xbmc stays the real deployed environment);
+  `templates/backup-pvc.yaml`/`backup-cronjob.yaml` (a `pg_dump` CronJob to a
+  local PVC, enabled only in `values-xbmc.yaml`); and new
+  `.github/workflows/deploy.yml` (build + Trivy-scan + push both images to GHCR,
+  publish the OpenAPI spec, then `helm upgrade` against xbmc — auto-deploys on
+  every merge to `main`, no approval gate yet). `SecurityConfig` gained an
+  explicit `/actuator/**` deny (beyond `health`/`info`) and a public allow for
+  `springdoc-openapi`'s `/v3/api-docs`/`/swagger-ui/**` (new
+  `springdoc-openapi-starter-webmvc-ui` + `micrometer-registry-prometheus`
+  dependencies — the latter present but not yet exposed/scraped). New
+  `deploy/RUNBOOK.md` documents the manual secret-management pattern (no SOPS/
+  sealed-secrets), backup restore, and JWT/DB secret rotation.
 
-Next milestone is **M7 — Hardening & prod** (see `docs/ROADMAP.md`).
+Next milestone is **M8 — Assistant foundations & todo suggestions** (see
+`docs/ROADMAP.md`).
 
 ## What Kairon is
 

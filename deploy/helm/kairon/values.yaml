@@ -1,11 +1,20 @@
-# Default values for the Kairon chart. Overlaid by values-<env>.yaml; prod-only
-# concerns (external DB, cert-manager TLS, HPA, the Flyway pre-upgrade Job) arrive
-# in M7.
+# Default values for the Kairon chart. Overlaid by values-<env>.yaml. M7 adds the
+# Flyway migration Job (every environment), HPA (values-prod.yaml only), and the
+# backup CronJob (values-xbmc.yaml only) — see docs/milestones/M7-hardening-prod.md.
 
 image:
   repository: ghcr.io/lfcabend/kairon
   tag: ""            # defaults to .Chart.AppVersion when empty
   pullPolicy: IfNotPresent
+
+# Flyway migrator image (M7 D5), run by templates/migration-job.yaml as a Helm
+# pre-install/pre-upgrade hook in every environment. Both fields default off the
+# app image above when empty (see kairon.migratorImage in _helpers.tpl) — the two
+# images are always built and pushed together, so this rarely needs overriding.
+migrator:
+  image:
+    repository: ""
+    tag: ""
 
 replicaCount: 1
 
@@ -115,3 +124,22 @@ postgresql:
       limits:
         cpu: 500m
         memory: 512Mi
+
+# HPA (M7 D2). Off everywhere except values-prod.yaml — xbmc is a single 2-core
+# node with nothing to scale onto, so autoscaling only makes sense against a real
+# managed cluster. Ignored while disabled; templates/hpa.yaml renders nothing.
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+
+# pg_dump backup CronJob to a local PVC (M7 D7). Off by default; enabled and
+# tuned in values-xbmc.yaml, the environment actually holding real data today.
+# Off-node replication is explicitly out of scope — see deploy/RUNBOOK.md.
+backup:
+  enabled: false
+  schedule: "0 3 * * *"     # daily 03:00
+  retentionDays: 14
+  pvc:
+    size: 2Gi

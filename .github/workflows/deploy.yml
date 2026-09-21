@@ -1,0 +1,149 @@
+name: deploy
+
+# Runs after a merge to main. verify.yml is required by branch protection before
+# a PR can merge, so by the time this fires the merged commit has already passed
+# it — no workflow_run chaining needed for that guarantee (M7 D12).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: package (build, scan, publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+      migrator-image: ${{ steps.tag.outputs.migrator-image }}
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: kairon
+          POSTGRES_PASSWORD: kairon
+          POSTGRES_DB: kairon
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kairon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: tag
+        run: |
+          sha=$(git rev-parse --short=12 HEAD)
+          echo "image=ghcr.io/lfcabend/kairon:${sha}" >> "$GITHUB_OUTPUT"
+          echo "migrator-image=ghcr.io/lfcabend/kairon-migrator:${sha}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.tag.outputs.image }}
+          build-args: GIT_COMMIT=${{ github.sha }}
+
+      - name: Build & push migrator image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/migrator.Dockerfile
+          push: true
+          tags: ${{ steps.tag.outputs.migrator-image }}
+
+      - name: Trivy scan (app image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.tag.outputs.image }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Trivy scan (migrator image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.tag.outputs.migrator-image }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Fetch OpenAPI spec
+        # Boots the just-built app image against the postgres service above (self-
+        # migrating — SPRING_FLYWAY_ENABLED isn't set here, so it defaults to the
+        # application.yml default of true, same as any plain `docker run`), pulls
+        # the spec springdoc-openapi serves live (D13), then tears the container
+        # down. The image never leaves this runner's loopback interface.
+        run: |
+          docker run -d --name kairon-spec --network host \
+            -e SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/kairon \
+            -e SPRING_DATASOURCE_USERNAME=kairon \
+            -e SPRING_DATASOURCE_PASSWORD=kairon \
+            -e KAIRON_JWT_SECRET=ci-spec-fetch-only-not-a-real-secret-0000 \
+            ${{ steps.tag.outputs.image }}
+          ready=""
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/kairon/actuator/health/readiness >/dev/null; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ready" ]; then
+            echo "app never became ready" >&2
+            docker logs kairon-spec
+            exit 1
+          fi
+          curl -sf http://localhost:8080/kairon/v3/api-docs.yaml -o openapi.yaml
+          docker rm -f kairon-spec
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi-spec
+          path: openapi.yaml
+
+  deploy:
+    name: deploy (helm upgrade → xbmc)
+    needs: package
+    runs-on: ubuntu-latest
+    environment: xbmc
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - uses: azure/setup-helm@v4
+
+      - name: helm upgrade --install
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_XBMC }}" | base64 -d > ~/.kube/config
+          helm dependency update deploy/helm/kairon
+          image_tag=$(echo "${{ needs.package.outputs.image }}" | cut -d: -f2)
+          helm upgrade --install kairon deploy/helm/kairon \
+            --kube-context xbmc --namespace kairon --create-namespace \
+            -f deploy/helm/kairon/values-xbmc.yaml \
+            --set image.tag="$image_tag" \
+            --wait --timeout 65m

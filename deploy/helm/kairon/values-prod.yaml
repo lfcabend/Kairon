@@ -1,0 +1,52 @@
+# Hypothetical future managed-cluster overlay — nothing deploys here today (M7
+# D1). xbmc (values-xbmc.yaml) is the real, currently-deployed environment; this
+# file is kept alongside it for whenever a real managed cluster exists. Fill in
+# the real values (host, DB, cert-manager issuer name) before ever using this.
+
+image:
+  repository: ghcr.io/lfcabend/kairon
+  tag: ""
+
+springProfiles: prod
+
+deploymentStrategy:
+  type: RollingUpdate
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+
+ingress:
+  enabled: true
+  className: nginx
+  host: kairon.example.com   # placeholder — set the real domain before using this file
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  tls:
+    enabled: true
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 640Mi
+  limits:
+    cpu: "1"
+    memory: 1Gi
+
+security:
+  existingSecret: kairon-app   # pre-created; see deploy/RUNBOOK.md
+
+postgresql:
+  enabled: false
+
+database:
+  host: ""                    # set to the managed Postgres host
+  name: kairon
+  username: kairon
+  existingSecret: kairon-db    # pre-created; see deploy/RUNBOOK.md
+
+# Managed Postgres providers typically handle their own backups.
+backup:
+  enabled: false

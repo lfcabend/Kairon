@@ -47,6 +47,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
 
+{{/* Migrator image (M7 D5): Flyway CLI + this repo's SQL migrations, run by
+     templates/migration-job.yaml. Repository defaults to "<image.repository>-migrator";
+     tag defaults to the app image's own tag — the two are always built and pushed
+     together (Taskfile.yml, .github/workflows/deploy.yml), so a bare `--set
+     image.tag=<sha>` is enough to pin both without repeating the flag. */}}
+{{- define "kairon.migratorImage" -}}
+{{- $repo := .Values.migrator.image.repository | default (printf "%s-migrator" .Values.image.repository) -}}
+{{- $tag := .Values.migrator.image.tag | default (.Values.image.tag | default .Chart.AppVersion) -}}
+{{- printf "%s:%s" $repo $tag -}}
+{{- end -}}
+
 {{/* Secret name holding the DB password (existing one wins). */}}
 {{- define "kairon.databaseSecretName" -}}
 {{- if .Values.database.existingSecret -}}
