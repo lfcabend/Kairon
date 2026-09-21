@@ -151,29 +151,34 @@ packages stay public.
 
 ## M8 — Assistant foundations & todo suggestions
 
-The `assistant` module and the first AI feature. Off by default; dark unless an
-Anthropic API key is configured. See [`DESIGN.md`](DESIGN.md) §13 and
+See [`milestones/M8-assistant-foundations.md`](milestones/M8-assistant-foundations.md)
+for the full plan and rationale (Status: Accepted — implemented). The `assistant` module and the
+first AI feature. Off by default; dark unless an Anthropic API key is
+configured. See also [`DESIGN.md`](DESIGN.md) §13 and
 [`adr/0002-ai-assistant-anthropic.md`](adr/0002-ai-assistant-anthropic.md).
 
-- [ ] `assistant` module (`com.kairon.assistant`) with a thin
+- [x] `assistant` module (`com.kairon.assistant`) with a thin
       `assistant.llm.AnthropicClient` over `com.anthropic:anthropic-java`;
       ArchUnit rule: only this module imports the SDK.
-- [ ] `assistant_run` + `assistant_suggested_task` schema (`V007`).
-- [ ] Per-feature opt-in in `app_user.preferences`; `kairon.assistant.*` config;
+- [x] `assistant_run` + `assistant_suggested_task` schema (`V007`).
+- [x] Per-feature opt-in in `app_user.preferences`; `kairon.assistant.*` config;
       `ANTHROPIC_API_KEY` wired through `configmap.yaml` / `secret.yaml` and the
       values files.
-- [ ] Run lifecycle: create + `GET /assistant/runs/{id}` + `DELETE`.
-- [ ] `POST /assistant/todo-suggestions` (`{day, horizon}`) — builds context
+- [x] Run lifecycle: create + `GET /assistant/runs/{id}` + `DELETE`.
+- [x] `POST /assistant/todo-suggestions` (`{day, horizon}`) — builds context
       from active/on-hold projects, recent todo history, recent journal entries
       and "Today"; **structured output** → `assistant_suggested_task` rows.
-- [ ] `POST /assistant/suggested-tasks/{id}:accept` (creates a linked
+- [x] `POST /assistant/suggested-tasks/{id}:accept` (creates a linked
       `todo_item`) and `:dismiss`.
-- [ ] Prompt caching on the stable prefix; per-user monthly token budget;
+- [x] Prompt caching on the stable prefix; per-user monthly token budget;
       Bucket4j rate limit on `/assistant/**`; Micrometer token counter;
       timeout + circuit breaker; failures as `application/problem+json`.
-- [ ] Web: "Suggest todos" on Today/Todo, a review-and-accept list, and a
-      settings panel with the per-feature toggles and a data-sharing notice.
-- [ ] Tests: MockMvc for the endpoints with the Anthropic client faked; an
+- [x] Web: "Suggest todos" on Today/Todo, a review-and-accept list, and a
+      settings panel with a data-sharing notice and today's one real toggle
+      (todo suggestions) — the execution-summaries/journal-reflection toggles
+      are deliberately deferred to M9/M10, when those features actually exist
+      to toggle.
+- [x] Tests: MockMvc for the endpoints with the Anthropic client faked; an
       ArchUnit test for the SDK-containment rule.
 
 ## M9 — Weekly & monthly execution summaries

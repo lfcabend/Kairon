@@ -219,6 +219,20 @@ public class ProjectTaskService implements ProjectsApi {
         return views;
     }
 
+    @Override
+    public List<ProjectTaskView> openTasksInActiveProjects(UserId userId) {
+        List<ProjectTask> open = tasks.findOpenInActiveProjects(userId.value());
+        Map<UUID, Project> byProjectId = new HashMap<>();
+        for (Project project : projects.findAllById(open.stream().map(ProjectTask::getProjectId).distinct().toList())) {
+            byProjectId.put(project.getId(), project);
+        }
+        List<ProjectTaskView> views = open.stream()
+                .map(t -> ProjectTaskMapper.toView(t, byProjectId.get(t.getProjectId())))
+                .toList();
+        log.debug("Found {} open task(s) in active/on-hold projects userId={}", views.size(), userId.value());
+        return views;
+    }
+
     // --- internals -----------------------------------------------------------
 
     private Project requireProject(UserId userId, UUID projectId) {

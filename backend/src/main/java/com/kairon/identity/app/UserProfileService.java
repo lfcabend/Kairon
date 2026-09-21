@@ -7,6 +7,7 @@ import java.util.Optional;
 
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
+import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
 import com.kairon.identity.api.UserAccountView;
 import com.kairon.identity.domain.AppUser;
@@ -74,6 +75,12 @@ public class UserProfileService implements UserAccountApi {
     @Transactional(readOnly = true)
     public Optional<UserAccountView> findById(UserId userId) {
         return users.findById(userId.value()).map(AccountViews::of);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public AssistantPreferencesView assistantPreferences(UserId userId) {
+        return AssistantPreferenceMapper.of(require(userId).getPreferences());
     }
 
     private AppUser require(UserId userId) {

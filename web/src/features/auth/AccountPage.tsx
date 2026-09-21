@@ -12,6 +12,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { authApi } from "@/lib/api/auth";
 import type { Me, RolloverMode } from "@/lib/api/types";
 
+import { AssistantSettings } from "../assistant/AssistantSettings";
 import { getRolloverMode } from "../todo/useRollover";
 import { useAuthStore } from "./authStore";
 
@@ -142,6 +143,8 @@ export default function AccountPage() {
           ))}
         </RadioGroup>
       </section>
+
+      <AssistantSettings me={meQuery.data} />
 
       <section className="flex gap-3">
         <Button variant="outline" onClick={() => void signOut(false)}>

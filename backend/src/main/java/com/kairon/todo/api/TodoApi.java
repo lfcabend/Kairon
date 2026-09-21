@@ -21,6 +21,13 @@ public interface TodoApi {
     List<TodoItemView> forDay(UserId userId, LocalDate day);
 
     /**
+     * The user's non-deleted items in {@code [from, to]}, ordered by day then
+     * position. Added for M8's assistant module (todo-suggestion context: recent
+     * history as a capacity signal — docs/milestones/M8-assistant-foundations.md D3).
+     */
+    List<TodoItemView> range(UserId userId, LocalDate from, LocalDate to);
+
+    /**
      * Creates a plain {@code OPEN} item for the user, appended to {@code day}'s
      * list. {@code sourceProjectTaskId} links it back to the promoted task.
      */

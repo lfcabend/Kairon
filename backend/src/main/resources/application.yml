@@ -36,6 +36,18 @@ logging:
     # entries are emitted as fields and this pattern is unused.
     correlation: "[%X{correlationId:-}] "
 
+# M8 D6/Q5: conservative starting values for the circuit breaker around the
+# Anthropic call, pending real traffic to tune against.
+resilience4j:
+  circuitbreaker:
+    instances:
+      anthropic:
+        sliding-window-size: 10
+        minimum-number-of-calls: 5
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+
 management:
   endpoints:
     web:
@@ -91,3 +103,32 @@ kairon:
   journal:
     # Span cap on GET /journal?from=&to= and /journal/entry-days?from=&to=.
     range-max-days: 92
+  assistant:
+    # Master switch (docs/adr/0002) — off everywhere by default (M8 D16); an
+    # operator must also create the ANTHROPIC_API_KEY secret for the feature to
+    # leave "dark". Override via KAIRON_ASSISTANT_ENABLED.
+    enabled: ${KAIRON_ASSISTANT_ENABLED:false}
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: claude-sonnet-5
+    request-timeout: PT30S
+    # Sum of input+output tokens per user per UTC calendar month before new runs
+    # are refused (M8 D8). ~500k tokens/month is a conservative starting cap at
+    # Sonnet pricing — tune once there's real usage to look at.
+    monthly-token-budget-per-user: 500000
+    todo-suggestions:
+      # Context window defaults (M8 D9) — every number here is deliberately a
+      # config default, not a hardcoded constant.
+      history-days: 7
+      journal-lookback-days: 21
+      journal-entry-limit: 5
+      max-suggestions: 5
+      # LOW | MEDIUM | HIGH | XHIGH | MAX (Anthropic output_config.effort).
+      # A bounded extraction/classification task on a synchronous request path —
+      # MEDIUM balances quality against latency until a real run says otherwise.
+      effort: MEDIUM
+    rate-limit:
+      enabled: true
+      capacity: 5
+      refill-period: PT10M
+      paths:
+        - /api/v1/assistant/todo-suggestions

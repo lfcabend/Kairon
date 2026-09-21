@@ -310,6 +310,53 @@ export interface PromoteTaskBody {
   day: string;
 }
 
+// --- Assistant (M8) ------------------------------------------------------------
+
+export type AssistantRunStatus = "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+export type SuggestedTaskStatus = "PROPOSED" | "ACCEPTED" | "DISMISSED";
+export type Horizon = "DAY" | "WEEK";
+
+export interface AssistantSuggestedTask {
+  id: string;
+  runId: string;
+  title: string;
+  notes?: string;
+  rationale?: string;
+  suggestedForDay: string;
+  estimateMinutes?: number;
+  sourceProjectTaskId?: string;
+  status: SuggestedTaskStatus;
+  acceptedTodoItemId?: string;
+  position: number;
+}
+
+export interface AssistantRun {
+  id: string;
+  kind: string;
+  status: AssistantRunStatus;
+  model: string;
+  periodStart?: string;
+  periodEnd?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  error?: string;
+  createdAt: string;
+  suggestions: AssistantSuggestedTask[];
+}
+
+export interface TodoSuggestionBody {
+  day: string;
+  horizon: Horizon;
+}
+
+export interface AssistantPreferences {
+  todoSuggestions: { enabled: boolean };
+  executionSummaries: { enabled: boolean };
+  journalReflection: { enabled: boolean };
+  modelOverride: string | null;
+  tone: string;
+}
+
 // --- About (/actuator/info) --------------------------------------------------
 
 /** Whatever `build-info.properties` carries; `commit` is Kairon's own addition. */

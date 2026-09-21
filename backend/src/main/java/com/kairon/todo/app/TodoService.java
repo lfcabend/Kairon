@@ -75,6 +75,7 @@ public class TodoService implements TodoApi {
         return views;
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<TodoItemView> range(UserId userId, LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {

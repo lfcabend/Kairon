@@ -13,3 +13,13 @@ data:
   # runs Flyway when deployed this way. application-local.yml (host bootRun, not a
   # k8s deploy) is unaffected and keeps self-migrating on boot.
   SPRING_FLYWAY_ENABLED: "false"
+  # M8: dark by default (values.yaml) — ANTHROPIC_API_KEY (deployment.yaml, from
+  # assistant.existingSecret) is the other half of "available"; both must be set
+  # for the feature to actually run (docs/adr/0002).
+  KAIRON_ASSISTANT_ENABLED: {{ .Values.assistant.enabled | quote }}
+  {{- if .Values.assistant.model }}
+  KAIRON_ASSISTANT_MODEL: {{ .Values.assistant.model | quote }}
+  {{- end }}
+  {{- if .Values.assistant.monthlyTokenBudgetPerUser }}
+  KAIRON_ASSISTANT_MONTHLY_TOKEN_BUDGET_PER_USER: {{ .Values.assistant.monthlyTokenBudgetPerUser | quote }}
+  {{- end }}

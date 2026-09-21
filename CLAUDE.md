@@ -5,8 +5,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Current state
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
-journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), and M7
-(hardening & prod) are implemented.**
+journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
+(hardening & prod), and M8 (assistant foundations & todo suggestions) are
+implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -44,10 +45,30 @@ updated when decisions change.
   screen. `app` `PlanningService` (`today` composes `TodoApi.forDay`/
   `ProjectsApi.dueOrOverdue`/`JournalApi.hasEntryForDay`; `promote` calls
   `ProjectsApi.requireTask` then `TodoApi.create` to link a project task into
-  today's todo list), `web` `PlanningController`/`PlanningDtos`), and
+  today's todo list), `web` `PlanningController`/`PlanningDtos`),
   `meta` (the M0 `PingController`; `DeployInfoContributor`, an `InfoContributor`
   adding the running image ref + deploy time to `/actuator/info` for the About
-  page — the commit and build time are already there via `BuildProperties`).
+  page — the commit and build time are already there via `BuildProperties`), and
+  `assistant` (M8 — the only module allowed to import the Anthropic SDK. `domain`
+  `AssistantRun`/`AssistantRunKind`/`AssistantRunStatus`/`AssistantSuggestedTask`/
+  `AssistantSuggestedTaskStatus`, `repo` `AssistantRunRepository` (incl. the
+  monthly-token-budget `sumTokensSince` query)/`AssistantSuggestedTaskRepository`,
+  `llm` `AnthropicClient` (the SDK wrapper interface)/`AnthropicClientImpl`
+  (Resilience4j `@CircuitBreaker`, structured outputs via
+  `StructuredMessageCreateParams`)/`FakeAnthropicClient` (`local` profile +
+  `kairon.assistant.fake-client=true` — stands in for Playwright e2e, never a
+  real network call)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`, `app`
+  `AssistantRunService` (run lifecycle, budget/availability gating, suggestion
+  capping/clamping)/`SuggestedTaskService` (accept/dismiss)/
+  `TodoSuggestionContextBuilder` (the system prompt + per-request context)/
+  `AssistantProperties`/`Horizon`/`AssistantMapper`/`AssistantRunView`/
+  `AssistantSuggestedTaskView`/`AssistantUpstreamException`, `config`
+  `AssistantConfig`, `web` `AssistantRunController`/`SuggestedTaskController`/
+  `AssistantDtos`). Extends `TodoApi` with `range`, `JournalApi` with `range`,
+  `ProjectsApi` with `openTasksInActiveProjects`, and `UserAccountApi` with
+  `assistantPreferences` (backed by `identity.app.AssistantPreferenceMapper`,
+  a defensive parse of `app_user.preferences.assistant`) — all four added
+  specifically for the assistant module's context-building (M8).
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
   generated `content_tsv` + GIN index), `V004__projects.sql`
@@ -55,7 +76,9 @@ updated when decisions change.
   bare `uuid` on `todo_item.source_project_task_id`), `V005__task_dependencies.sql`
   (`task_dependency` — predecessor/successor edges, cycle-rejected in the
   service, no soft delete; a task's soft delete or a project's cascade also
-  hard-deletes the edges touching it). M6 adds no migration.
+  hard-deletes the edges touching it), `V007__assistant.sql` (`assistant_run` +
+  `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md).
+  M6 adds no migration; there is no `V006`.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -85,15 +108,21 @@ updated when decisions change.
   "Add to today" that flips to "Added" once a matching todo is in the
   `useTodos` cache)/`JournalPrompt` (inline quick-add, or a "Continue in
   Journal →" link once today has an entry), hooks in `useToday.ts` +
-  `planningKeys`).
+  `planningKeys`); the assistant under `src/features/assistant/` (M8 —
+  `SuggestTodosButton` (a two-step dialog: horizon choice, then
+  `SuggestedTaskList` review-and-accept, used on both `TodayPage` and
+  `DayView`)/`SuggestedTaskList`/`AssistantSettings` (embedded in
+  `AccountPage`, just the todo-suggestions toggle + model override — no
+  controls for the still-unbuilt M9/M10 features), hooks in `useAssistant.ts`
+  + `assistantKeys`).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
   and the app's default landing route (M6). API access is hand-written
   types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
-  `auth.ts`/`about.ts`/`planning.ts` over `client.ts` (the single-flight
-  401→refresh→retry fetch wrapper). Tests: Vitest + MSW (`src/test/msw/`);
-  Playwright happy paths in `web/e2e/` (`npm run test:e2e`, needs a running
-  full stack).
+  `auth.ts`/`about.ts`/`planning.ts`/`assistant.ts` over `client.ts` (the
+  single-flight 401→refresh→retry fetch wrapper). Tests: Vitest + MSW
+  (`src/test/msw/`); Playwright happy paths in `web/e2e/` (`npm run
+  test:e2e`, needs a running full stack).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
@@ -117,17 +146,24 @@ updated when decisions change.
   `springdoc-openapi-starter-webmvc-ui` + `micrometer-registry-prometheus`
   dependencies — the latter present but not yet exposed/scraped). New
   `deploy/RUNBOOK.md` documents the manual secret-management pattern (no SOPS/
-  sealed-secrets), backup restore, and JWT/DB secret rotation.
+  sealed-secrets), backup restore, and JWT/DB secret rotation. M8 adds the
+  `assistant.*` values block (`enabled: false` by default in every values
+  file, `existingSecret` for an operator-created `ANTHROPIC_API_KEY` Secret —
+  no Helm-generated fallback key, unlike the JWT secret), a conditional
+  `ANTHROPIC_API_KEY` env var in `deployment.yaml`, `KAIRON_ASSISTANT_*`
+  ConfigMap entries, and a `deploy/RUNBOOK.md` section on enabling/rotating
+  the key.
 
-Next milestone is **M8 — Assistant foundations & todo suggestions** (see
+Next milestone is **M9 — Weekly & monthly execution summaries** (see
 `docs/ROADMAP.md`).
 
 ## What Kairon is
 
 A single-user-scale personal productivity system (multi-user accounts, but "personal"
 data — no assignees/teams/permissions): **Daily Todo**, **Daily Journal**, small
-**Projects** with a Gantt chart, and a **Today** aggregation screen. A later phase
-(M8–M10) adds an opt-in, off-by-default Anthropic-powered **assistant**.
+**Projects** with a Gantt chart, a **Today** aggregation screen, and an opt-in,
+off-by-default Anthropic-powered **assistant** (M8 ships todo suggestions;
+weekly/monthly execution summaries and journal reflection follow in M9–M10).
 
 ## Architecture (the parts that span multiple files)
 
@@ -147,7 +183,7 @@ without an up-to-date web build, and the backend build therefore needs a Node to
 
 **Modular monolith.** One Spring Boot app, package-by-feature under `com.kairon`:
 `common` (shared kernel — no feature logic), `identity`, `todo`, `journal`, `projects`,
-`planning` (the "Today" aggregation), and later `assistant`. Rules enforced by **ArchUnit
+`planning` (the "Today" aggregation), and `assistant` (M8). Rules enforced by **ArchUnit
 tests in CI** — a change that breaks them fails the build:
 
 - A module may depend only on another module's thin `api` sub-package (public services +

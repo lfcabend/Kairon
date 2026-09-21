@@ -87,6 +87,19 @@ security:
   jwtSecret: ""
   existingSecret: ""
 
+# M8: optional AI assistant (docs/adr/0002). enabled: false here means every
+# values file is dark by default without needing to repeat it — an env overlay
+# only needs to set enabled: true (and existingSecret) to turn it on. Unlike the
+# JWT secret there's no Helm-generated fallback key: a real Anthropic API key has
+# no meaningful random default, so existingSecret must point at an
+# operator-created Secret carrying ANTHROPIC_API_KEY
+# (deploy/RUNBOOK.md) or the app simply stays dark.
+assistant:
+  enabled: false
+  existingSecret: ""
+  model: ""                    # empty = backend default (claude-sonnet-5)
+  monthlyTokenBudgetPerUser: "" # empty = backend default
+
 # Non-secret app config, rendered into the ConfigMap.
 config:
   SPRING_DATASOURCE_URL: ""   # computed from the postgresql release name when empty

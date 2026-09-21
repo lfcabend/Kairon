@@ -166,9 +166,10 @@ enforced boundaries. Rationale in [`adr/0001-architecture-and-stack.md`](adr/000
   - `planning` — the "Today" aggregation. Reads from `todo`, `projects`, and
     `journal` through their public APIs only.
   - `assistant` — optional AI features (todo suggestions, execution summaries,
-    journal reflection). Reads `todo`, `journal`, `projects`, and `planning`
-    through their public `api` packages only, and is the **only** module that
-    talks to the Anthropic API. Later phase (M8–M10); see §13.
+    journal reflection). Reads `todo`, `journal`, and `projects` through their
+    public `api` packages only — not `planning`, which exposes no `api`
+    package of its own (M6 D1) — and is the **only** module that talks to the
+    Anthropic API. Later phase (M8–M10); see §13.
 - **Module contract.** Each module exposes a thin `api` sub-package (public
   services + DTOs). Other modules depend on that, never on another module's
   `domain` or `repo` packages. Enforced by an **ArchUnit** test in CI. A second
@@ -618,8 +619,9 @@ feature is dark entirely unless the operator has configured an Anthropic API key
 ### 13.2 Module and boundaries
 
 A new feature module, `assistant` (`com.kairon.assistant`), peer to the others.
-It reads `todo`, `journal`, `projects`, and `planning` **only through their
-public `api` packages**, owns its tables (`assistant_run`,
+It reads `todo`, `journal`, and `projects` **only through their public `api`
+packages** — never `planning`, which has no `api` package to depend on (M6 D1)
+— owns its tables (`assistant_run`,
 `assistant_suggested_task`; see [`DATA_MODEL.md`](DATA_MODEL.md)) and its Flyway
 migration. A thin `assistant.llm.AnthropicClient` wraps the official **Anthropic
 Java SDK** (`com.anthropic:anthropic-java`). An **ArchUnit rule** asserts that
@@ -647,7 +649,9 @@ Deleting a run deletes its stored excerpts. `TODO_SUGGESTION` runs also produce
   small and concrete, respect existing commitments, don't invent deadlines) plus
   context: active/on-hold projects and their open tasks with dates, the last N
   days of todo items (completed / carried / cancelled — a capacity signal),
-  recent journal entries, and the "Today" aggregation. **Structured outputs**
+  recent journal entries, and due/overdue project tasks for the day (the same
+  signal the Today screen shows, read directly via `ProjectsApi.dueOrOverdue`
+  rather than through `planning` — see §3.1). **Structured outputs**
   (`output_config.format`) make the reply a validated JSON list that maps
   directly to `assistant_suggested_task` rows.
 - **Weekly / monthly summary** — the counts (todos created/completed/rolled

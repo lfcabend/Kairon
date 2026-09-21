@@ -9,7 +9,13 @@ import { cleanup } from "@testing-library/react";
 
 import { useAuthStore } from "@/features/auth/authStore";
 
-import { resetJournalStore, resetMeResponse, resetProjectsStore, resetTodoStore } from "./msw/handlers";
+import {
+  resetAssistantStore,
+  resetJournalStore,
+  resetMeResponse,
+  resetProjectsStore,
+  resetTodoStore,
+} from "./msw/handlers";
 import { server } from "./msw/server";
 
 // jsdom lacks the Pointer Capture API that Radix/sonner call on pointer events.
@@ -88,6 +94,7 @@ afterEach(() => {
   resetTodoStore();
   resetJournalStore();
   resetProjectsStore();
+  resetAssistantStore();
   resetMeResponse();
   useAuthStore.setState({ accessToken: null, user: null });
 });

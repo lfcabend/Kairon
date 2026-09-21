@@ -53,4 +53,16 @@ public class ApiException extends RuntimeException {
     public static ApiException tooManyRequests(String detail) {
         return new ApiException(HttpStatus.TOO_MANY_REQUESTS, "rate-limited", detail);
     }
+
+    public static ApiException forbidden(String detail) {
+        return new ApiException(HttpStatus.FORBIDDEN, "forbidden", detail);
+    }
+
+    public static ApiException serviceUnavailable(String detail) {
+        return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "assistant-unavailable", detail);
+    }
+
+    public static ApiException badGateway(String detail) {
+        return new ApiException(HttpStatus.BAD_GATEWAY, "assistant-upstream-error", detail);
+    }
 }

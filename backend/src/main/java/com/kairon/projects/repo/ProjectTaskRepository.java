@@ -43,4 +43,17 @@ public interface ProjectTaskRepository extends JpaRepository<ProjectTask, UUID> 
             ORDER BY t.plannedEnd ASC
             """)
     List<ProjectTask> findDueOrOverdue(@Param("userId") UUID userId, @Param("day") LocalDate day);
+
+    // Backs ProjectsApi.openTasksInActiveProjects (M8 D3) — the broader pool of
+    // "things that could be worked on" for the assistant's todo-suggestion context,
+    // not just what's due/overdue.
+    @Query("""
+            SELECT t FROM ProjectTask t JOIN Project p ON t.projectId = p.id
+            WHERE p.userId = :userId AND p.deletedAt IS NULL AND t.deletedAt IS NULL
+              AND p.status IN (com.kairon.projects.domain.ProjectStatus.ACTIVE,
+                                com.kairon.projects.domain.ProjectStatus.ON_HOLD)
+              AND t.status <> com.kairon.projects.domain.ProjectTaskStatus.DONE
+            ORDER BY p.name ASC, t.plannedEnd ASC NULLS LAST
+            """)
+    List<ProjectTask> findOpenInActiveProjects(@Param("userId") UUID userId);
 }

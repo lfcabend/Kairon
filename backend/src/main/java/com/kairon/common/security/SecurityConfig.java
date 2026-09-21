@@ -6,8 +6,10 @@ import com.kairon.common.ratelimit.RateLimitFilter;
 import com.kairon.common.ratelimit.RateLimitProperties;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -49,10 +51,20 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, RateLimitProperties rateLimitProperties,
-            ProblemAuthHandlers problemAuthHandlers, ObjectMapper objectMapper) throws Exception {
-        // Built here rather than as a bean so Spring Boot does not also register it as a
-        // plain servlet filter outside the security chain.
+            ProblemAuthHandlers problemAuthHandlers, ObjectMapper objectMapper, Environment environment)
+            throws Exception {
+        // Built here rather than as beans so Spring Boot does not also register them as
+        // plain servlet filters outside the security chain. A second, independently
+        // configured instance guards /api/v1/assistant/** (kairon.assistant.rate-limit.*,
+        // a much tighter budget than the auth-endpoint one above) — bound via Binder
+        // rather than a second @ConfigurationProperties bean of the same type, which
+        // would need its own qualifier disambiguation for no benefit here
+        // (docs/milestones/M8-assistant-foundations.md D11).
         RateLimitFilter rateLimitFilter = new RateLimitFilter(rateLimitProperties, objectMapper);
+        RateLimitProperties assistantRateLimitProperties = Binder.get(environment)
+                .bind("kairon.assistant.rate-limit", RateLimitProperties.class)
+                .orElseGet(() -> new RateLimitProperties(false, 0, null, java.util.List.of()));
+        RateLimitFilter assistantRateLimitFilter = new RateLimitFilter(assistantRateLimitProperties, objectMapper);
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
@@ -74,7 +86,8 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(problemAuthHandlers)
                         .accessDeniedHandler(problemAuthHandlers))
-                .addFilterBefore(rateLimitFilter, BearerTokenAuthenticationFilter.class);
+                .addFilterBefore(rateLimitFilter, BearerTokenAuthenticationFilter.class)
+                .addFilterBefore(assistantRateLimitFilter, BearerTokenAuthenticationFilter.class);
         return http.build();
     }
 }

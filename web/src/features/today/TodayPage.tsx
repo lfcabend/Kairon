@@ -4,6 +4,7 @@ import { authApi } from "@/lib/api/auth";
 import type { Me } from "@/lib/api/types";
 import { formatLongDate, todayInZone } from "@/lib/date";
 
+import { SuggestTodosButton } from "../assistant/SuggestTodosButton";
 import { RolloverPrompt } from "../todo/RolloverPrompt";
 import { getRolloverMode, useAutoRollover, useRolloverPreview } from "../todo/useRollover";
 import { DueTasksPanel } from "./DueTasksPanel";
@@ -32,7 +33,10 @@ export function TodayPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-lg font-semibold">{formatLongDate(date)}</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">{formatLongDate(date)}</h1>
+        <SuggestTodosButton day={date} />
+      </div>
 
       {previewQuery.data && <RolloverPrompt preview={previewQuery.data} mode={mode} toDay={date} />}
 

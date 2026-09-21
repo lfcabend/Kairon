@@ -42,6 +42,12 @@ dependencies {
     implementation(libs.bouncycastle.prov)
     implementation(libs.bucket4j.core)
 
+    // M8: assistant module. The Anthropic SDK is only ever imported under
+    // com.kairon.assistant.llm — ArchUnit's onlyAssistantImportsTheAnthropicSdk
+    // rule enforces that containment (docs/adr/0002).
+    implementation(libs.anthropic.java)
+    implementation(libs.resilience4j.spring.boot3)
+
     // Spring Boot 4 only auto-configures Flyway when the dedicated module is present
     // (flyway-core on its own is a silent no-op).
     implementation("org.springframework.boot:spring-boot-starter-flyway")

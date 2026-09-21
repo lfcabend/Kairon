@@ -1,6 +1,8 @@
 import { HttpResponse, http } from "msw";
 
 import type {
+  AssistantRun,
+  AssistantSuggestedTask,
   AuthResponse,
   JournalEntry,
   Me,
@@ -553,6 +555,131 @@ const planningHandlers = [
   }),
 ];
 
+// --- assistant (M8) --------------------------------------------------------
+
+let assistantRuns: AssistantRun[] = [];
+let assistantRunSeq = 0;
+let assistantSuggestedTasks: AssistantSuggestedTask[] = [];
+let assistantSuggestedTaskSeq = 0;
+/** What the next `POST /assistant/todo-suggestions` call returns — set via `seedAssistantSuggestions`. */
+let nextSuggestions: Partial<AssistantSuggestedTask>[] = [];
+
+export function resetAssistantStore() {
+  assistantRuns = [];
+  assistantRunSeq = 0;
+  assistantSuggestedTasks = [];
+  assistantSuggestedTaskSeq = 0;
+  nextSuggestions = [];
+}
+
+/** Configures what the next todo-suggestions request returns (default: an empty list). */
+export function seedAssistantSuggestions(items: Partial<AssistantSuggestedTask>[]) {
+  nextSuggestions = items;
+}
+
+function isTodoSuggestionsEnabled(): boolean {
+  const assistant = (meResponse.preferences as { assistant?: { todoSuggestions?: { enabled?: boolean } } })
+    .assistant;
+  return assistant?.todoSuggestions?.enabled === true;
+}
+
+const assistantHandlers = [
+  http.post(/\/api\/v1\/assistant\/todo-suggestions$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!isTodoSuggestionsEnabled()) {
+      return problem(403, "You haven't enabled todo suggestions in Settings.");
+    }
+    const body = (await request.json()) as { day: string; horizon: string };
+    assistantRunSeq += 1;
+    const runId = `assistant-run-${assistantRunSeq}`;
+    const created = nextSuggestions.map((partial, i) => {
+      assistantSuggestedTaskSeq += 1;
+      const row: AssistantSuggestedTask = {
+        id: partial.id ?? `suggested-task-${assistantSuggestedTaskSeq}`,
+        runId,
+        title: partial.title ?? `Suggestion ${assistantSuggestedTaskSeq}`,
+        notes: partial.notes,
+        rationale: partial.rationale ?? "Because reasons.",
+        suggestedForDay: partial.suggestedForDay ?? body.day,
+        estimateMinutes: partial.estimateMinutes,
+        sourceProjectTaskId: partial.sourceProjectTaskId,
+        status: "PROPOSED",
+        position: i,
+      };
+      return row;
+    });
+    assistantSuggestedTasks.push(...created);
+    const run: AssistantRun = {
+      id: runId,
+      kind: "TODO_SUGGESTION",
+      status: "SUCCEEDED",
+      model: "claude-sonnet-5",
+      periodStart: body.day,
+      periodEnd: body.day,
+      inputTokens: 1200,
+      outputTokens: 240,
+      createdAt: new Date().toISOString(),
+      suggestions: created,
+    };
+    assistantRuns.push(run);
+    return HttpResponse.json(run, { status: 201 });
+  }),
+
+  http.get("/kairon/api/v1/assistant/runs/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const run = assistantRuns.find((r) => r.id === params.id);
+    if (!run) return problem(404, "Assistant run not found.");
+    return HttpResponse.json({
+      ...run,
+      suggestions: assistantSuggestedTasks.filter((t) => t.runId === run.id),
+    });
+  }),
+
+  http.delete("/kairon/api/v1/assistant/runs/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    assistantRuns = assistantRuns.filter((r) => r.id !== params.id);
+    assistantSuggestedTasks = assistantSuggestedTasks.filter((t) => t.runId !== params.id);
+    return new HttpResponse(null, { status: 204 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-tasks\/([^/]+):accept$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":accept", ""),
+    );
+    const row = assistantSuggestedTasks.find((t) => t.id === id);
+    if (!row) return problem(404, "Suggested task not found.");
+    if (row.status !== "PROPOSED") return problem(409, `This suggestion was already ${row.status.toLowerCase()}.`);
+    const maxPos = live()
+      .filter((t) => t.day === row.suggestedForDay)
+      .reduce((m, t) => Math.max(m, t.position), 0);
+    const createdTodo = makeTodo({
+      day: row.suggestedForDay,
+      title: row.title,
+      notes: row.notes,
+      estimateMinutes: row.estimateMinutes,
+      sourceProjectTaskId: row.sourceProjectTaskId,
+      position: maxPos + 100,
+    });
+    todos.push(createdTodo);
+    row.status = "ACCEPTED";
+    row.acceptedTodoItemId = createdTodo.id;
+    return HttpResponse.json(createdTodo, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-tasks\/([^/]+):dismiss$/, ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":dismiss", ""),
+    );
+    const row = assistantSuggestedTasks.find((t) => t.id === id);
+    if (!row) return problem(404, "Suggested task not found.");
+    if (row.status !== "PROPOSED") return problem(409, `This suggestion was already ${row.status.toLowerCase()}.`);
+    row.status = "DISMISSED";
+    return HttpResponse.json(row);
+  }),
+];
+
 /**
  * Baseline happy-path handlers. Individual tests narrow behaviour with
  * `server.use(...)` and seed rows with `seedTodos(...)`/`seedJournalEntries(...)`.
@@ -803,4 +930,8 @@ export const handlers = [
   // --- planning / Today (M6) ----------------------------------------------
 
   ...planningHandlers,
+
+  // --- assistant (M8) -----------------------------------------------------
+
+  ...assistantHandlers,
 ];

@@ -48,3 +48,12 @@ kairon:
     seed-email: dev@kairon.local
     seed-password: dev-password-please
     seed-display-name: Dev User
+  # M8: on for local dev/e2e, with a canned FakeAnthropicClient standing in for
+  # the real SDK client (fake-client: true) — no real ANTHROPIC_API_KEY needed,
+  # and `task e2e` never makes a real network call to Anthropic
+  # (docs/milestones/M8-assistant-foundations.md §9 Q3). The user still has to
+  # opt in per feature via Settings, same as any real deployment.
+  assistant:
+    enabled: true
+    api-key: fake-key-not-sent-anywhere-fake-client-is-active
+    fake-client: true

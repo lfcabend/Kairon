@@ -12,4 +12,12 @@ import com.kairon.common.security.UserId;
 public interface UserAccountApi {
 
     Optional<UserAccountView> findById(UserId userId);
+
+    /**
+     * The user's assistant opt-in flags, model override, and tone — a typed
+     * projection of {@code app_user.preferences.assistant} for M8's
+     * {@code assistant} module, which cannot parse the raw preferences map
+     * itself (docs/milestones/M8-assistant-foundations.md D3).
+     */
+    AssistantPreferencesView assistantPreferences(UserId userId);
 }

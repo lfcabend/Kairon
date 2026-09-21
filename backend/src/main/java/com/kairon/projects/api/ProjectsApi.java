@@ -24,4 +24,11 @@ public interface ProjectsApi {
 
     /** Resolves a task the caller owns (via its project); 404 if missing or foreign. */
     ProjectTaskView requireTask(UserId userId, UUID taskId);
+
+    /**
+     * Open ({@code status <> DONE}) tasks across the user's {@code ACTIVE}/
+     * {@code ON_HOLD} projects, with their dates. Added for M8's assistant
+     * module (todo-suggestion context — docs/milestones/M8-assistant-foundations.md D3).
+     */
+    List<ProjectTaskView> openTasksInActiveProjects(UserId userId);
 }

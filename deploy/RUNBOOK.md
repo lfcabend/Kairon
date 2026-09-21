@@ -76,6 +76,50 @@ to log in again.
    kubectl rollout restart deployment/kairon
    ```
 
+## Enable or rotate the Anthropic API key (M8 assistant)
+
+The assistant module (docs/DESIGN.md §13, docs/adr/0002) is dark by default —
+`assistant.enabled: false` in every values file, and the chart never generates
+a fallback key the way it does for the JWT secret (there's no meaningful
+random default for a real Anthropic API key). Turning it on is a deliberate,
+manual, two-part action:
+
+1. Create a Secret carrying the key (get one from
+   [console.anthropic.com](https://console.anthropic.com)):
+   ```sh
+   kubectl -n kairon create secret generic kairon-assistant \
+     --from-literal=ANTHROPIC_API_KEY=<the key>
+   ```
+2. Point the chart at it and flip the switch, e.g. in `values-xbmc.yaml`:
+   ```yaml
+   assistant:
+     enabled: true
+     existingSecret: kairon-assistant
+   ```
+   then `helm upgrade` as usual. Both halves are required —
+   `kairon.assistant.enabled` and a non-blank `ANTHROPIC_API_KEY` — either one
+   missing leaves the module inert (`AssistantProperties.available()`), so a
+   `helm upgrade` can never accidentally turn this on by itself.
+
+**Rotate the key** the same way as the DB password: update the Secret,
+then restart the pod so it picks up the new value:
+
+```sh
+kubectl -n kairon create secret generic kairon-assistant \
+  --from-literal=ANTHROPIC_API_KEY=<the new key> \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl rollout restart deployment/kairon
+```
+
+**Turn it back off**: set `assistant.enabled: false` (the Secret can stay —
+without the flag the key is simply never read) and `helm upgrade`.
+
+Retention: Anthropic retains API request data for up to 30 days by default
+(zero retention is available to qualifying organisations) — this governs
+every opted-in user's data on a shared instance key, not just the operator's
+own. Confirm your organisation's retention settings before enabling this for
+other people (docs/DESIGN.md §13.5).
+
 ## Create the required secrets on a fresh cluster
 
 Before the first `helm upgrade --install` against a brand-new cluster:
@@ -89,6 +133,9 @@ kubectl -n kairon create secret generic kairon-db \
 `security.existingSecret` (holding `KAIRON_JWT_SECRET`) is optional — leave it
 unset and the chart generates + manages one itself (see "Rotate the JWT secret"
 above). Set it only if you want the JWT secret managed outside Helm entirely.
+`kairon-assistant` (holding `ANTHROPIC_API_KEY`) is optional too, and only
+needed if you're turning the assistant on — see "Enable or rotate the
+Anthropic API key" above.
 
 ## Make a brand-new GHCR package public
 

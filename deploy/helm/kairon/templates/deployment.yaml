@@ -65,6 +65,16 @@ spec:
                 secretKeyRef:
                   name: {{ include "kairon.appSecretName" . }}
                   key: KAIRON_JWT_SECRET
+            {{- if .Values.assistant.existingSecret }}
+            # M8: no Helm-generated fallback (values.yaml) — only wired when an
+            # operator has created assistant.existingSecret; otherwise the app
+            # never sees this env var at all and stays dark (docs/adr/0002).
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.assistant.existingSecret }}
+                  key: ANTHROPIC_API_KEY
+            {{- end }}
           startupProbe:
             httpGet:
               path: {{ .Values.ingress.path }}/actuator/health/readiness

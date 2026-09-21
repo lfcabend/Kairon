@@ -8,6 +8,13 @@ bouncycastle = "1.81"
 # latest 3.x release compatible with the Spring Boot version above whenever it's
 # bumped — springdoc's major version tracks Spring Boot's own.
 springdoc = "3.1.0"
+# M8: the official Anthropic Java SDK, wrapped by assistant.llm.AnthropicClient
+# and contained there by ArchUnit (docs/adr/0002). Not part of any BOM.
+anthropicJava = "2.34.0"
+# M8 D6/D15: circuit breaker around the Anthropic call. Confirmed compiling and
+# auto-configuring cleanly against springBoot 4.1.1 (full existing test suite green
+# with this on the classpath) — see docs/milestones/M8-*.md D15/Q1.
+resilience4j = "2.3.0"
 
 [plugins]
 spring-boot = { id = "org.springframework.boot", version.ref = "springBoot" }
@@ -24,3 +31,5 @@ bucket4j-core = { module = "com.bucket4j:bucket4j_jdk17-core", version.ref = "bu
 # BouncyCastle is not managed by the Spring Boot BOM; needed for Argon2id hashing.
 bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk18on", version.ref = "bouncycastle" }
 springdoc-openapi-starter-webmvc-ui = { module = "org.springdoc:springdoc-openapi-starter-webmvc-ui", version.ref = "springdoc" }
+anthropic-java = { module = "com.anthropic:anthropic-java", version.ref = "anthropicJava" }
+resilience4j-spring-boot3 = { module = "io.github.resilience4j:resilience4j-spring-boot3", version.ref = "resilience4j" }

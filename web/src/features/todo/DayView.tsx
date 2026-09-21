@@ -6,6 +6,7 @@ import { authApi } from "@/lib/api/auth";
 import type { Me, TodoItem } from "@/lib/api/types";
 import { addDays, isValidIsoDate, todayInZone } from "@/lib/date";
 
+import { SuggestTodosButton } from "../assistant/SuggestTodosButton";
 import { DateNav } from "./DateNav";
 import { DaySummary } from "./DaySummary";
 import { QuickAdd } from "./QuickAdd";
@@ -132,7 +133,10 @@ export function DayView() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <DateNav date={date} today={today} onNavigate={(d) => navigate(`/day/${d}`)} />
-        <DaySummary items={items} />
+        <div className="flex items-center gap-3">
+          <DaySummary items={items} />
+          <SuggestTodosButton day={date} />
+        </div>
       </div>
 
       <QuickAdd ref={quickAddRef} onAdd={(title) => create.mutate({ day: date, title })} />

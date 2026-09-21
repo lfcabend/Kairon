@@ -62,6 +62,7 @@ public class JournalService implements JournalApi {
         return views;
     }
 
+    @Override
     @Transactional(readOnly = true)
     public List<JournalEntryView> range(UserId userId, LocalDate from, LocalDate to) {
         if (to.isBefore(from)) {

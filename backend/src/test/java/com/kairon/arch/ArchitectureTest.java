@@ -72,4 +72,17 @@ class ArchitectureTest {
             .should().dependOnClassesThat()
             .resideInAnyPackage("org.springframework.security..", "com.nimbusds..")
             .as("only common (security plumbing) and identity wire Spring Security");
+
+    @ArchTest
+    static final ArchRule assistantInternalsArePrivate = noClasses()
+            .that().resideOutsideOfPackage("com.kairon.assistant..")
+            .should().dependOnClassesThat()
+            .resideInAnyPackage("com.kairon.assistant.domain..", "com.kairon.assistant.repo..")
+            .as("other modules may depend only on com.kairon.assistant.api (none exists yet — M8 D1)");
+
+    @ArchTest
+    static final ArchRule onlyAssistantImportsTheAnthropicSdk = noClasses()
+            .that().resideOutsideOfPackage("com.kairon.assistant..")
+            .should().dependOnClassesThat().resideInAPackage("com.anthropic..")
+            .as("assistant.llm.AnthropicClient is the only wrapper around the Anthropic SDK (docs/adr/0002)");
 }
