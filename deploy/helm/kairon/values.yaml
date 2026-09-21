@@ -107,7 +107,7 @@ database:
 
 # Bitnami PostgreSQL subchart — on for local/kind, off in prod (external DB).
 # The subchart's default engine version is used for local dev; prod points at an
-# external PostgreSQL 16 (see docs/DESIGN.md §8.4) and sets postgresql.enabled=false.
+# external PostgreSQL 18 (see docs/DESIGN.md §8.4) and sets postgresql.enabled=false.
 postgresql:
   enabled: true
   auth:
@@ -143,9 +143,11 @@ backup:
   retentionDays: 14
   # pg_dump refuses to dump a server newer than itself, so this must track
   # whatever Postgres major version is actually running (check with `kubectl
-  # exec ... -- psql -c 'select version()'` — the docs' stated "PostgreSQL 16"
-  # has already drifted from reality once; confirmed 18.6 during the M7 trial
-  # deploy, see docs/milestones/M7-hardening-prod.md).
+  # exec ... -- psql -c 'select version()'`) — a values field rather than a
+  # hardcoded tag because the docs' previously-stated "PostgreSQL 16" had
+  # already silently drifted to the 18.6 actually running in both xbmc and
+  # local kind, confirmed during the M7 trial deploy (docs/milestones/
+  # M7-hardening-prod.md) and now corrected everywhere else in the docs too.
   pgDumpImage: postgres:18-alpine
   pvc:
     size: 2Gi

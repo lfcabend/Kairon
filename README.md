@@ -33,7 +33,7 @@ Ancient Greek distinguished *chronos* (χρόνος), clock time that just passe
 
 ## Tech stack (summary)
 
-Java 25 · Spring Boot 4 · PostgreSQL 16 · Flyway · Spring Security + JWT ·
+Java 25 · Spring Boot 4 · PostgreSQL 18 · Flyway · Spring Security + JWT ·
 React 18 · Vite · TanStack Query · Tailwind + shadcn/ui ·
 Anthropic Java SDK (AI assistant, later) ·
 Docker · Kubernetes · Helm 3 · GitHub Actions

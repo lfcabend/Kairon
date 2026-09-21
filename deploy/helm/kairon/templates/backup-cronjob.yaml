@@ -1,10 +1,11 @@
 # M7 D7: daily pg_dump to the PVC above, gzipped and timestamped, with a
 # find-based prune for anything older than retentionDays. The pg_dump client
 # image's major version must be >= the server's (pg_dump refuses to dump a
-# newer server) — set via backup.pgDumpImage rather than hardcoded, since the
-# actually-running engine has already drifted past DESIGN.md's stated
-# "PostgreSQL 16" once (confirmed PostgreSQL 18.6 on both xbmc and local kind
-# during the M7 trial deploy — see docs/milestones/M7-hardening-prod.md).
+# newer server) — set via backup.pgDumpImage rather than hardcoded, since this
+# drifted once already: the engine actually running (PostgreSQL 18.6 on both
+# xbmc and local kind, confirmed during the M7 trial deploy) had silently
+# moved past what the docs claimed at the time. See docs/milestones/
+# M7-hardening-prod.md.
 {{- if .Values.backup.enabled }}
 apiVersion: batch/v1
 kind: CronJob

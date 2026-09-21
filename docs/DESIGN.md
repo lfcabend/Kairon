@@ -142,7 +142,7 @@ flowchart LR
     subgraph Cluster[Kubernetes]
         GW[Ingress<br/>ingress-nginx + cert-manager]
         GW --> B[Kairon backend<br/>Spring Boot: REST API + static SPA]
-        B --> DB[(PostgreSQL 16)]
+        B --> DB[(PostgreSQL 18)]
         B --> OBS[Actuator / Prometheus metrics]
     end
 ```
@@ -228,7 +228,7 @@ embedded in the Spring Boot jar for a single deployable.
 | Framework | **Spring Boot 4** (Spring Framework 7), Spring MVC | REST controllers; virtual-thread executor enabled. Jackson 3 baseline; JSpecify null-safety; built-in API versioning available. |
 | Build | **Gradle**, Kotlin DSL | Root build with `:backend` and `:web` subprojects; `:web` (node-gradle plugin) builds the SPA into `:backend`'s resources. Version catalog. |
 | Web packaging | **Embedded in the Spring Boot jar** | Vite `dist/` served as static resources with SPA fallback; no nginx, no separate web container/image. See §3.3. |
-| Persistence | **Spring Data JPA / Hibernate ORM 7**, **PostgreSQL 16** | |
+| Persistence | **Spring Data JPA / Hibernate ORM 7**, **PostgreSQL 18** | |
 | Migrations | **Flyway** | Versioned SQL, run as a Helm pre-upgrade hook Job (see §8). |
 | API docs | **springdoc-openapi** | Serves `/v3/api-docs`; the OpenAPI spec is the client-generation source. |
 | Security | **Spring Security 7** (ships with Spring Boot 4), JWT | Access + refresh tokens; Argon2 password hashing. See §6. |

@@ -27,7 +27,7 @@ One Spring Boot 4 service (Spring Framework 7), Java 25 (current LTS), Gradle (K
 plus a `common` shared kernel). Modules talk only through each other's public
 `api` package; boundaries enforced by an ArchUnit test.
 
-Persistence: Spring Data JPA / Hibernate ORM 7 on PostgreSQL 16, schema managed by
+Persistence: Spring Data JPA / Hibernate ORM 7 on PostgreSQL 18, schema managed by
 **Flyway** (plain versioned SQL) rather than Liquibase — see the alternatives
 table. Security: Spring Security 7 with JWT access tokens + rotating opaque
 refresh tokens, Argon2id password hashing. API documented with springdoc-openapi;

@@ -189,7 +189,7 @@ off by default; the whole module is dark without an `ANTHROPIC_API_KEY`. Default
 ## Stack
 
 Java 25 · Spring Boot 4 / Spring Framework 7 · Spring Data JPA / Hibernate 7 ·
-PostgreSQL 16 · Flyway · Spring Security 7 + JWT · MapStruct · Bean Validation ·
+PostgreSQL 18 · Flyway · Spring Security 7 + JWT · MapStruct · Bean Validation ·
 springdoc-openapi · Bucket4j (rate limiting) · Testcontainers · ArchUnit ·
 React 18 + TypeScript + Vite · React Router · TanStack Query · Zustand ·
 React Hook Form + Zod · Tailwind + shadcn/ui · `gantt-task-react` ·
