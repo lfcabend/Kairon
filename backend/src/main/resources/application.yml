@@ -126,9 +126,14 @@ kairon:
       # A bounded extraction/classification task on a synchronous request path —
       # MEDIUM balances quality against latency until a real run says otherwise.
       effort: MEDIUM
+    project-plan:
+      # Cap on a generated plan's task count (M8.5 D7) — bounds prompt/response
+      # cost and review-screen size for a runaway description.
+      max-tasks: 40
     rate-limit:
       enabled: true
       capacity: 5
       refill-period: PT10M
       paths:
         - /api/v1/assistant/todo-suggestions
+        - /api/v1/assistant/project-plan

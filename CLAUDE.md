@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
 journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
-(hardening & prod), and M8 (assistant foundations & todo suggestions) are
-implemented.**
+(hardening & prod), M8 (assistant foundations & todo suggestions), and M8.5
+(AI project generation from a description) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -27,18 +27,28 @@ updated when decisions change.
   full-text `search` query + `JournalSearchRow` projection), `app`
   `JournalService`/`JournalSearchService`/`JournalMapper`/`JournalProperties`,
   `config`, `web` `JournalController`), `projects` (`api` port `ProjectsApi`/
-  `ProjectView`/`ProjectTaskView`/`ProjectPage`/`ProjectTaskPage`, `domain`
+  `ProjectView`/`ProjectTaskView`/`ProjectPage`/`ProjectTaskPage`/
+  `ProjectPlanCommand`/`PlannedTask`/`PlannedDependency` (M8.5, the
+  string-`key`-based cross-reference shape `createFromPlan` takes), `domain`
   `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
   `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
   `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query)/
   `TaskDependencyRepository` (M5), `app`
   `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
   `ProjectsApi`, incl. M6's `requireTask` — resolves a task the caller owns via
-  `TaskResolution`, 404 if missing/foreign)/`ProjectsProperties`/`SortParsing`/
+  `TaskResolution`, 404 if missing/foreign; M8.5's `createFromPlan` delegates
+  to `ProjectPlanImportService` via a `@Lazy`-injected reference, breaking
+  the constructor cycle that collaborator's own reuse of `ProjectTaskService`
+  would otherwise create)/`ProjectsProperties`/`SortParsing`/
   `TaskResolution` (M5, the shared "resolve a task with no projectId in the
   URL" helper extracted out of `ProjectTaskService`)/`TaskDependencyService`/
   `TaskDependencyView`/`TaskDependencyMapper` (M5 — dependency CRUD incl. cycle
-  rejection and the computed `violatesConstraint` flag), `config`, `web`
+  rejection and the computed `violatesConstraint` flag)/`ProjectPlanImportService`
+  (M8.5, package-private — creates a project + its ≤2-level task tree + its
+  dependency edges from a `ProjectPlanCommand` in one transaction, calling
+  `ProjectService`/`ProjectTaskService`/`TaskDependencyService` as ordinary
+  collaborators; flattens excessive nesting and drops unresolvable/cycle-forming
+  dependency edges rather than failing the whole import), `config`, `web`
   `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`/
   `TaskDependencyController` (M5)), `planning` (M6 — no `domain`/`repo`, no
   migration: a pure aggregation over `todo`/`projects`/`journal` for the Today
@@ -51,23 +61,41 @@ updated when decisions change.
   page — the commit and build time are already there via `BuildProperties`), and
   `assistant` (M8 — the only module allowed to import the Anthropic SDK. `domain`
   `AssistantRun`/`AssistantRunKind`/`AssistantRunStatus`/`AssistantSuggestedTask`/
-  `AssistantSuggestedTaskStatus`, `repo` `AssistantRunRepository` (incl. the
-  monthly-token-budget `sumTokensSince` query)/`AssistantSuggestedTaskRepository`,
-  `llm` `AnthropicClient` (the SDK wrapper interface)/`AnthropicClientImpl`
+  `AssistantSuggestedTaskStatus`/`AssistantSuggestedProject`/
+  `AssistantSuggestedProjectStatus` (M8.5), `repo` `AssistantRunRepository` (incl. the
+  monthly-token-budget `sumTokensSince` query)/`AssistantSuggestedTaskRepository`/
+  `AssistantSuggestedProjectRepository` (M8.5),
+  `llm` `AnthropicClient` (the SDK wrapper interface, now
+  `suggestTodos`/`generateProjectPlan`)/`AnthropicClientImpl`
   (Resilience4j `@CircuitBreaker`, structured outputs via
   `StructuredMessageCreateParams`)/`FakeAnthropicClient` (`local` profile +
   `kairon.assistant.fake-client=true` — stands in for Playwright e2e, never a
-  real network call)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`, `app`
+  real network call)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`/
+  `ProjectPlanPayload`/`PlannedTaskPayload`/`PlannedDependencyPayload` (M8.5,
+  the structured-output shape for a `PROJECT_GENERATION` run), `app`
   `AssistantRunService` (run lifecycle, budget/availability gating, suggestion
-  capping/clamping)/`SuggestedTaskService` (accept/dismiss)/
+  capping/clamping; M8.5's `requestProjectPlan` follows the same shape)/
+  `SuggestedTaskService` (accept/dismiss)/`SuggestedProjectService` (M8.5 —
+  accept/dismiss for a whole plan; accept cascades caller-excluded task keys
+  to their children, then calls `ProjectsApi.createFromPlan`)/
   `TodoSuggestionContextBuilder` (the system prompt + per-request context)/
-  `AssistantProperties`/`Horizon`/`AssistantMapper`/`AssistantRunView`/
-  `AssistantSuggestedTaskView`/`AssistantUpstreamException`, `config`
+  `ProjectPlanContextBuilder` (M8.5, lighter — no cross-module aggregation,
+  just the user's own description + dates)/
+  `AssistantProperties`/`Horizon`/`AssistantMapper`/`AssistantRunView`
+  (M8.5: gained a `suggestedProject` field alongside `suggestions`, one run
+  view for both kinds)/`AssistantSuggestedTaskView`/`AssistantUpstreamException`/
+  `AssistantSuggestedProjectView`/`PlannedTaskView`/`PlannedDependencyView`/
+  `PersistedProjectPlan` (M8.5 — the latter is what's actually stored as
+  `assistant_suggested_project.plan`: the model's payload plus the
+  caller-supplied `startDate`/`endDate` it never chooses itself), `config`
   `AssistantConfig`, `web` `AssistantRunController`/`SuggestedTaskController`/
-  `AssistantDtos`). Extends `TodoApi` with `range`, `JournalApi` with `range`,
-  `ProjectsApi` with `openTasksInActiveProjects`, and `UserAccountApi` with
+  `AssistantDtos`/`ProjectPlanController`/`SuggestedProjectController`/
+  `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range`, `JournalApi` with `range`,
+  `ProjectsApi` with `openTasksInActiveProjects` and, for M8.5, `createFromPlan`,
+  and `UserAccountApi` with
   `assistantPreferences` (backed by `identity.app.AssistantPreferenceMapper`,
-  a defensive parse of `app_user.preferences.assistant`) — all four added
+  a defensive parse of `app_user.preferences.assistant`, now including a
+  `projectGenerationEnabled` flag) — all four added
   specifically for the assistant module's context-building (M8).
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
@@ -77,7 +105,9 @@ updated when decisions change.
   (`task_dependency` — predecessor/successor edges, cycle-rejected in the
   service, no soft delete; a task's soft delete or a project's cascade also
   hard-deletes the edges touching it), `V007__assistant.sql` (`assistant_run` +
-  `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md).
+  `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md),
+  `V008__project_plan.sql` (widens `assistant_run.kind` to add
+  `PROJECT_GENERATION`; adds `assistant_suggested_project`, M8.5).
   M6 adds no migration; there is no `V006`.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
@@ -87,7 +117,9 @@ updated when decisions change.
   `EntryList`/`EntryCard`/`EntryEditor` (Tiptap WYSIWYG)/`MoodPicker`,
   `JournalSearchPage`, hooks in `useJournal.ts`/`useJournalSearch.ts` +
   `journalKeys`); projects under `src/features/projects/` (`ProjectListPage`
-  (category sections + `ProjectPriorityList` for "Sort by: Priority")/
+  (category sections + `ProjectPriorityList` for "Sort by: Priority", plus a
+  "New project from description" button (M8.5) opening
+  `assistant/GenerateProjectDialog`)/
   `ProjectCard`/`ProjectFormDialog`/`CategoryManagerDialog`/`ProjectDetailPage`
   (Tabs: `TaskTree` ⇄ `TaskBoard` ⇄ `GanttView`, M5)/`TaskRow`/`TaskQuickAdd`/
   `TaskFormDialog` (edit mode embeds `TaskDependencySection`, M5's "Depends on"
@@ -112,9 +144,14 @@ updated when decisions change.
   `SuggestTodosButton` (a two-step dialog: horizon choice, then
   `SuggestedTaskList` review-and-accept, used on both `TodayPage` and
   `DayView`)/`SuggestedTaskList`/`AssistantSettings` (embedded in
-  `AccountPage`, just the todo-suggestions toggle + model override — no
-  controls for the still-unbuilt M9/M10 features), hooks in `useAssistant.ts`
-  + `assistantKeys`).
+  `AccountPage`, now four toggles — todo suggestions, project generation, and
+  the still-inert execution-summaries/journal-reflection placeholders remain
+  absent — + model override); M8.5 adds `GenerateProjectDialog` (a two-step
+  dialog on `ProjectListPage`: description+dates form, then
+  `ProjectPlanReview` in the same dialog once a plan comes back — no field
+  editing, only per-task exclude checkboxes that cascade to children;
+  "Create project" navigates to the new project's normal detail page)/
+  `ProjectPlanReview`, hooks in `useAssistant.ts` + `assistantKeys`).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
   and the app's default landing route (M6). API access is hand-written

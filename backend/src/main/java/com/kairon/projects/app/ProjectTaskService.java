@@ -13,6 +13,7 @@ import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.projects.api.ProjectTaskPage;
 import com.kairon.projects.api.ProjectTaskView;
+import com.kairon.projects.api.ProjectView;
 import com.kairon.projects.api.ProjectsApi;
 import com.kairon.projects.app.TaskResolution.TaskAndProject;
 import com.kairon.projects.domain.Project;
@@ -24,6 +25,7 @@ import com.kairon.projects.repo.TaskDependencyRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -50,14 +52,19 @@ public class ProjectTaskService implements ProjectsApi {
     private final TaskDependencyRepository dependencies;
     private final ProjectsProperties properties;
     private final Clock clock;
+    // @Lazy breaks the constructor cycle: ProjectPlanImportService itself depends
+    // on this service (to create each planned task) — M8.5 D3.
+    private final ProjectPlanImportService planImportService;
 
     public ProjectTaskService(ProjectTaskRepository tasks, ProjectRepository projects,
-            TaskDependencyRepository dependencies, ProjectsProperties properties, Clock clock) {
+            TaskDependencyRepository dependencies, ProjectsProperties properties, Clock clock,
+            @Lazy ProjectPlanImportService planImportService) {
         this.tasks = tasks;
         this.projects = projects;
         this.dependencies = dependencies;
         this.properties = properties;
         this.clock = clock;
+        this.planImportService = planImportService;
     }
 
     public record CreateCommand(
@@ -245,6 +252,12 @@ public class ProjectTaskService implements ProjectsApi {
             }
         }, () -> log.debug("Skipped completing task {} for userId={} (missing/foreign/deleted)",
                 taskId, userId.value()));
+    }
+
+    @Override
+    @Transactional
+    public ProjectView createFromPlan(UserId userId, ProjectsApi.ProjectPlanCommand command) {
+        return planImportService.createFromPlan(userId, command);
     }
 
     // --- internals -----------------------------------------------------------

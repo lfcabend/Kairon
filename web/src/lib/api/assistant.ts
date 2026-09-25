@@ -1,4 +1,13 @@
-import type { AssistantRun, AssistantSuggestedTask, TodoItem, TodoSuggestionBody } from "./types";
+import type {
+  AcceptProjectPlanBody,
+  AssistantRun,
+  AssistantSuggestedTask,
+  GenerateProjectPlanBody,
+  Project,
+  SuggestedProjectPlan,
+  TodoItem,
+  TodoSuggestionBody,
+} from "./types";
 
 import { apiFetch } from "./client";
 
@@ -16,4 +25,16 @@ export const assistantApi = {
 
   dismissSuggestedTask: (id: string) =>
     apiFetch<AssistantSuggestedTask>(`/assistant/suggested-tasks/${id}:dismiss`, { method: "POST" }),
+
+  generateProjectPlan: (body: GenerateProjectPlanBody) =>
+    apiFetch<AssistantRun>("/assistant/project-plan", { method: "POST", body }),
+
+  acceptProjectPlan: (id: string, excludedTaskKeys: string[]) =>
+    apiFetch<Project>(`/assistant/suggested-projects/${id}:accept`, {
+      method: "POST",
+      body: { excludedTaskKeys } satisfies AcceptProjectPlanBody,
+    }),
+
+  dismissProjectPlan: (id: string) =>
+    apiFetch<SuggestedProjectPlan>(`/assistant/suggested-projects/${id}:dismiss`, { method: "POST" }),
 };

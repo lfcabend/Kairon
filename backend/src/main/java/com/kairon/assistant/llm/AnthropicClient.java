@@ -12,6 +12,9 @@ public interface AnthropicClient {
 
     TodoSuggestionsResult suggestTodos(TodoSuggestionRequest request);
 
+    /** Added for M8.5's project-generation feature. */
+    ProjectPlanResult generateProjectPlan(ProjectPlanRequest request);
+
     record TodoSuggestionRequest(String systemPrompt, String userContent, String model, String effort) {
     }
 
@@ -20,5 +23,11 @@ public interface AnthropicClient {
             String model,
             long inputTokens,
             long outputTokens) {
+    }
+
+    record ProjectPlanRequest(String systemPrompt, String userContent, String model) {
+    }
+
+    record ProjectPlanResult(ProjectPlanPayload plan, String model, long inputTokens, long outputTokens) {
     }
 }

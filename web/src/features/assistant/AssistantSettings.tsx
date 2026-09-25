@@ -23,17 +23,18 @@ function currentAssistantPrefs(me: Me | undefined): AssistantPreferences {
     todoSuggestions: { enabled: raw?.todoSuggestions?.enabled ?? false },
     executionSummaries: { enabled: raw?.executionSummaries?.enabled ?? false },
     journalReflection: { enabled: raw?.journalReflection?.enabled ?? false },
+    projectGeneration: { enabled: raw?.projectGeneration?.enabled ?? false },
     modelOverride: raw?.modelOverride ?? null,
     tone: raw?.tone ?? "balanced",
   };
 }
 
 /**
- * Only the todo-suggestions feature is implemented as of M8 — execution
- * summaries and journal reflection (M9/M10) don't exist yet, so this panel
- * deliberately doesn't offer toggles for them (a control for a feature that
- * does nothing would just be misleading). Same read-modify-write `PATCH /me`
- * pattern the existing rollover setting on this page already uses.
+ * Todo suggestions (M8) and project generation (M8.5) are implemented —
+ * execution summaries and journal reflection (M9/M10) don't exist yet, so
+ * this panel deliberately doesn't offer toggles for them (a control for a
+ * feature that does nothing would just be misleading). Same read-modify-write
+ * `PATCH /me` pattern the existing rollover setting on this page already uses.
  */
 export function AssistantSettings({ me }: { me: Me | undefined }) {
   const queryClient = useQueryClient();
@@ -72,6 +73,24 @@ export function AssistantSettings({ me }: { me: Me | undefined }) {
           <span className="font-medium">Todo suggestions</span>
           <span className="block text-xs text-muted-foreground">
             Show a "Suggest todos" option on Today and the day view.
+          </span>
+        </span>
+      </label>
+
+      <label className="mt-4 flex items-start gap-3 text-sm">
+        <Checkbox
+          className="mt-0.5"
+          checked={prefs.projectGeneration.enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(checked) =>
+            mutation.mutate({ projectGeneration: { enabled: checked === true } })
+          }
+        />
+        <span>
+          <span className="font-medium">Project generation</span>
+          <span className="block text-xs text-muted-foreground">
+            Show a "New project from description" option on the project list. Kairon
+            sends your project description and dates to Anthropic when you generate a plan.
           </span>
         </span>
       </label>

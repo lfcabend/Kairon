@@ -1,5 +1,6 @@
 package com.kairon.projects.api;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -40,4 +41,28 @@ public interface ProjectsApi {
      * linked todo item syncs the project task's status one-way.
      */
     void completeTaskIfPresent(UserId userId, UUID taskId);
+
+    /**
+     * Creates a project, its task tree, and its dependency edges together, in
+     * one transaction. Tasks/dependencies reference each other by the
+     * caller-supplied string {@code key} (no real ids exist yet);
+     * {@code parentKey}/{@code predecessorKey}/{@code successorKey} must each
+     * match some task's {@code key} in the same command. Added for M8.5's
+     * project-generation feature (docs/milestones/M8.5-project-generation.md D3).
+     */
+    ProjectView createFromPlan(UserId userId, ProjectPlanCommand command);
+
+    record ProjectPlanCommand(
+            String name, String description, String size, LocalDate startDate, LocalDate endDate,
+            List<PlannedTask> tasks, List<PlannedDependency> dependencies) {
+    }
+
+    record PlannedTask(
+            String key, String parentKey, String name, String description, boolean isMilestone,
+            LocalDate plannedStart, LocalDate plannedEnd, BigDecimal estimateHours) {
+    }
+
+    record PlannedDependency(
+            String predecessorKey, String successorKey, String type, Integer lagDays) {
+    }
 }

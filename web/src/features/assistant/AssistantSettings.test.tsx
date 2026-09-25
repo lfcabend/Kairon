@@ -46,6 +46,24 @@ test("toggling todo suggestions PATCHes preferences.assistant.todoSuggestions wi
   });
 });
 
+test("toggling project generation PATCHes preferences.assistant.projectGeneration without touching other keys", async () => {
+  const user = userEvent.setup();
+  Object.assign(meResponse, { preferences: { todo: { rollover: "manual" } } });
+  renderPage();
+
+  const toggle = await screen.findByRole("checkbox", { name: /Project generation/ });
+  await user.click(toggle);
+
+  await waitFor(() => {
+    const prefs = meResponse.preferences as {
+      todo?: { rollover?: string };
+      assistant?: { projectGeneration?: { enabled?: boolean } };
+    };
+    expect(prefs.assistant?.projectGeneration?.enabled).toBe(true);
+    expect(prefs.todo?.rollover).toBe("manual");
+  });
+});
+
 // The full open-dropdown-and-pick-an-option interaction is exercised in the
 // Playwright e2e spec instead of here — Radix Select's popover positioning
 // depends on real layout/pointer-events computation that jsdom doesn't provide

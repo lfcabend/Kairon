@@ -380,6 +380,10 @@ The backend's OpenAPI document is committed as an artifact in CI. From it:
 - "Reschedule from today" and "shift project by N days" bulk operations.
 - Kept server-side (`projects` module, a `ScheduleService`) so every client
   gets the same numbers.
+- Not the same feature as §13.1's AI project generation (M8.5): that's the
+  model proposing a first rough schedule when the project doesn't exist yet;
+  this is a deterministic recompute of dates for an *existing* project from
+  estimates + dependencies. The two don't conflict and could compose later.
 
 ### 7.3 Example (illustrative)
 
@@ -613,6 +617,7 @@ feature is dark entirely unless the operator has configured an Anthropic API key
 | Feature | Milestone | What the user gets |
 | --- | --- | --- |
 | **Todo suggestions** | M8 | On request, a proposed todo list for a day (or the week) drawn from active/on-hold projects and their open tasks, recent todo history, and recent journal entries. The user accepts or dismisses each item; accepting creates a normal `todo_item` linked back to the suggestion. |
+| **Project generation from a description** | M8.5 | Given a free-text description plus a start date (and optional deadline), a proposed whole project — task tree, milestones, dates, dependencies — for the user to review (include/exclude per task) and create in one action. Distinct from §7.2's still-deferred forward-pass scheduler: this proposes a first rough schedule for a project that doesn't exist yet, rather than recomputing dates for an existing one from estimates + dependencies. |
 | **Weekly / monthly execution summary** | M9 | A narrative of how the period went — what got done, where things slipped, estimate-vs-actual, and concrete efficiency suggestions. Available on demand and generated automatically (Monday morning / the 1st) for opted-in users. |
 | **Weekly journal reflection** | M10 | A reflective response to the week's journal entries — patterns, blind spots, questions to sit with. Shipped last, behind its own opt-in, because it sends the full journal text off the instance. |
 
@@ -622,8 +627,12 @@ A new feature module, `assistant` (`com.kairon.assistant`), peer to the others.
 It reads `todo`, `journal`, and `projects` **only through their public `api`
 packages** — never `planning`, which has no `api` package to depend on (M6 D1)
 — owns its tables (`assistant_run`,
-`assistant_suggested_task`; see [`DATA_MODEL.md`](DATA_MODEL.md)) and its Flyway
-migration. A thin `assistant.llm.AnthropicClient` wraps the official **Anthropic
+`assistant_suggested_task`, `assistant_suggested_project`; see
+[`DATA_MODEL.md`](DATA_MODEL.md)) and its Flyway migrations. Project generation
+(M8.5) writes through `projects`' public port too — `ProjectsApi.createFromPlan`
+— reusing that module's own `ProjectService`/`ProjectTaskService`/
+`TaskDependencyService` internally rather than duplicating entity-construction
+logic. A thin `assistant.llm.AnthropicClient` wraps the official **Anthropic
 Java SDK** (`com.anthropic:anthropic-java`). An **ArchUnit rule** asserts that
 `assistant` is the only module importing that SDK, so the third-party dependency
 stays contained. All calls are server-side; the API key never reaches a client.
@@ -641,7 +650,10 @@ Each run stores `input_snapshot` (exactly what context was gathered and sent, so
 the user can audit what left the instance), `output_markdown` (the narrative
 result), `model`, and `input_tokens` / `output_tokens` (cost visibility).
 Deleting a run deletes its stored excerpts. `TODO_SUGGESTION` runs also produce
-`assistant_suggested_task` rows (`PROPOSED → ACCEPTED | DISMISSED`).
+`assistant_suggested_task` rows (`PROPOSED → ACCEPTED | DISMISSED`);
+`PROJECT_GENERATION` runs (M8.5) also run synchronously and produce a single
+`assistant_suggested_project` row holding the whole proposed plan, same
+lifecycle.
 
 ### 13.4 How prompts are built
 

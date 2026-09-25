@@ -6,9 +6,12 @@ import type {
   AuthResponse,
   JournalEntry,
   Me,
+  PlannedDependency,
+  PlannedTask,
   Project,
   ProjectCategory,
   ProjectTask,
+  SuggestedProjectPlan,
   TaskDependency,
   TodoItem,
 } from "@/lib/api/types";
@@ -563,6 +566,10 @@ let assistantSuggestedTasks: AssistantSuggestedTask[] = [];
 let assistantSuggestedTaskSeq = 0;
 /** What the next `POST /assistant/todo-suggestions` call returns — set via `seedAssistantSuggestions`. */
 let nextSuggestions: Partial<AssistantSuggestedTask>[] = [];
+let suggestedProjects: SuggestedProjectPlan[] = [];
+let suggestedProjectSeq = 0;
+/** What the next `POST /assistant/project-plan` call returns — set via `seedProjectPlan`. */
+let nextProjectPlan: Partial<SuggestedProjectPlan> | null = null;
 
 export function resetAssistantStore() {
   assistantRuns = [];
@@ -570,6 +577,9 @@ export function resetAssistantStore() {
   assistantSuggestedTasks = [];
   assistantSuggestedTaskSeq = 0;
   nextSuggestions = [];
+  suggestedProjects = [];
+  suggestedProjectSeq = 0;
+  nextProjectPlan = null;
 }
 
 /** Configures what the next todo-suggestions request returns (default: an empty list). */
@@ -577,10 +587,47 @@ export function seedAssistantSuggestions(items: Partial<AssistantSuggestedTask>[
   nextSuggestions = items;
 }
 
+/** Configures what the next project-plan request returns (default: a small 3-task canned plan). */
+export function seedProjectPlan(plan: Partial<SuggestedProjectPlan>) {
+  nextProjectPlan = plan;
+}
+
 function isTodoSuggestionsEnabled(): boolean {
   const assistant = (meResponse.preferences as { assistant?: { todoSuggestions?: { enabled?: boolean } } })
     .assistant;
   return assistant?.todoSuggestions?.enabled === true;
+}
+
+function isProjectGenerationEnabled(): boolean {
+  const assistant = (meResponse.preferences as { assistant?: { projectGeneration?: { enabled?: boolean } } })
+    .assistant;
+  return assistant?.projectGeneration?.enabled === true;
+}
+
+function defaultProjectPlan(): Partial<SuggestedProjectPlan> {
+  return {
+    name: "Generated project",
+    description: "A canned plan.",
+    size: "M",
+    tasks: [
+      { key: "t1", parentKey: null, name: "Design", description: null, isMilestone: false,
+        plannedStart: null, plannedEnd: null, estimateHours: null },
+      { key: "t2", parentKey: "t1", name: "Pick materials", description: null, isMilestone: false,
+        plannedStart: null, plannedEnd: null, estimateHours: null },
+      { key: "m1", parentKey: null, name: "Design approved", description: null, isMilestone: true,
+        plannedStart: null, plannedEnd: null, estimateHours: null },
+    ],
+    dependencies: [{ predecessorKey: "t1", successorKey: "m1", type: "FS", lagDays: 0 }],
+  };
+}
+
+/** Excluding a task cascades to its children (mirrors the backend's D6 accept-time cascade). */
+function cascadeExclude(tasks: PlannedTask[], excludedTaskKeys: string[]): Set<string> {
+  const excluded = new Set(excludedTaskKeys);
+  for (const t of tasks) {
+    if (t.parentKey && excluded.has(t.parentKey)) excluded.add(t.key);
+  }
+  return excluded;
 }
 
 const assistantHandlers = [
@@ -675,6 +722,119 @@ const assistantHandlers = [
     const row = assistantSuggestedTasks.find((t) => t.id === id);
     if (!row) return problem(404, "Suggested task not found.");
     if (row.status !== "PROPOSED") return problem(409, `This suggestion was already ${row.status.toLowerCase()}.`);
+    row.status = "DISMISSED";
+    return HttpResponse.json(row);
+  }),
+
+  http.post(/\/api\/v1\/assistant\/project-plan$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!isProjectGenerationEnabled()) {
+      return problem(403, "You haven't enabled project generation in Settings.");
+    }
+    const body = (await request.json()) as { description: string; startDate: string; targetDeadline?: string };
+    assistantRunSeq += 1;
+    const runId = `assistant-run-${assistantRunSeq}`;
+    suggestedProjectSeq += 1;
+    const plan = { ...defaultProjectPlan(), ...nextProjectPlan };
+    const suggestedProject: SuggestedProjectPlan = {
+      id: plan.id ?? `suggested-project-${suggestedProjectSeq}`,
+      runId,
+      status: "PROPOSED",
+      name: plan.name ?? "Generated project",
+      description: plan.description ?? null,
+      size: plan.size ?? null,
+      startDate: plan.startDate ?? body.startDate,
+      endDate: plan.endDate ?? body.targetDeadline ?? null,
+      tasks: plan.tasks ?? [],
+      dependencies: plan.dependencies ?? [],
+    };
+    suggestedProjects.push(suggestedProject);
+    const run: AssistantRun = {
+      id: runId,
+      kind: "PROJECT_GENERATION",
+      status: "SUCCEEDED",
+      model: "claude-sonnet-5",
+      periodStart: body.startDate,
+      periodEnd: body.targetDeadline,
+      inputTokens: 640,
+      outputTokens: 890,
+      createdAt: new Date().toISOString(),
+      suggestions: [],
+      suggestedProject,
+    };
+    assistantRuns.push(run);
+    return HttpResponse.json(run, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-projects\/([^/]+):accept$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":accept", ""),
+    );
+    const row = suggestedProjects.find((p) => p.id === id);
+    if (!row) return problem(404, "Suggested project not found.");
+    if (row.status !== "PROPOSED") {
+      return problem(409, `This project plan was already ${row.status.toLowerCase()}.`);
+    }
+    const body = (await request.json().catch(() => ({}))) as { excludedTaskKeys?: string[] };
+    const excluded = cascadeExclude(row.tasks, body.excludedTaskKeys ?? []);
+    const keptTasks = row.tasks.filter((t) => !excluded.has(t.key));
+    const keptDeps = row.dependencies.filter(
+      (d: PlannedDependency) => !excluded.has(d.predecessorKey) && !excluded.has(d.successorKey),
+    );
+
+    const maxRank = liveProjects()
+      .filter((p) => p.status !== "ARCHIVED")
+      .reduce((m, p) => Math.max(m, p.priorityRank), 0);
+    const createdProject = makeProject({
+      name: row.name,
+      description: row.description,
+      size: (row.size as Project["size"]) ?? null,
+      startDate: row.startDate,
+      endDate: row.endDate,
+      priorityRank: maxRank + 100,
+    });
+    projects.push(createdProject);
+
+    const idByKey = new Map<string, string>();
+    const roots = keptTasks.filter((t) => !t.parentKey);
+    const children = keptTasks.filter((t) => t.parentKey);
+    for (const t of [...roots, ...children]) {
+      const created = makeTask({
+        projectId: createdProject.id,
+        parentTaskId: t.parentKey ? idByKey.get(t.parentKey) ?? null : null,
+        name: t.name,
+        description: t.description,
+        isMilestone: t.isMilestone,
+        plannedStart: t.plannedStart,
+        plannedEnd: t.plannedEnd,
+        estimateHours: t.estimateHours,
+      });
+      tasks.push(created);
+      idByKey.set(t.key, created.id);
+    }
+    for (const d of keptDeps) {
+      const predecessorId = idByKey.get(d.predecessorKey);
+      const successorId = idByKey.get(d.successorKey);
+      if (!predecessorId || !successorId) continue;
+      dependencies.push(makeDependency({ predecessorId, successorId, type: d.type, lagDays: d.lagDays ?? 0 }));
+    }
+
+    row.status = "ACCEPTED";
+    row.acceptedProjectId = createdProject.id;
+    return HttpResponse.json(createdProject, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-projects\/([^/]+):dismiss$/, ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":dismiss", ""),
+    );
+    const row = suggestedProjects.find((p) => p.id === id);
+    if (!row) return problem(404, "Suggested project not found.");
+    if (row.status !== "PROPOSED") {
+      return problem(409, `This project plan was already ${row.status.toLowerCase()}.`);
+    }
     row.status = "DISMISSED";
     return HttpResponse.json(row);
   }),

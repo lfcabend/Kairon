@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Project, ProjectSize, ProjectStatus } from "@/lib/api/types";
 
+import { GenerateProjectDialog } from "../assistant/GenerateProjectDialog";
 import { CategoryManagerDialog } from "./CategoryManagerDialog";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectFormDialog } from "./ProjectFormDialog";
@@ -50,6 +51,7 @@ export function ProjectListPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formDefaultCategoryId, setFormDefaultCategoryId] = useState<string | undefined>(undefined);
   const [managingCategories, setManagingCategories] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
 
   const { data: categories = [] } = useProjectCategories();
   const isDefaultFilter = status === "any" && size === "any";
@@ -125,6 +127,9 @@ export function ProjectListPage() {
           <Button variant="outline" onClick={() => setManagingCategories(true)}>
             Manage categories
           </Button>
+          <Button variant="outline" onClick={() => setGenerateOpen(true)}>
+            New project from description
+          </Button>
           <Button
             onClick={() => {
               setFormDefaultCategoryId(undefined);
@@ -175,6 +180,7 @@ export function ProjectListPage() {
         existingColors={projects.map((p) => p.color)}
       />
       <CategoryManagerDialog open={managingCategories} onOpenChange={setManagingCategories} categories={categories} />
+      <GenerateProjectDialog open={generateOpen} onOpenChange={setGenerateOpen} />
     </div>
   );
 }

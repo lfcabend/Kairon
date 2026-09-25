@@ -181,6 +181,40 @@ configured. See also [`DESIGN.md`](DESIGN.md) §13 and
 - [x] Tests: MockMvc for the endpoints with the Anthropic client faked; an
       ArchUnit test for the SDK-containment rule.
 
+## M8.5 — AI project generation from a description
+
+See [`milestones/M8.5-project-generation.md`](milestones/M8.5-project-generation.md)
+for the full plan and rationale (Status: Accepted — implemented). A fourth `assistant` feature,
+slotted between M8 and M9 rather than renumbering: given a free-text
+description plus a start date (and optional deadline), the LLM proposes a
+whole project — task tree, milestones, dates, and dependencies — for the user
+to review and create in one action.
+
+- [x] `PROJECT_GENERATION` added to `assistant_run.kind` (`V008` — widens the
+      check constraint M8's `V007` didn't anticipate this value for);
+      `assistant_suggested_project` table (one row per run, the whole plan as
+      `jsonb`, `PROPOSED → ACCEPTED | DISMISSED`).
+- [x] `ProjectsApi.createFromPlan` — one transactional call creating a
+      project, its ≤2-level task tree (with milestones), and its dependency
+      edges together, reusing `ProjectService`/`ProjectTaskService`/
+      `TaskDependencyService` as internal collaborators.
+- [x] `POST /assistant/project-plan` (`{description, startDate,
+      targetDeadline?}`, synchronous like M8's todo-suggestions call).
+- [x] `POST /assistant/suggested-projects/{id}:accept` (body:
+      `excludedTaskKeys` — cascades to excluded tasks' children) and
+      `:dismiss`.
+- [x] Reuses M8's budget/rate-limit/circuit-breaker/error-mapping
+      infrastructure unchanged; a fourth per-feature opt-in
+      (`assistant.projectGeneration.enabled`).
+- [x] Web: "New project from description" on the project list, a
+      description+dates form, a review screen (task tree with
+      include/exclude checkboxes, no inline editing — adjustments happen via
+      the existing task-edit dialog and Gantt drag after creation), landing
+      on the new project's detail page on create.
+- [x] Tests: import-service unit tests (nesting/cycle/exclusion edge cases),
+      MockMvc, an `@SpringBootTest` flow test, Vitest, a Playwright happy
+      path.
+
 ## M9 — Weekly & monthly execution summaries
 
 - [ ] SQL aggregation in `assistant` (via other modules' query APIs): todos

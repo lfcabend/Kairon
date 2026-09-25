@@ -342,6 +342,8 @@ export interface AssistantRun {
   error?: string;
   createdAt: string;
   suggestions: AssistantSuggestedTask[];
+  /** Set only for a `PROJECT_GENERATION` run (M8.5) — `suggestions` is set only for `TODO_SUGGESTION`. */
+  suggestedProject?: SuggestedProjectPlan | null;
 }
 
 export interface TodoSuggestionBody {
@@ -353,8 +355,53 @@ export interface AssistantPreferences {
   todoSuggestions: { enabled: boolean };
   executionSummaries: { enabled: boolean };
   journalReflection: { enabled: boolean };
+  projectGeneration: { enabled: boolean };
   modelOverride: string | null;
   tone: string;
+}
+
+// --- Project generation (M8.5) ------------------------------------------------
+
+export interface PlannedTask {
+  key: string;
+  parentKey: string | null;
+  name: string;
+  description: string | null;
+  isMilestone: boolean;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  estimateHours: number | null;
+}
+
+export interface PlannedDependency {
+  predecessorKey: string;
+  successorKey: string;
+  type: TaskDependencyType;
+  lagDays: number | null;
+}
+
+export interface SuggestedProjectPlan {
+  id: string;
+  runId: string;
+  status: SuggestedTaskStatus;
+  name: string;
+  description: string | null;
+  size: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  tasks: PlannedTask[];
+  dependencies: PlannedDependency[];
+  acceptedProjectId?: string | null;
+}
+
+export interface GenerateProjectPlanBody {
+  description: string;
+  startDate: string;
+  targetDeadline?: string | null;
+}
+
+export interface AcceptProjectPlanBody {
+  excludedTaskKeys: string[];
 }
 
 // --- About (/actuator/info) --------------------------------------------------

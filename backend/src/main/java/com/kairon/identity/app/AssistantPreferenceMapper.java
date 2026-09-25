@@ -25,6 +25,7 @@ final class AssistantPreferenceMapper {
                 featureEnabled(assistant, "todoSuggestions"),
                 featureEnabled(assistant, "executionSummaries"),
                 featureEnabled(assistant, "journalReflection"),
+                featureEnabled(assistant, "projectGeneration"),
                 stringOrNull(assistant.get("modelOverride")),
                 stringOrDefault(assistant.get("tone"), DEFAULT_TONE));
     }

@@ -110,4 +110,61 @@ class AnthropicClientImpl implements AnthropicClient {
         log.warn("Anthropic call failed via circuit breaker: {}", t.toString());
         throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", t);
     }
+
+    @Override
+    @CircuitBreaker(name = "anthropic", fallbackMethod = "generateProjectPlanFallback")
+    public ProjectPlanResult generateProjectPlan(ProjectPlanRequest request) {
+        // Same shape as suggestTodos above (M8.5 §4.3): a fixed system prompt (no
+        // per-request data) is a stable prefix worth Anthropic's prompt caching.
+        StructuredMessageCreateParams<ProjectPlanPayload> params = MessageCreateParams.builder()
+                .model(request.model())
+                .maxTokens(4096L)
+                .systemOfTextBlockParams(List.of(
+                        TextBlockParam.builder()
+                                .text(request.systemPrompt())
+                                .cacheControl(CacheControlEphemeral.builder().build())
+                                .build()))
+                .outputConfig(ProjectPlanPayload.class)
+                .addUserMessage(request.userContent())
+                .build();
+
+        StructuredMessage<ProjectPlanPayload> response;
+        try {
+            response = sdk.messages().create(params);
+        } catch (RateLimitException | InternalServerException | AnthropicIoException e) {
+            throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", e);
+        } catch (AnthropicServiceException e) {
+            throw new AssistantUpstreamException(false, "The assistant could not complete this request.", e);
+        }
+
+        if (response.stopReason().filter(StopReason.REFUSAL::equals).isPresent()) {
+            log.warn("Anthropic call refused model={}", request.model());
+            throw new AssistantUpstreamException(false, "The assistant declined to respond.", null);
+        }
+
+        ProjectPlanPayload payload = response.content().stream()
+                .flatMap(cb -> cb.text().stream())
+                .findFirst()
+                .map(com.anthropic.models.messages.StructuredTextBlock::text)
+                .orElseThrow(() -> new AssistantUpstreamException(false,
+                        "The assistant returned an empty response.", null));
+
+        long inputTokens = response.usage().inputTokens();
+        long outputTokens = response.usage().outputTokens();
+        meterRegistry.counter("assistant.tokens", "kind", "PROJECT_GENERATION", "direction", "input")
+                .increment(inputTokens);
+        meterRegistry.counter("assistant.tokens", "kind", "PROJECT_GENERATION", "direction", "output")
+                .increment(outputTokens);
+
+        return new ProjectPlanResult(payload, request.model(), inputTokens, outputTokens);
+    }
+
+    @SuppressWarnings("unused")
+    private ProjectPlanResult generateProjectPlanFallback(ProjectPlanRequest request, Throwable t) {
+        if (t instanceof AssistantUpstreamException upstream) {
+            throw upstream;
+        }
+        log.warn("Anthropic call failed via circuit breaker: {}", t.toString());
+        throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", t);
+    }
 }

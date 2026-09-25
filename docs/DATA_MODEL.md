@@ -10,10 +10,10 @@ Conventions:
 - Every user-owned row has `user_id uuid not null references app_user(id)`.
 - Soft delete: `deleted_at timestamptz null` on entities that mobile will sync
   (todo items, journal entries, projects, project tasks). Queries filter it out.
-- The `assistant` module's tables (`assistant_run`, `assistant_suggested_task`)
-  are **not** mobile-synced and carry **no soft delete**: a run is regenerable
-  and is hard-deleted when the user removes it (which is also how stored
-  prompt/journal excerpts are purged).
+- The `assistant` module's tables (`assistant_run`, `assistant_suggested_task`,
+  `assistant_suggested_project`) are **not** mobile-synced and carry **no soft
+  delete**: a run is regenerable and is hard-deleted when the user removes it
+  (which is also how stored prompt/journal excerpts are purged).
 - Enums are stored as `varchar` with a `check` constraint, mapped in JPA with
   `@Enumerated(EnumType.STRING)`.
 - `day` columns are `date` (no time); interpreted in the owning user's timezone.
@@ -39,6 +39,8 @@ erDiagram
     assistant_run ||--o{ assistant_suggested_task : produces
     project_task ||--o{ assistant_suggested_task  : "maps to"
     todo_item ||--o| assistant_suggested_task     : "accepted as"
+    assistant_run ||--o| assistant_suggested_project : produces
+    project ||--o| assistant_suggested_project    : "accepted as"
 
     app_user {
         uuid id PK
@@ -180,6 +182,17 @@ erDiagram
         varchar status
         uuid accepted_todo_item_id FK
         int position
+        timestamptz created_at
+        timestamptz updated_at
+        bigint version
+    }
+    assistant_suggested_project {
+        uuid id PK
+        uuid run_id FK
+        uuid user_id FK
+        jsonb plan
+        varchar status
+        uuid accepted_project_id FK
         timestamptz created_at
         timestamptz updated_at
         bigint version
@@ -352,7 +365,7 @@ dependency graph).
 | --- | --- | --- |
 | `id` | uuid PK | |
 | `user_id` | uuid FK → app_user | |
-| `kind` | varchar | `TODO_SUGGESTION` \| `WEEKLY_SUMMARY` \| `MONTHLY_SUMMARY` \| `JOURNAL_REFLECTION` |
+| `kind` | varchar | `TODO_SUGGESTION` \| `WEEKLY_SUMMARY` \| `MONTHLY_SUMMARY` \| `JOURNAL_REFLECTION` \| `PROJECT_GENERATION` (added `V008`, M8.5) |
 | `status` | varchar | `PENDING` \| `RUNNING` \| `SUCCEEDED` \| `FAILED` |
 | `period_start`,`period_end` | date null | the window the run plans for / summarises |
 | `model` | varchar | model id actually used, e.g. `claude-sonnet-5` |
@@ -393,6 +406,30 @@ for the target day (carrying `source_project_task_id` when present), then set
 `status = ACCEPTED` and `accepted_todo_item_id`. The assistant never writes a
 `todo_item` itself — accept is always a user action.
 
+### `assistant_suggested_project`  (module: assistant)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `run_id` | uuid FK → assistant_run, unique | the `PROJECT_GENERATION` run that produced it (1:1) |
+| `user_id` | uuid FK → app_user | denormalised for scoping |
+| `plan` | jsonb | the whole proposed project: name/description/size/dates, a task list (each with a caller-chosen string `key`, `parentKey`, dates, estimate, `isMilestone`), and a dependency list (`predecessorKey`/`successorKey`/`type`/`lagDays`) — see `milestones/M8.5-project-generation.md` §3 |
+| `status` | varchar | `PROPOSED` \| `ACCEPTED` \| `DISMISSED` |
+| `accepted_project_id` | uuid FK → project, null | set on accept; the created project |
+| `created_at`,`updated_at`,`version` | | |
+
+Indexes: `unique(run_id)`, `index(user_id, status)`.
+Stored as one `jsonb` document rather than normalized per-task/per-dependency
+tables, unlike `assistant_suggested_task` — no individual task here has its
+own accept/dismiss lifecycle; the whole plan is reviewed (include/exclude per
+task, client-side against this one stored document) and created in a single
+transactional call, **`ProjectsApi.createFromPlan`** (module: projects),
+which builds a `project` + its `project_task` tree + `task_dependency` edges
+together, resolving the plan's string `key`s to real ids as it creates each
+row (parent tasks before children). The assistant never writes those rows
+itself — accept is always a user action, same discipline as
+`assistant_suggested_task`.
+
 ### Per-user assistant settings
 
 No table: stored in `app_user.preferences` (jsonb), e.g.
@@ -402,12 +439,13 @@ No table: stored in `app_user.preferences` (jsonb), e.g.
   "todoSuggestions":    { "enabled": false },
   "executionSummaries": { "enabled": false },
   "journalReflection":  { "enabled": false },
+  "projectGeneration":  { "enabled": false },
   "modelOverride": null,
   "tone": "balanced"
 }
 ```
 
-All three feature flags default off and are toggled independently, so a user can
+All four feature flags default off and are toggled independently, so a user can
 enable planning help without enabling journal reflection.
 
 ---
@@ -444,6 +482,7 @@ tracking the roadmap:
 | `V005__task_dependencies.sql` | `task_dependency` |
 | `V006__planning_links.sql` | any indexes needed by the "Today" aggregation |
 | `V007__assistant.sql` | `assistant_run`, `assistant_suggested_task` |
+| `V008__project_plan.sql` | widens `assistant_run.kind` to add `PROJECT_GENERATION`; `assistant_suggested_project` (M8.5) |
 | `V0xx__…` | tags, attachments, recurrence, etc. as they land |
 
 Repeatable migrations (`R__…`) only for views/functions if introduced.

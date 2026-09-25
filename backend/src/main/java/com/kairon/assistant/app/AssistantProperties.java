@@ -17,7 +17,8 @@ public record AssistantProperties(
         String model,
         Duration requestTimeout,
         long monthlyTokenBudgetPerUser,
-        TodoSuggestions todoSuggestions) {
+        TodoSuggestions todoSuggestions,
+        ProjectPlan projectPlan) {
 
     public AssistantProperties {
         if (model == null || model.isBlank()) {
@@ -31,6 +32,9 @@ public record AssistantProperties(
         }
         if (todoSuggestions == null) {
             todoSuggestions = new TodoSuggestions(7, 21, 5, 5, "MEDIUM");
+        }
+        if (projectPlan == null) {
+            projectPlan = new ProjectPlan(40);
         }
     }
 
@@ -62,6 +66,16 @@ public record AssistantProperties(
             }
             if (effort == null || effort.isBlank()) {
                 effort = "MEDIUM";
+            }
+        }
+    }
+
+    /** Output-size cap for {@code PROJECT_GENERATION} runs (M8.5 D7). */
+    public record ProjectPlan(int maxTasks) {
+
+        public ProjectPlan {
+            if (maxTasks <= 0) {
+                maxTasks = 40;
             }
         }
     }

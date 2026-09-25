@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { assistantApi } from "@/lib/api/assistant";
-import type { Horizon } from "@/lib/api/types";
+import type { GenerateProjectPlanBody, Horizon } from "@/lib/api/types";
 
 import { todoKeys } from "../todo/todoKeys";
 
@@ -29,5 +29,28 @@ export function useAcceptSuggestedTask() {
 export function useDismissSuggestedTask() {
   return useMutation({
     mutationFn: (id: string) => assistantApi.dismissSuggestedTask(id),
+  });
+}
+
+/** Same "no cache entry for the run itself" reasoning as `useSuggestTodos` (M8.5). */
+export function useGenerateProjectPlan() {
+  return useMutation({
+    mutationFn: (body: GenerateProjectPlanBody) => assistantApi.generateProjectPlan(body),
+  });
+}
+
+/** Invalidates the project list so the newly created project shows up if the user navigates back to it. */
+export function useAcceptProjectPlan() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, excludedTaskKeys }: { id: string; excludedTaskKeys: string[] }) =>
+      assistantApi.acceptProjectPlan(id, excludedTaskKeys),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["projects", "list"] }),
+  });
+}
+
+export function useDismissProjectPlan() {
+  return useMutation({
+    mutationFn: (id: string) => assistantApi.dismissProjectPlan(id),
   });
 }

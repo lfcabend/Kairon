@@ -13,6 +13,7 @@ public record AssistantPreferencesView(
         boolean todoSuggestionsEnabled,
         boolean executionSummariesEnabled,
         boolean journalReflectionEnabled,
+        boolean projectGenerationEnabled,
         String modelOverride,
         String tone) {
 }

@@ -61,7 +61,7 @@ class AssistantRunControllerTest {
                 "Order cabinet hardware", null, "Overdue kitchen-remodel task", DAY, 20, null,
                 "PROPOSED", null, 0);
         return new AssistantRunView(id, "TODO_SUGGESTION", "SUCCEEDED", "claude-sonnet-5", DAY, DAY,
-                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion));
+                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion), null);
     }
 
     @Test

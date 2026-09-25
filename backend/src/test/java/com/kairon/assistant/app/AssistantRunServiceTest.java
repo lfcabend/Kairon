@@ -9,16 +9,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.kairon.assistant.domain.AssistantSuggestedProject;
 import com.kairon.assistant.llm.AnthropicClient;
+import com.kairon.assistant.llm.AnthropicClient.ProjectPlanRequest;
+import com.kairon.assistant.llm.AnthropicClient.ProjectPlanResult;
 import com.kairon.assistant.llm.AnthropicClient.TodoSuggestionRequest;
 import com.kairon.assistant.llm.AnthropicClient.TodoSuggestionsResult;
+import com.kairon.assistant.llm.PlannedTaskPayload;
+import com.kairon.assistant.llm.ProjectPlanPayload;
 import com.kairon.assistant.llm.SuggestedTaskPayload;
 import com.kairon.assistant.repo.AssistantRunRepository;
+import com.kairon.assistant.repo.AssistantSuggestedProjectRepository;
 import com.kairon.assistant.repo.AssistantSuggestedTaskRepository;
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
+
+import tools.jackson.databind.ObjectMapper;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -50,13 +58,22 @@ class AssistantRunServiceTest {
     AssistantSuggestedTaskRepository suggestedTasks;
 
     @Mock
+    AssistantSuggestedProjectRepository suggestedProjects;
+
+    @Mock
     UserAccountApi accounts;
 
     @Mock
     TodoSuggestionContextBuilder contextBuilder;
 
     @Mock
+    ProjectPlanContextBuilder projectPlanContextBuilder;
+
+    @Mock
     AnthropicClient anthropicClient;
+
+    @Mock
+    ObjectMapper objectMapper;
 
     private AssistantProperties properties;
     private AssistantRunService service;
@@ -64,24 +81,54 @@ class AssistantRunServiceTest {
     @BeforeEach
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
-                500_000, new AssistantProperties.TodoSuggestions(7, 21, 5, 5, "MEDIUM"));
-        service = new AssistantRunService(runs, suggestedTasks, properties, accounts, contextBuilder,
-                anthropicClient, CLOCK);
+                500_000, new AssistantProperties.TodoSuggestions(7, 21, 5, 5, "MEDIUM"),
+                new AssistantProperties.ProjectPlan(40));
+        service = newService();
+        stubPlanRoundTrip();
     }
 
+    private AssistantRunService newService() {
+        return new AssistantRunService(runs, suggestedTasks, suggestedProjects, properties, accounts, contextBuilder,
+                projectPlanContextBuilder, anthropicClient, objectMapper, CLOCK);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void stubPlanRoundTrip() {
+        // The service round-trips a plan through the ObjectMapper (typed -> Map for
+        // storage, Map -> typed for the response) — stub both directions to return
+        // whatever was passed straight through, matching real Jackson behavior for
+        // this test's purposes. lenient(): most tests never touch the project-plan
+        // path at all, so these stubs would otherwise fail Mockito's strict-stubbing
+        // "unused stub" check on every one of them.
+        org.mockito.Mockito.lenient().when(objectMapper.convertValue(any(), eq(Map.class)))
+                .thenAnswer(inv -> Map.of());
+        org.mockito.Mockito.lenient().when(objectMapper.convertValue(any(), eq(PersistedProjectPlan.class)))
+                .thenAnswer(inv -> lastPersistedPlan);
+    }
+
+    // Set by tests that need the "stored -> re-read" round trip to reflect a specific plan.
+    private PersistedProjectPlan lastPersistedPlan;
+
     private static AssistantPreferencesView optedIn() {
-        return new AssistantPreferencesView(true, false, false, null, "balanced");
+        return new AssistantPreferencesView(true, false, false, true, null, "balanced");
+    }
+
+    private static AssistantPreferencesView optedInToProjectGeneration() {
+        return new AssistantPreferencesView(false, false, false, true, null, "balanced");
     }
 
     private static TodoSuggestionContextBuilder.Context context() {
         return new TodoSuggestionContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"));
     }
 
+    private static ProjectPlanContextBuilder.Context planContext() {
+        return new ProjectPlanContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"));
+    }
+
     @Test
     void requestTodoSuggestions_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null);
-        service = new AssistantRunService(runs, suggestedTasks, properties, accounts, contextBuilder,
-                anthropicClient, CLOCK);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null);
+        service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
                 .isInstanceOf(ApiException.class)
@@ -92,9 +139,8 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenNoApiKey_throwsForbidden() {
-        properties = new AssistantProperties(true, "  ", null, null, 0, null);
-        service = new AssistantRunService(runs, suggestedTasks, properties, accounts, contextBuilder,
-                anthropicClient, CLOCK);
+        properties = new AssistantProperties(true, "  ", null, null, 0, null, null);
+        service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
                 .isInstanceOf(ApiException.class)
@@ -104,7 +150,7 @@ class AssistantRunServiceTest {
     @Test
     void requestTodoSuggestions_whenNotOptedIn_throwsForbiddenAndNeverBuildsContext() {
         when(accounts.assistantPreferences(USER))
-                .thenReturn(new AssistantPreferencesView(false, false, false, null, "balanced"));
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
                 .isInstanceOf(ApiException.class)
@@ -141,6 +187,7 @@ class AssistantRunServiceTest {
         assertThat(view.outputTokens()).isEqualTo(310);
         assertThat(view.suggestions()).hasSize(1);
         assertThat(view.suggestions().get(0).title()).isEqualTo("Order cabinet hardware");
+        assertThat(view.suggestedProject()).isNull();
         verify(suggestedTasks, times(1)).save(any());
     }
 
@@ -198,7 +245,7 @@ class AssistantRunServiceTest {
     @Test
     void requestTodoSuggestions_withAnUnknownModelOverride_fallsBackToTheInstanceDefault() {
         when(accounts.assistantPreferences(USER)).thenReturn(
-                new AssistantPreferencesView(true, false, false, "not-a-real-model", "balanced"));
+                new AssistantPreferencesView(true, false, false, false, "not-a-real-model", "balanced"));
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
         when(contextBuilder.build(USER, DAY, Horizon.DAY)).thenReturn(context());
         when(anthropicClient.suggestTodos(any(TodoSuggestionRequest.class)))
@@ -207,5 +254,105 @@ class AssistantRunServiceTest {
         AssistantRunView view = service.requestTodoSuggestions(USER, DAY, Horizon.DAY);
 
         assertThat(view.model()).isEqualTo("claude-sonnet-5");
+    }
+
+    // --- requestProjectPlan (M8.5) --------------------------------------------
+
+    @Test
+    void requestProjectPlan_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null);
+        service = newService();
+
+        assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(projectPlanContextBuilder, never()).build(any(), any(), any());
+        verify(accounts, never()).assistantPreferences(any());
+    }
+
+    @Test
+    void requestProjectPlan_whenNotOptedIn_throwsForbidden() {
+        when(accounts.assistantPreferences(USER))
+                .thenReturn(new AssistantPreferencesView(true, false, false, false, null, "balanced"));
+
+        assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(projectPlanContextBuilder, never()).build(any(), any(), any());
+    }
+
+    @Test
+    void requestProjectPlan_whenBudgetAlreadyAtOrOverLimit_throwsForbiddenAndNeverCallsTheClient() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(500_000L);
+
+        assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(anthropicClient, never()).generateProjectPlan(any());
+    }
+
+    @Test
+    void requestProjectPlan_onSuccess_persistsSucceededRunAndAProposedPlan() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectPlanContextBuilder.build(eq("Kitchen remodel"), eq(DAY), any())).thenReturn(planContext());
+        PlannedTaskPayload task = new PlannedTaskPayload("t1", null, "Design", null, false, DAY, DAY.plusDays(6),
+                null);
+        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M", List.of(task),
+                List.of());
+        when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
+                .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 640, 890));
+        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null, List.of(task),
+                List.of());
+
+        AssistantRunView view = service.requestProjectPlan(USER, "Kitchen remodel", DAY, null);
+
+        assertThat(view.status()).isEqualTo("SUCCEEDED");
+        assertThat(view.kind()).isEqualTo("PROJECT_GENERATION");
+        assertThat(view.inputTokens()).isEqualTo(640);
+        assertThat(view.outputTokens()).isEqualTo(890);
+        assertThat(view.suggestions()).isEmpty();
+        assertThat(view.suggestedProject()).isNotNull();
+        assertThat(view.suggestedProject().status()).isEqualTo("PROPOSED");
+        assertThat(view.suggestedProject().tasks()).hasSize(1);
+        verify(suggestedProjects, times(1)).save(any(AssistantSuggestedProject.class));
+    }
+
+    @Test
+    void requestProjectPlan_capsTasksAtTheConfiguredMax() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
+                500_000, null, new AssistantProperties.ProjectPlan(2));
+        service = newService();
+        List<PlannedTaskPayload> fiveTasks = java.util.stream.IntStream.range(0, 5)
+                .mapToObj(i -> new PlannedTaskPayload("t" + i, null, "Task " + i, null, false, DAY, DAY, null))
+                .toList();
+        ProjectPlanPayload payload = new ProjectPlanPayload("Big project", "desc", "L", fiveTasks, List.of());
+        when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
+                .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 100, 100));
+        lastPersistedPlan = new PersistedProjectPlan("Big project", "desc", "L", DAY, null,
+                fiveTasks.subList(0, 2), List.of());
+
+        AssistantRunView view = service.requestProjectPlan(USER, "Big project", DAY, null);
+
+        assertThat(view.suggestedProject().tasks()).hasSize(2);
+    }
+
+    @Test
+    void requestProjectPlan_onUpstreamFailure_marksTheRunFailedAndRethrowsAsAProblem() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
+                .thenThrow(new AssistantUpstreamException(false, "The assistant could not complete this request.",
+                        null));
+
+        assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(502));
+        verify(suggestedProjects, never()).save(any());
     }
 }

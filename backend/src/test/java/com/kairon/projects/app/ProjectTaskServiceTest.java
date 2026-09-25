@@ -54,7 +54,7 @@ class ProjectTaskServiceTest {
     @BeforeEach
     void setUp() {
         service = new ProjectTaskService(tasks, projects, dependencies, new ProjectsProperties(0),
-                Clock.fixed(NOW, ZoneOffset.UTC));
+                Clock.fixed(NOW, ZoneOffset.UTC), null);
         project = Project.create(USER.value(), null, "Project", null, "#6366f1", null, 100, null, null);
         org.mockito.Mockito.lenient().when(projects.findByIdAndUserIdAndDeletedAtIsNull(project.getId(), USER.value()))
                 .thenReturn(Optional.of(project));
