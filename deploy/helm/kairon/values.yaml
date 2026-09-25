@@ -57,7 +57,17 @@ service:
 ingress:
   enabled: true
   className: nginx
-  annotations: {}
+  # A generated project plan (M8.5, up to 40 tasks) is a genuinely slower
+  # structured-output call than M8's todo suggestions — nginx-ingress's own
+  # default (60s) proxy timeout was cutting the connection (an HTML 504) while
+  # the backend was still correctly waiting on Anthropic, well before its own
+  # kairon.assistant.request-timeout would ever fire. Only meaningful for the
+  # nginx-based environments (values-local.yaml/values-prod.yaml); xbmc's
+  # Traefik ingress (values-xbmc.yaml) has no default response timeout at all,
+  # so these nginx-specific annotations are simply inert there.
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "150"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "150"
   host: kairon.localtest.me
   extraHosts: []   # additional hostnames routed to the same backend, e.g. a Tailscale Funnel name
   # Mount path for the app — must match the backend's server.servlet.context-path

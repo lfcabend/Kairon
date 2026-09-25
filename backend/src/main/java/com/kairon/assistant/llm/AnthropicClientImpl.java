@@ -3,6 +3,7 @@ package com.kairon.assistant.llm;
 import java.util.List;
 
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
+import com.anthropic.errors.AnthropicInvalidDataException;
 import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.InternalServerException;
@@ -40,6 +41,12 @@ class AnthropicClientImpl implements AnthropicClient {
 
     private static final Logger log = LoggerFactory.getLogger(AnthropicClientImpl.class);
 
+    // A generated project plan (up to 40 tasks + dependencies + descriptions) needs
+    // materially more room than the 4096 originally used for both calls — a real
+    // plan truncated mid-JSON at that cap and failed to parse. 16000 matches the
+    // documented safe default for a non-streaming structured-output request.
+    private static final long MAX_OUTPUT_TOKENS = 16_000L;
+
     private final com.anthropic.client.AnthropicClient sdk;
     private final MeterRegistry meterRegistry;
 
@@ -59,7 +66,7 @@ class AnthropicClientImpl implements AnthropicClient {
         // stable prefix worth Anthropic's prompt caching (M8 §4.5).
         StructuredMessageCreateParams<TodoSuggestionsPayload> params = MessageCreateParams.builder()
                 .model(request.model())
-                .maxTokens(4096L)
+                .maxTokens(MAX_OUTPUT_TOKENS)
                 .systemOfTextBlockParams(List.of(
                         TextBlockParam.builder()
                                 .text(request.systemPrompt())
@@ -74,6 +81,13 @@ class AnthropicClientImpl implements AnthropicClient {
             response = sdk.messages().create(params);
         } catch (RateLimitException | InternalServerException | AnthropicIoException e) {
             throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", e);
+        } catch (AnthropicInvalidDataException e) {
+            // The SDK parses the structured-output payload eagerly inside create() —
+            // a response cut off by maxTokens (or any other malformed JSON) surfaces
+            // here, not as a truncation flag on the response itself.
+            log.warn("Anthropic response failed structured-output parsing (likely truncated): {}", e.getMessage());
+            throw new AssistantUpstreamException(false,
+                    "The assistant's response was too large or invalid to use. Try a shorter description.", e);
         } catch (AnthropicServiceException e) {
             throw new AssistantUpstreamException(false, "The assistant could not complete this request.", e);
         }
@@ -118,7 +132,7 @@ class AnthropicClientImpl implements AnthropicClient {
         // per-request data) is a stable prefix worth Anthropic's prompt caching.
         StructuredMessageCreateParams<ProjectPlanPayload> params = MessageCreateParams.builder()
                 .model(request.model())
-                .maxTokens(4096L)
+                .maxTokens(MAX_OUTPUT_TOKENS)
                 .systemOfTextBlockParams(List.of(
                         TextBlockParam.builder()
                                 .text(request.systemPrompt())
@@ -133,6 +147,13 @@ class AnthropicClientImpl implements AnthropicClient {
             response = sdk.messages().create(params);
         } catch (RateLimitException | InternalServerException | AnthropicIoException e) {
             throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", e);
+        } catch (AnthropicInvalidDataException e) {
+            // The SDK parses the structured-output payload eagerly inside create() —
+            // a response cut off by maxTokens (or any other malformed JSON) surfaces
+            // here, not as a truncation flag on the response itself.
+            log.warn("Anthropic response failed structured-output parsing (likely truncated): {}", e.getMessage());
+            throw new AssistantUpstreamException(false,
+                    "The assistant's response was too large or invalid to use. Try a shorter description.", e);
         } catch (AnthropicServiceException e) {
             throw new AssistantUpstreamException(false, "The assistant could not complete this request.", e);
         }

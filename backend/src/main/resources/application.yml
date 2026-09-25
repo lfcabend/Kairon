@@ -110,7 +110,12 @@ kairon:
     enabled: ${KAIRON_ASSISTANT_ENABLED:false}
     api-key: ${ANTHROPIC_API_KEY:}
     model: claude-sonnet-5
-    request-timeout: PT30S
+    # A generated project plan (M8.5) can legitimately take well over 30s —
+    # a real 20-task/dependency plan observed ~90s of Anthropic latency. Kept
+    # below the ingress's own proxy-read/send-timeout (150s, deploy/helm/kairon/
+    # values.yaml) so this fires first and returns a clean application/problem+json
+    # 503 instead of nginx's blunt HTML 504.
+    request-timeout: PT120S
     # Sum of input+output tokens per user per UTC calendar month before new runs
     # are refused (M8 D8). ~500k tokens/month is a conservative starting cap at
     # Sonnet pricing — tune once there's real usage to look at.

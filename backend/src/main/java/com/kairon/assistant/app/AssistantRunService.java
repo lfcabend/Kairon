@@ -195,7 +195,7 @@ public class AssistantRunService {
     private AssistantSuggestedProject saveSuggestedProject(AssistantRun run, ProjectPlanPayload payload,
             LocalDate startDate, LocalDate endDate) {
         int max = properties.projectPlan().maxTasks();
-        List<PlannedTaskPayload> tasks = payload.tasks();
+        List<PlannedTaskPayload> tasks = normalizeParentKeys(payload.tasks());
         if (tasks.size() > max) {
             log.warn("Run {} plan returned {} tasks, capped to {}", run.getId(), tasks.size(), max);
             tasks = tasks.subList(0, max);
@@ -207,6 +207,26 @@ public class AssistantRunService {
         AssistantSuggestedProject saved = AssistantSuggestedProject.propose(run.getId(), run.getUserId(), planMap);
         suggestedProjects.save(saved);
         return saved;
+    }
+
+    /**
+     * The model reliably sends {@code ""} rather than omitting {@code parentKey}
+     * (or sending JSON {@code null}) for a genuinely top-level task — observed
+     * against the real API, not just a theoretical structured-output quirk.
+     * Every downstream root/child check (ProjectPlanImportService, the review
+     * UI, SuggestedProjectService's cascade-exclude) treats {@code parentKey ==
+     * null} as "top-level", so left un-normalized this silently flattens the
+     * model's entire ≤2-level tree into one flat list of top-level tasks —
+     * normalizing here, once, at the earliest point the payload is consumed,
+     * means every downstream null-check is trustworthy.
+     */
+    private List<PlannedTaskPayload> normalizeParentKeys(List<PlannedTaskPayload> tasks) {
+        return tasks.stream()
+                .map(t -> t.parentKey() != null && t.parentKey().isBlank()
+                        ? new PlannedTaskPayload(t.key(), null, t.name(), t.description(), t.isMilestone(),
+                                t.plannedStart(), t.plannedEnd(), t.estimateHours())
+                        : t)
+                .toList();
     }
 
     private LocalDate clampToRange(UUID runId, LocalDate date, LocalDate from, LocalDate to) {

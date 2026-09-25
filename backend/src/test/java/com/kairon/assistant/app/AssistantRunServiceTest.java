@@ -320,6 +320,35 @@ class AssistantRunServiceTest {
     }
 
     @Test
+    void requestProjectPlan_normalizesABlankParentKeyOnATopLevelTaskToNull() {
+        // Observed against the real API: the model sends "" rather than omitting
+        // parentKey (or sending JSON null) for a genuinely top-level task. Left
+        // un-normalized, every downstream root/child check treats parentKey == null
+        // as "top-level" and would flatten the whole tree (see AssistantRunService).
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        PlannedTaskPayload blankParent = new PlannedTaskPayload("t1", "", "Design", null, false, DAY, DAY, null);
+        PlannedTaskPayload realChild = new PlannedTaskPayload("t2", "t1", "Pick materials", null, false, DAY, DAY,
+                null);
+        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M",
+                List.of(blankParent, realChild), List.of());
+        when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
+                .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 100, 100));
+        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null,
+                List.of(blankParent, realChild), List.of());
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Object> persistedCaptor = ArgumentCaptor.forClass(Object.class);
+
+        service.requestProjectPlan(USER, "Kitchen remodel", DAY, null);
+
+        verify(objectMapper).convertValue(persistedCaptor.capture(), eq(Map.class));
+        PersistedProjectPlan persisted = (PersistedProjectPlan) persistedCaptor.getValue();
+        assertThat(persisted.tasks().get(0).parentKey()).isNull();
+        assertThat(persisted.tasks().get(1).parentKey()).isEqualTo("t1");
+    }
+
+    @Test
     void requestProjectPlan_capsTasksAtTheConfiguredMax() {
         when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);

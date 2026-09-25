@@ -25,7 +25,7 @@ public record AssistantProperties(
             model = "claude-sonnet-5";
         }
         if (requestTimeout == null || requestTimeout.isZero() || requestTimeout.isNegative()) {
-            requestTimeout = Duration.ofSeconds(30);
+            requestTimeout = Duration.ofSeconds(120);
         }
         if (monthlyTokenBudgetPerUser <= 0) {
             monthlyTokenBudgetPerUser = 500_000;
