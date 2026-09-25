@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
+import com.kairon.projects.api.ProjectsApi;
 import com.kairon.todo.api.TodoApi;
 import com.kairon.todo.api.TodoItemView;
 import com.kairon.todo.domain.TodoItem;
@@ -38,11 +39,13 @@ public class TodoService implements TodoApi {
     private final TodoItemRepository items;
     private final TodoProperties properties;
     private final Clock clock;
+    private final ProjectsApi projects;
 
-    public TodoService(TodoItemRepository items, TodoProperties properties, Clock clock) {
+    public TodoService(TodoItemRepository items, TodoProperties properties, Clock clock, ProjectsApi projects) {
         this.items = items;
         this.properties = properties;
         this.clock = clock;
+        this.projects = projects;
     }
 
     public record CreateCommand(
@@ -98,6 +101,9 @@ public class TodoService implements TodoApi {
     @Transactional
     public TodoItemView create(UserId userId, CreateCommand command) {
         String title = requireTitle(command.title());
+        if (command.sourceProjectTaskId() != null) {
+            projects.requireTask(userId, command.sourceProjectTaskId());
+        }
         int position = nextPosition(userId.value(), command.day());
         TodoItem item = TodoItem.create(
                 userId.value(),
@@ -135,13 +141,13 @@ public class TodoService implements TodoApi {
             item.estimate(command.estimateMinutes() == 0 ? null : command.estimateMinutes());
         }
         if (command.status() != null) {
-            applyStatus(item, command.status());
+            applyStatus(userId, item, command.status());
         }
         log.info("Patched todo {} userId={}", id, userId.value());
         return TodoMapper.toView(item);
     }
 
-    private void applyStatus(TodoItem item, String raw) {
+    private void applyStatus(UserId userId, TodoItem item, String raw) {
         TodoStatus target;
         try {
             target = TodoStatus.valueOf(raw);
@@ -158,6 +164,7 @@ public class TodoService implements TodoApi {
                     throw badTransition(from, target);
                 }
                 item.complete(clock.instant());
+                syncLinkedProjectTaskOnComplete(userId, item);
             }
             case OPEN -> item.reopen();
             case CANCELLED -> {
@@ -174,11 +181,19 @@ public class TodoService implements TodoApi {
         TodoItem item = require(userId, id);
         if (complete) {
             item.complete(clock.instant());
+            syncLinkedProjectTaskOnComplete(userId, item);
         } else {
             item.reopen();
         }
         log.info("Set todo {} complete={} userId={}", id, complete, userId.value());
         return TodoMapper.toView(item);
+    }
+
+    /** One-way sync: completing a linked todo marks its project task DONE too; reopening never reverts it. */
+    private void syncLinkedProjectTaskOnComplete(UserId userId, TodoItem item) {
+        if (item.getSourceProjectTaskId() != null) {
+            projects.completeTaskIfPresent(userId, item.getSourceProjectTaskId());
+        }
     }
 
     @Transactional

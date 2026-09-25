@@ -233,6 +233,20 @@ public class ProjectTaskService implements ProjectsApi {
         return views;
     }
 
+    @Override
+    @Transactional
+    public void completeTaskIfPresent(UserId userId, UUID taskId) {
+        TaskResolution.findTaskWithProject(tasks, projects, userId, taskId).ifPresentOrElse(resolved -> {
+            ProjectTask task = resolved.task();
+            if (task.getStatus() != ProjectTaskStatus.DONE) {
+                task.changeStatus(ProjectTaskStatus.DONE);
+                log.info("Completed task {} userId={} projectId={} (via linked todo)",
+                        taskId, userId.value(), resolved.project().getId());
+            }
+        }, () -> log.debug("Skipped completing task {} for userId={} (missing/foreign/deleted)",
+                taskId, userId.value()));
+    }
+
     // --- internals -----------------------------------------------------------
 
     private Project requireProject(UserId userId, UUID projectId) {

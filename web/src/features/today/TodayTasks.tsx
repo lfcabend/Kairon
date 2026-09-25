@@ -37,7 +37,9 @@ export function TodayTasks({ date }: { date: string }) {
         <DaySummary items={items} />
       </div>
 
-      <QuickAdd onAdd={(title) => create.mutate({ day: date, title })} />
+      <QuickAdd
+        onAdd={(title, sourceProjectTaskId) => create.mutate({ day: date, title, sourceProjectTaskId })}
+      />
 
       {create.isError && (
         <p className="text-sm text-destructive" role="alert">

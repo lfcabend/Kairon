@@ -14,10 +14,11 @@ export function useProjects(status: string | undefined, categoryId: string | und
 }
 
 /** Used only in Priority sort mode (D19) — every non-`ARCHIVED` project, flat, rank-ordered. */
-export function useProjectsByPriority() {
+export function useProjectsByPriority(enabled = true) {
   return useQuery({
     queryKey: projectKeys.priorityOrdered(),
     queryFn: () => projectsApi.listByPriority(),
+    enabled,
   });
 }
 

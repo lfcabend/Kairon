@@ -1,5 +1,6 @@
 package com.kairon.projects.app;
 
+import java.util.Optional;
 import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
@@ -28,10 +29,15 @@ final class TaskResolution {
 
     static TaskAndProject requireTaskWithProject(
             ProjectTaskRepository tasks, ProjectRepository projects, UserId userId, UUID taskId) {
-        ProjectTask task = tasks.findByIdAndDeletedAtIsNull(taskId)
+        return findTaskWithProject(tasks, projects, userId, taskId)
                 .orElseThrow(() -> ApiException.notFound("Task not found."));
-        Project project = projects.findByIdAndUserIdAndDeletedAtIsNull(task.getProjectId(), userId.value())
-                .orElseThrow(() -> ApiException.notFound("Task not found."));
-        return new TaskAndProject(task, project);
+    }
+
+    /** Same resolution as {@link #requireTaskWithProject}, but empty instead of a 404. */
+    static Optional<TaskAndProject> findTaskWithProject(
+            ProjectTaskRepository tasks, ProjectRepository projects, UserId userId, UUID taskId) {
+        return tasks.findByIdAndDeletedAtIsNull(taskId)
+                .flatMap(task -> projects.findByIdAndUserIdAndDeletedAtIsNull(task.getProjectId(), userId.value())
+                        .map(project -> new TaskAndProject(task, project)));
     }
 }

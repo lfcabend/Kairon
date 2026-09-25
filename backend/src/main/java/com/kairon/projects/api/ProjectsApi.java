@@ -31,4 +31,13 @@ public interface ProjectsApi {
      * module (todo-suggestion context — docs/milestones/M8-assistant-foundations.md D3).
      */
     List<ProjectTaskView> openTasksInActiveProjects(UserId userId);
+
+    /**
+     * Marks the task DONE, if it exists, isn't already DONE, and is owned by
+     * {@code userId} — a no-op (no exception) if the task is missing, foreign,
+     * or soft-deleted, since a todo's link may outlive the task it points to.
+     * Added for the todo module's optional project-task link: completing a
+     * linked todo item syncs the project task's status one-way.
+     */
+    void completeTaskIfPresent(UserId userId, UUID taskId);
 }

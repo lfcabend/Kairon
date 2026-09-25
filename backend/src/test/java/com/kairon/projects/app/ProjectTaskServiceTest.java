@@ -26,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
@@ -235,5 +236,37 @@ class ProjectTaskServiceTest {
         ApiException ex = catchThrowableOfType(ApiException.class, () -> service.requireTask(USER, task.getId()));
 
         assertThat(ex.getStatus().value()).isEqualTo(404);
+    }
+
+    @Test
+    void completeTaskIfPresentMarksAnOwnedNonDoneTaskDone() {
+        ProjectTask task = taskAt(null, 100);
+        when(tasks.findByIdAndDeletedAtIsNull(task.getId())).thenReturn(Optional.of(task));
+
+        service.completeTaskIfPresent(USER, task.getId());
+
+        assertThat(task.getStatus().name()).isEqualTo("DONE");
+    }
+
+    @Test
+    void completeTaskIfPresentNoOpsForAMissingTask() {
+        UUID taskId = UUID.randomUUID();
+        when(tasks.findByIdAndDeletedAtIsNull(taskId)).thenReturn(Optional.empty());
+
+        assertThatCode(() -> service.completeTaskIfPresent(USER, taskId)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void completeTaskIfPresentNoOpsForAForeignTask() {
+        Project foreignProject = Project.create(UUID.randomUUID(), null, "Foreign", null, "#6366f1", null, 100,
+                null, null);
+        ProjectTask task = ProjectTask.create(foreignProject.getId(), null, "t", null, 100);
+        when(tasks.findByIdAndDeletedAtIsNull(task.getId())).thenReturn(Optional.of(task));
+        when(projects.findByIdAndUserIdAndDeletedAtIsNull(foreignProject.getId(), USER.value()))
+                .thenReturn(Optional.empty());
+
+        service.completeTaskIfPresent(USER, task.getId());
+
+        assertThat(task.getStatus().name()).isNotEqualTo("DONE");
     }
 }

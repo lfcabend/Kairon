@@ -10,6 +10,8 @@ import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
+import com.kairon.projects.api.ProjectTaskView;
+import com.kairon.projects.api.ProjectsApi;
 import com.kairon.todo.api.TodoItemView;
 import com.kairon.todo.app.TodoService.CreateCommand;
 import com.kairon.todo.app.TodoService.PatchCommand;
@@ -27,6 +29,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -39,11 +43,14 @@ class TodoServiceTest {
     @Mock
     TodoItemRepository items;
 
+    @Mock
+    ProjectsApi projects;
+
     TodoService service;
 
     @BeforeEach
     void setUp() {
-        service = new TodoService(items, new TodoProperties(0, 0), Clock.fixed(NOW, ZoneOffset.UTC));
+        service = new TodoService(items, new TodoProperties(0, 0), Clock.fixed(NOW, ZoneOffset.UTC), projects);
     }
 
     private TodoItem itemOnDay(int position) {
@@ -125,6 +132,61 @@ class TodoServiceTest {
         TodoItemView reopened = service.complete(USER, item.getId(), false);
         assertThat(reopened.status()).isEqualTo("OPEN");
         assertThat(reopened.completedAt()).isNull();
+    }
+
+    @Test
+    void createValidatesALinkedProjectTaskViaProjectsApi() {
+        UUID taskId = UUID.randomUUID();
+        when(items.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
+                .thenReturn(List.of());
+        when(items.save(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(projects.requireTask(USER, taskId)).thenReturn(projectTaskView(taskId));
+
+        TodoItemView created = service.create(USER, new CreateCommand(DAY, "linked", null, null, null, taskId));
+
+        assertThat(created.sourceProjectTaskId()).isEqualTo(taskId);
+        verify(projects).requireTask(USER, taskId);
+    }
+
+    @Test
+    void createRejectsAMissingOrForeignProjectTaskLink() {
+        UUID taskId = UUID.randomUUID();
+        when(projects.requireTask(USER, taskId)).thenThrow(ApiException.notFound("Task not found."));
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> service.create(USER, new CreateCommand(DAY, "linked", null, null, null, taskId)));
+
+        assertThat(ex.getStatus().value()).isEqualTo(404);
+    }
+
+    @Test
+    void completingALinkedTodoSyncsTheProjectTaskDone() {
+        UUID taskId = UUID.randomUUID();
+        TodoItem item = TodoItem.create(USER.value(), DAY, "linked", null, 0, 100, null, taskId);
+        when(items.findByIdAndUserIdAndDeletedAtIsNull(item.getId(), USER.value()))
+                .thenReturn(Optional.of(item));
+
+        service.complete(USER, item.getId(), true);
+
+        verify(projects).completeTaskIfPresent(USER, taskId);
+    }
+
+    @Test
+    void reopeningALinkedTodoDoesNotTouchTheProjectTask() {
+        UUID taskId = UUID.randomUUID();
+        TodoItem item = TodoItem.create(USER.value(), DAY, "linked", null, 0, 100, null, taskId);
+        item.complete(NOW);
+        when(items.findByIdAndUserIdAndDeletedAtIsNull(item.getId(), USER.value()))
+                .thenReturn(Optional.of(item));
+
+        service.complete(USER, item.getId(), false);
+
+        verify(projects, never()).completeTaskIfPresent(any(), any());
+    }
+
+    private static ProjectTaskView projectTaskView(UUID id) {
+        return new ProjectTaskView(id, UUID.randomUUID(), "Project", "#6366f1", null, "Task", null, "TODO",
+                false, null, null, null, null, 0, 100, NOW, NOW, 0L);
     }
 
     @Test

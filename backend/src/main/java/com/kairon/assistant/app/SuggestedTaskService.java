@@ -37,13 +37,35 @@ public class SuggestedTaskService {
     public TodoItemView accept(UserId userId, UUID id) {
         AssistantSuggestedTask task = require(userId, id);
         requireProposed(task);
-        TodoItemView created = todos.create(userId, new TodoApi.NewTodo(
-                task.getSuggestedForDay(), task.getTitle(), task.getNotes(), 0,
-                task.getEstimateMinutes(), task.getSourceProjectTaskId()));
+        TodoItemView created = createLinkedTodo(userId, task, task.getSourceProjectTaskId());
         task.accept(created.id());
         suggestedTasks.save(task);
         log.info("Accepted suggestion {} -> todo {} userId={}", id, created.id(), userId.value());
         return created;
+    }
+
+    /**
+     * {@code sourceProjectTaskId} is the model's own output (never validated
+     * when the suggestion was proposed — {@code AssistantRunService}), so by
+     * the time the user accepts it, the task it names may be stale, deleted,
+     * or hallucinated. {@code TodoApi#create} now 404s on an unresolvable
+     * link; rather than let that block an otherwise-good suggestion, drop the
+     * link and create a plain todo instead.
+     */
+    private TodoItemView createLinkedTodo(UserId userId, AssistantSuggestedTask task, UUID sourceProjectTaskId) {
+        try {
+            return todos.create(userId, new TodoApi.NewTodo(
+                    task.getSuggestedForDay(), task.getTitle(), task.getNotes(), 0,
+                    task.getEstimateMinutes(), sourceProjectTaskId));
+        } catch (ApiException ex) {
+            if (sourceProjectTaskId == null) {
+                throw ex;
+            }
+            log.warn("Suggestion {} referenced project task {} which is no longer valid;"
+                            + " accepting without the link. userId={}",
+                    task.getId(), sourceProjectTaskId, userId.value());
+            return createLinkedTodo(userId, task, null);
+        }
     }
 
     @Transactional

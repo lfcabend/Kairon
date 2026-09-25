@@ -67,6 +67,26 @@ class SuggestedTaskServiceTest {
     }
 
     @Test
+    void acceptFallsBackToAnUnlinkedTodoWhenTheSourceProjectTaskIsNoLongerValid() {
+        UUID staleTaskId = UUID.randomUUID();
+        AssistantSuggestedTask task = AssistantSuggestedTask.propose(UUID.randomUUID(), USER.value(),
+                "Order cabinet hardware", null, "Overdue kitchen-remodel task", DAY, 20, staleTaskId, 0);
+        when(suggestedTasks.findByIdAndUserId(task.getId(), USER.value())).thenReturn(Optional.of(task));
+        TodoItemView created = new TodoItemView(UUID.randomUUID(), DAY, "Order cabinet hardware", null,
+                "OPEN", 0, 100, null, null, null, null, null, null, 0);
+        when(todos.create(eq(USER), eq(new NewTodo(DAY, "Order cabinet hardware", null, 0, 20, staleTaskId))))
+                .thenThrow(ApiException.notFound("Task not found."));
+        when(todos.create(eq(USER), eq(new NewTodo(DAY, "Order cabinet hardware", null, 0, 20, null))))
+                .thenReturn(created);
+
+        TodoItemView result = service.accept(USER, task.getId());
+
+        assertThat(result).isEqualTo(created);
+        assertThat(task.getStatus().name()).isEqualTo("ACCEPTED");
+        verify(todos).create(USER, new NewTodo(DAY, "Order cabinet hardware", null, 0, 20, null));
+    }
+
+    @Test
     void dismissMarksTheSuggestionDismissedWithoutTouchingTodos() {
         AssistantSuggestedTask task = proposed();
         when(suggestedTasks.findByIdAndUserId(task.getId(), USER.value())).thenReturn(Optional.of(task));

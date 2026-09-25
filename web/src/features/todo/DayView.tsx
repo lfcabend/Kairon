@@ -139,7 +139,10 @@ export function DayView() {
         </div>
       </div>
 
-      <QuickAdd ref={quickAddRef} onAdd={(title) => create.mutate({ day: date, title })} />
+      <QuickAdd
+        ref={quickAddRef}
+        onAdd={(title, sourceProjectTaskId) => create.mutate({ day: date, title, sourceProjectTaskId })}
+      />
 
       {isToday && previewQuery.data && (
         <RolloverPrompt preview={previewQuery.data} mode={mode} toDay={today} />
