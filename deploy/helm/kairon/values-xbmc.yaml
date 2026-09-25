@@ -88,3 +88,11 @@ database:
   #   kubectl -n kairon create secret generic kairon-db \
   #     --from-literal=SPRING_DATASOURCE_PASSWORD=<the kairon role's password>
   existingSecret: kairon-db
+
+# Secret created out of band (deploy/RUNBOOK.md "Enable or rotate the
+# Anthropic API key"):
+#   kubectl -n kairon create secret generic kairon-assistant \
+#     --from-literal=ANTHROPIC_API_KEY=<the key>
+assistant:
+  enabled: true
+  existingSecret: kairon-assistant
