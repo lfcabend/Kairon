@@ -360,6 +360,60 @@ Where scan results actually surface, once this milestone lands:
   pointer once the mechanisms above are picked, so it's discoverable without
   re-deriving it from `deploy.yml`/`verify.yml`.
 
+## M15 — Admin console: usage, cost & planning
+
+An operator-facing view over how the instance is actually used — both the
+assistant's spend and plain product usage. `assistant_run` already records
+every call's token counts (M8), but there's no concept of an "admin" user at
+all yet, no visibility into spend (current or trending, instance-wide or
+per-user), and no cross-user view of adoption (how many users, how active,
+which features). Builds directly on M8's data model for the cost side, and
+folds in the cost-estimation idea from the backlog (a per-model pricing table
+lands here, as this page's first consumer, rather than as a standalone
+add-on).
+
+- [ ] An admin flag on the user (`app_user.is_admin` or similar — exact shape
+      decided at design time) plus the `SecurityFilterChain`/`@CurrentUser`
+      plumbing to check it. Non-admin users get a 404, not a 403, on admin
+      routes — consistent with the rest of the app's "don't leak existence"
+      rule (docs/DESIGN.md §3.2), extended here to mean a non-admin can't
+      even tell the admin console exists.
+- [ ] A per-model pricing table (input/output $ per token, or per 1M tokens)
+      to turn `assistant_run.input_tokens`/`output_tokens` into an estimated
+      dollar figure. Display/planning only — the token-only monthly budget
+      check the assistant module already enforces (M8 D8) stays the hard
+      gate, unchanged.
+- [ ] SQL aggregation of `assistant_run` by day/week/month, both instance-wide
+      and per-user. Decide at design time how admin queries cross the usual
+      "a row belongs to `@CurrentUser`" authorization boundary every other
+      module follows — this is the first feature that legitimately needs to
+      see every user's data, likely via a dedicated admin-only repository
+      method or module rather than bending the existing per-user pattern.
+- [ ] Product-usage aggregation alongside the assistant numbers: total user
+      count (and signups over time, from `app_user.created_at`); per-feature
+      activity — todos created/completed per user/period (`todo`), number of
+      projects and tasks defined per user (`projects`), journal entries added
+      per user/period (`journal`) — each pulled through that same module's
+      existing repository, not new tables. Login frequency needs a new
+      signal: `refresh_token.created_at` isn't a clean proxy (a row is also
+      created on every silent token rotation, not just an explicit login —
+      docs/DESIGN.md §6), so this likely needs e.g. an `app_user.last_login_at`
+      column touched by `POST /auth/login` specifically.
+- [ ] `GET /admin/usage` (exact shape decided at design time): assistant
+      token counts and estimated cost, bucketed by day/week/month and
+      filterable by user, plus the product-usage figures above (user counts,
+      login activity, per-feature activity).
+- [ ] Web: an Admin nav entry visible only to admin users (sourced from
+      `/me`), route-guarded like the existing `ProtectedRoute`; a dashboard
+      covering both halves — assistant tokens/estimated cost over day/week/
+      month with a per-user breakdown and a forward-looking planning view
+      (e.g. a trend-based projection against the monthly budget), and a
+      product-usage view (user counts, login activity, per-feature adoption:
+      todo activity, projects defined, journal-entry frequency). Exact chart/
+      table set decided at design time.
+- [ ] Tests: authorization tests proving a non-admin gets 404 on every admin
+      route; aggregation query tests against Testcontainers.
+
 ### Backlog (unscheduled)
 
 Bring-your-own Anthropic key per user · Batch API for scheduled summaries (50 %
