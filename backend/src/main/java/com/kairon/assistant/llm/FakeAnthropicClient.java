@@ -52,6 +52,23 @@ class FakeAnthropicClient implements AnthropicClient {
         return new ProjectPlanResult(plan, request.model(), 100, 80);
     }
 
+    @Override
+    public SummaryResult generateSummary(SummaryRequest request) {
+        log.info("FakeAnthropicClient.generateSummary (local e2e stub) model={}", request.model());
+        String markdown = """
+                ## This period: a canned e2e summary
+
+                **What got done.** This is a fixed narrative stub for Playwright e2e —
+                no real Anthropic call was made.
+
+                **Where things slipped.** Nothing slipped; this is a stub.
+
+                **Suggestions.**
+                - This is a canned suggestion from FakeAnthropicClient.
+                """;
+        return new SummaryResult(markdown, request.model(), 120, 60);
+    }
+
     private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");
 
     // The user content always opens with the requested day as the first ISO date

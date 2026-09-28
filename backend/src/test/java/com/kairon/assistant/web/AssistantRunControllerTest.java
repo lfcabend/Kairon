@@ -5,10 +5,13 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
+import com.kairon.assistant.app.AssistantRunPage;
 import com.kairon.assistant.app.AssistantRunService;
 import com.kairon.assistant.app.AssistantRunView;
 import com.kairon.assistant.app.AssistantSuggestedTaskView;
 import com.kairon.assistant.app.Horizon;
+import com.kairon.assistant.app.SummaryGenerationService;
+import com.kairon.assistant.app.SummaryPeriod;
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.CurrentUserArgumentResolver;
 import com.kairon.common.security.SecurityConfig;
@@ -50,6 +53,9 @@ class AssistantRunControllerTest {
     AssistantRunService assistantRuns;
 
     @MockitoBean
+    SummaryGenerationService summaryDispatcher;
+
+    @MockitoBean
     JwtDecoder jwtDecoder;
 
     private static RequestPostProcessor asUser() {
@@ -61,7 +67,7 @@ class AssistantRunControllerTest {
                 "Order cabinet hardware", null, "Overdue kitchen-remodel task", DAY, 20, null,
                 "PROPOSED", null, 0);
         return new AssistantRunView(id, "TODO_SUGGESTION", "SUCCEEDED", "claude-sonnet-5", DAY, DAY,
-                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion), null);
+                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion), null, null);
     }
 
     @Test
@@ -95,6 +101,44 @@ class AssistantRunControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"horizon\":\"DAY\"}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void requestSummaryReturns201WithAPendingRun() throws Exception {
+        UUID runId = UUID.randomUUID();
+        when(assistantRuns.requestSummary(any(), eq(SummaryPeriod.WEEK), eq(DAY)))
+                .thenReturn(new AssistantRunView(runId, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
+                        DAY, DAY.plusDays(6), null, null, null, Instant.parse("2026-09-21T08:00:00Z"),
+                        List.of(), null, null));
+
+        mvc.perform(post("/api/v1/assistant/summaries").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"period\":\"WEEK\",\"date\":\"" + DAY + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(runId.toString()))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void requestSummaryWhenAlreadyInFlightIs409() throws Exception {
+        when(assistantRuns.requestSummary(any(), eq(SummaryPeriod.WEEK), eq(DAY)))
+                .thenThrow(ApiException.conflict("A summary run is already in progress. Wait for it to finish."));
+
+        mvc.perform(post("/api/v1/assistant/summaries").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"period\":\"WEEK\",\"date\":\"" + DAY + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void listRunsReturnsAPage() throws Exception {
+        when(assistantRuns.list(any(), eq(null), eq(null), eq(null), eq(0), eq(20)))
+                .thenReturn(new AssistantRunPage(List.of(run(UUID.randomUUID())), 0, 1));
+
+        mvc.perform(get("/api/v1/assistant/runs").with(asUser()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].status").value("SUCCEEDED"));
     }
 
     @Test

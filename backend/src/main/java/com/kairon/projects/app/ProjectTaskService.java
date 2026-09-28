@@ -3,6 +3,7 @@ package com.kairon.projects.app;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -258,6 +259,16 @@ public class ProjectTaskService implements ProjectsApi {
     @Transactional
     public ProjectView createFromPlan(UserId userId, ProjectsApi.ProjectPlanCommand command) {
         return planImportService.createFromPlan(userId, command);
+    }
+
+    @Override
+    public List<ProjectPeriodStats> projectPeriodStats(UserId userId, LocalDate from, LocalDate to) {
+        List<ProjectPeriodStats> stats = tasks.projectPeriodStats(userId.value(),
+                from.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+        log.debug("Computed period stats for {} project(s) userId={} range {}..{}",
+                stats.size(), userId.value(), from, to);
+        return stats;
     }
 
     // --- internals -----------------------------------------------------------

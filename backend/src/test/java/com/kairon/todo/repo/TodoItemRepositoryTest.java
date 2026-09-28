@@ -2,11 +2,13 @@ package com.kairon.todo.repo;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
 import com.kairon.identity.domain.AppUser;
 import com.kairon.identity.repo.AppUserRepository;
+import com.kairon.todo.api.TodoApi;
 import com.kairon.todo.domain.TodoItem;
 import com.kairon.todo.domain.TodoStatus;
 
@@ -128,5 +130,44 @@ class TodoItemRepositoryTest {
         mine.softDelete(Instant.parse("2026-09-09T15:00:00Z"));
         repo.save(mine);
         assertThat(repo.findByIdAndUserIdAndDeletedAtIsNull(mine.getId(), user)).isEmpty();
+    }
+
+    @Test
+    void periodStatsCountsCreatedCompletedAndRolledOverWithinTheRange() {
+        repo.save(item(user, DAY, 100, "created-1"));
+        TodoItem completed = item(user, DAY, 200, "completed-1");
+        completed.complete(Instant.parse("2026-09-09T10:00:00Z"));
+        repo.save(completed);
+        // Completed, but its completedAt falls outside the instant window below —
+        // still counts as "created" (day in range), just not "completed".
+        TodoItem completedOutsideWindow = item(user, DAY, 300, "completed-outside-window");
+        completedOutsideWindow.complete(Instant.parse("2026-09-01T00:00:00Z"));
+        repo.save(completedOutsideWindow);
+
+        TodoItem source = repo.save(item(user, DAY.minusDays(5), 100, "source"));
+        TodoItem rolled = TodoItem.rolledFrom(source, DAY.plusDays(1), 100);
+        repo.save(rolled);
+
+        repo.save(item(other, DAY, 100, "not mine"));
+        repo.save(item(user, DAY.plusDays(10), 100, "outside day range"));
+
+        TodoApi.PeriodStats stats = repo.periodStats(user, DAY, DAY.plusDays(1),
+                DAY.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                DAY.plusDays(2).atStartOfDay(ZoneOffset.UTC).toInstant());
+
+        assertThat(stats.created()).isEqualTo(3);
+        assertThat(stats.completed()).isEqualTo(1);
+        assertThat(stats.rolledOver()).isEqualTo(1);
+    }
+
+    @Test
+    void periodStatsReturnsAllZerosWhenNothingIsInRange() {
+        TodoApi.PeriodStats stats = repo.periodStats(user, DAY, DAY,
+                DAY.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                DAY.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+
+        assertThat(stats.created()).isZero();
+        assertThat(stats.completed()).isZero();
+        assertThat(stats.rolledOver()).isZero();
     }
 }

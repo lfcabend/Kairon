@@ -82,7 +82,7 @@ class AssistantRunServiceTest {
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
                 500_000, new AssistantProperties.TodoSuggestions(7, 21, 5, 5, "MEDIUM"),
-                new AssistantProperties.ProjectPlan(40));
+                new AssistantProperties.ProjectPlan(40), null);
         service = newService();
         stubPlanRoundTrip();
     }
@@ -117,6 +117,10 @@ class AssistantRunServiceTest {
         return new AssistantPreferencesView(false, false, false, true, null, "balanced");
     }
 
+    private static AssistantPreferencesView optedInToExecutionSummaries() {
+        return new AssistantPreferencesView(false, true, false, false, null, "balanced");
+    }
+
     private static TodoSuggestionContextBuilder.Context context() {
         return new TodoSuggestionContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"));
     }
@@ -127,7 +131,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -139,7 +143,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenNoApiKey_throwsForbidden() {
-        properties = new AssistantProperties(true, "  ", null, null, 0, null, null);
+        properties = new AssistantProperties(true, "  ", null, null, 0, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -260,7 +264,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestProjectPlan_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
@@ -354,7 +358,7 @@ class AssistantRunServiceTest {
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
         when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
-                500_000, null, new AssistantProperties.ProjectPlan(2));
+                500_000, null, new AssistantProperties.ProjectPlan(2), null);
         service = newService();
         List<PlannedTaskPayload> fiveTasks = java.util.stream.IntStream.range(0, 5)
                 .mapToObj(i -> new PlannedTaskPayload("t" + i, null, "Task " + i, null, false, DAY, DAY, null))
@@ -383,5 +387,69 @@ class AssistantRunServiceTest {
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(502));
         verify(suggestedProjects, never()).save(any());
+    }
+
+    // --- requestSummary ---------------------------------------------------------
+
+    @Test
+    void requestSummary_whenInstanceDisabled_throwsForbidden() {
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
+        service = newService();
+
+        assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(accounts, never()).assistantPreferences(any());
+    }
+
+    @Test
+    void requestSummary_whenNotOptedIn_throwsForbidden() {
+        when(accounts.assistantPreferences(USER))
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
+
+        assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestSummary_whenBudgetExceeded_throwsForbidden() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToExecutionSummaries());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(600_000L);
+
+        assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestSummary_whenAnotherSummaryRunIsInFlight_throwsConflict() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToExecutionSummaries());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()), any(), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(409));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestSummary_whenAvailable_queuesAPendingRunForTheResolvedWeek() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToExecutionSummaries());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()), any(), any())).thenReturn(false);
+
+        AssistantRunView view = service.requestSummary(USER, SummaryPeriod.WEEK, DAY);
+
+        assertThat(view.kind()).isEqualTo("WEEKLY_SUMMARY");
+        assertThat(view.status()).isEqualTo("PENDING");
+        assertThat(view.outputMarkdown()).isNull();
+        SummaryPeriod.Range expected = SummaryPeriod.WEEK.resolve(DAY);
+        assertThat(view.periodStart()).isEqualTo(expected.start());
+        assertThat(view.periodEnd()).isEqualTo(expected.end());
+        verify(runs, times(1)).save(any());
     }
 }

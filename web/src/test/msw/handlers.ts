@@ -12,6 +12,7 @@ import type {
   ProjectCategory,
   ProjectTask,
   SuggestedProjectPlan,
+  SummaryPeriod,
   TaskDependency,
   TodoItem,
 } from "@/lib/api/types";
@@ -571,6 +572,11 @@ let suggestedProjectSeq = 0;
 /** What the next `POST /assistant/project-plan` call returns — set via `seedProjectPlan`. */
 let nextProjectPlan: Partial<SuggestedProjectPlan> | null = null;
 
+// GET /assistant/runs/:id for a WEEKLY_SUMMARY/MONTHLY_SUMMARY run reports
+// PENDING on the first poll and SUCCEEDED from the second poll onward — lets
+// tests exercise the polling hook without a real async backend (M9 §7).
+let summaryPollCounts = new Map<string, number>();
+
 export function resetAssistantStore() {
   assistantRuns = [];
   assistantRunSeq = 0;
@@ -580,6 +586,7 @@ export function resetAssistantStore() {
   suggestedProjects = [];
   suggestedProjectSeq = 0;
   nextProjectPlan = null;
+  summaryPollCounts = new Map();
 }
 
 /** Configures what the next todo-suggestions request returns (default: an empty list). */
@@ -592,6 +599,28 @@ export function seedProjectPlan(plan: Partial<SuggestedProjectPlan>) {
   nextProjectPlan = plan;
 }
 
+/** Pushes a fully-formed run straight into the store — e.g. a `SUCCEEDED` summary, skipping the poll cycle. */
+export function seedAssistantRun(partial: Partial<AssistantRun>): AssistantRun {
+  assistantRunSeq += 1;
+  const run: AssistantRun = {
+    id: partial.id ?? `assistant-run-${assistantRunSeq}`,
+    kind: partial.kind ?? "WEEKLY_SUMMARY",
+    status: partial.status ?? "SUCCEEDED",
+    model: partial.model ?? "claude-sonnet-5",
+    periodStart: partial.periodStart,
+    periodEnd: partial.periodEnd,
+    inputTokens: partial.inputTokens,
+    outputTokens: partial.outputTokens,
+    error: partial.error,
+    createdAt: partial.createdAt ?? new Date().toISOString(),
+    suggestions: partial.suggestions ?? [],
+    suggestedProject: partial.suggestedProject,
+    outputMarkdown: partial.outputMarkdown,
+  };
+  assistantRuns.push(run);
+  return run;
+}
+
 function isTodoSuggestionsEnabled(): boolean {
   const assistant = (meResponse.preferences as { assistant?: { todoSuggestions?: { enabled?: boolean } } })
     .assistant;
@@ -602,6 +631,35 @@ function isProjectGenerationEnabled(): boolean {
   const assistant = (meResponse.preferences as { assistant?: { projectGeneration?: { enabled?: boolean } } })
     .assistant;
   return assistant?.projectGeneration?.enabled === true;
+}
+
+function isExecutionSummariesEnabled(): boolean {
+  const assistant = (meResponse.preferences as { assistant?: { executionSummaries?: { enabled?: boolean } } })
+    .assistant;
+  return assistant?.executionSummaries?.enabled === true;
+}
+
+const CANNED_SUMMARY_MARKDOWN =
+  "## This week: steady progress\n\nA canned test narrative — no real Anthropic call was made.\n\n" +
+  "## Stats\n\n| Metric | Value |\n| --- | --- |\n| Todos completed | 3 |\n\n" +
+  "### By project\n\n| Project | Category | Completed | Est. hours | Actual hours | Variance |\n" +
+  "| --- | --- | --- | --- | --- | --- |\n| Kitchen remodel | Home | 2 | 4.0 | 5.0 | +1.0 |\n";
+
+/** Monday–Sunday ISO week (WEEK) or calendar month (MONTH) containing `dateIso`, as UTC date strings. */
+function resolveSummaryPeriod(period: SummaryPeriod, dateIso: string): { start: string; end: string } {
+  const [y, m, d] = dateIso.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (period === "MONTH") {
+    const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0));
+    return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  }
+  const dayOfWeek = date.getUTCDay() === 0 ? 7 : date.getUTCDay(); // Mon=1..Sun=7
+  const start = new Date(date);
+  start.setUTCDate(start.getUTCDate() - (dayOfWeek - 1));
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
 }
 
 function defaultProjectPlan(): Partial<SuggestedProjectPlan> {
@@ -676,10 +734,62 @@ const assistantHandlers = [
     if (!authed(request)) return problem(401, "Authentication required.");
     const run = assistantRuns.find((r) => r.id === params.id);
     if (!run) return problem(404, "Assistant run not found.");
+    if (run.kind === "WEEKLY_SUMMARY" || run.kind === "MONTHLY_SUMMARY") {
+      const count = (summaryPollCounts.get(run.id) ?? 0) + 1;
+      summaryPollCounts.set(run.id, count);
+      if (count >= 2 && (run.status === "PENDING" || run.status === "RUNNING")) {
+        run.status = "SUCCEEDED";
+        run.inputTokens = 500;
+        run.outputTokens = 200;
+        run.outputMarkdown = CANNED_SUMMARY_MARKDOWN;
+      }
+    }
     return HttpResponse.json({
       ...run,
       suggestions: assistantSuggestedTasks.filter((t) => t.runId === run.id),
     });
+  }),
+
+  http.get("/kairon/api/v1/assistant/runs", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const url = new URL(request.url);
+    const kinds = url.searchParams.getAll("kind");
+    const filtered = kinds.length > 0 ? assistantRuns.filter((r) => kinds.includes(r.kind)) : assistantRuns;
+    const sorted = [...filtered].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const page = Number(url.searchParams.get("page") ?? "0");
+    const pageSize = Number(url.searchParams.get("pageSize") ?? "20");
+    const content = sorted
+      .slice(page * pageSize, page * pageSize + pageSize)
+      .map((r) => ({ ...r, suggestions: [], suggestedProject: undefined, outputMarkdown: undefined }));
+    return HttpResponse.json({ content, page, totalElements: sorted.length });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/summaries$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!isExecutionSummariesEnabled()) {
+      return problem(403, "You haven't enabled execution summaries in Settings.");
+    }
+    const inFlight = assistantRuns.some(
+      (r) =>
+        (r.kind === "WEEKLY_SUMMARY" || r.kind === "MONTHLY_SUMMARY") &&
+        (r.status === "PENDING" || r.status === "RUNNING"),
+    );
+    if (inFlight) return problem(409, "A summary run is already in progress. Wait for it to finish.");
+    const body = (await request.json()) as { period: SummaryPeriod; date: string };
+    const range = resolveSummaryPeriod(body.period, body.date);
+    assistantRunSeq += 1;
+    const run: AssistantRun = {
+      id: `assistant-run-${assistantRunSeq}`,
+      kind: body.period === "WEEK" ? "WEEKLY_SUMMARY" : "MONTHLY_SUMMARY",
+      status: "PENDING",
+      model: "claude-sonnet-5",
+      periodStart: range.start,
+      periodEnd: range.end,
+      createdAt: new Date().toISOString(),
+      suggestions: [],
+    };
+    assistantRuns.push(run);
+    return HttpResponse.json(run, { status: 201 });
   }),
 
   http.delete("/kairon/api/v1/assistant/runs/:id", ({ request, params }) => {

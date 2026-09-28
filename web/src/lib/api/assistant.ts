@@ -1,9 +1,12 @@
 import type {
   AcceptProjectPlanBody,
   AssistantRun,
+  AssistantRunListFilter,
+  AssistantRunPage,
   AssistantSuggestedTask,
   GenerateProjectPlanBody,
   Project,
+  RequestSummaryBody,
   SuggestedProjectPlan,
   TodoItem,
   TodoSuggestionBody,
@@ -37,4 +40,17 @@ export const assistantApi = {
 
   dismissProjectPlan: (id: string) =>
     apiFetch<SuggestedProjectPlan>(`/assistant/suggested-projects/${id}:dismiss`, { method: "POST" }),
+
+  requestSummary: (body: RequestSummaryBody) =>
+    apiFetch<AssistantRun>("/assistant/summaries", { method: "POST", body }),
+
+  listRuns: (filter: AssistantRunListFilter = {}) => {
+    const params = new URLSearchParams();
+    for (const kind of filter.kind ?? []) params.append("kind", kind);
+    if (filter.from) params.set("from", filter.from);
+    if (filter.to) params.set("to", filter.to);
+    params.set("page", String(filter.page ?? 0));
+    params.set("pageSize", String(filter.pageSize ?? 20));
+    return apiFetch<AssistantRunPage>(`/assistant/runs?${params.toString()}`);
+  },
 };

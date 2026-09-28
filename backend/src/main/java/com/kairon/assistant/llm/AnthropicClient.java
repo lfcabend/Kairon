@@ -15,6 +15,12 @@ public interface AnthropicClient {
     /** Added for M8.5's project-generation feature. */
     ProjectPlanResult generateProjectPlan(ProjectPlanRequest request);
 
+    /**
+     * Added for M9's execution summaries — plain markdown narration, not a
+     * structured-output call (docs/milestones/M9-execution-summaries.md D6).
+     */
+    SummaryResult generateSummary(SummaryRequest request);
+
     record TodoSuggestionRequest(String systemPrompt, String userContent, String model, String effort) {
     }
 
@@ -29,5 +35,11 @@ public interface AnthropicClient {
     }
 
     record ProjectPlanResult(ProjectPlanPayload plan, String model, long inputTokens, long outputTokens) {
+    }
+
+    record SummaryRequest(String systemPrompt, String userContent, String model, String effort) {
+    }
+
+    record SummaryResult(String markdown, String model, long inputTokens, long outputTokens) {
     }
 }

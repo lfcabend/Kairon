@@ -33,6 +33,13 @@ public interface TodoApi {
      */
     TodoItemView create(UserId userId, NewTodo command);
 
+    /**
+     * Created/completed/rolled-over counts for the user's items with {@code day}
+     * in {@code [from, to]}. Added for M9's execution-summary aggregation
+     * (docs/milestones/M9-execution-summaries.md D4).
+     */
+    PeriodStats periodStats(UserId userId, LocalDate from, LocalDate to);
+
     /** Minimal create payload for cross-module callers. */
     record NewTodo(
             LocalDate day,
@@ -41,5 +48,12 @@ public interface TodoApi {
             Integer priority,
             Integer estimateMinutes,
             UUID sourceProjectTaskId) {
+    }
+
+    record PeriodStats(long created, long completed, long rolledOver) {
+        public double completionRate() {
+            long onDocket = created + rolledOver;
+            return onDocket == 0 ? 0.0 : (double) completed / onDocket;
+        }
     }
 }

@@ -217,16 +217,29 @@ to review and create in one action.
 
 ## M9 — Weekly & monthly execution summaries
 
-- [ ] SQL aggregation in `assistant` (via other modules' query APIs): todos
+See [`milestones/M9-execution-summaries.md`](milestones/M9-execution-summaries.md)
+for the full plan and rationale (Status: Accepted — implemented). No new migration needed —
+M8's `V007` already widened `assistant_run.kind` for `WEEKLY_SUMMARY`/
+`MONTHLY_SUMMARY` and reserved the `executionSummaries` preference key for
+exactly this milestone. First async feature in this codebase: summary runs
+are `@Async` and always polled via `GET /assistant/runs/{id}` (`DESIGN.md`
+§13.3), unlike M8/M8.5's synchronous calls.
+
+- [x] SQL aggregation in `assistant` (via other modules' query APIs): todos
       created/completed/rolled over, completion rate, estimate-vs-actual hours
-      per project, task-status deltas.
-- [ ] `WEEKLY_SUMMARY` / `MONTHLY_SUMMARY` runs — the model narrates the
-      computed numbers and adds efficiency suggestions; markdown output.
-- [ ] `POST /assistant/summaries` (`{period: WEEK|MONTH, date}`) on demand, plus
+      per project, plus a per-project overdue grouping and a per-category
+      "share of attention" breakdown (D15) — task-status deltas stay the
+      `updated_at`-based approximation D5 documents, not a true event log.
+- [x] `WEEKLY_SUMMARY` / `MONTHLY_SUMMARY` runs — the model narrates the
+      computed numbers and adds efficiency suggestions; markdown output, with
+      a deterministic stats table appended by our own code, never model-authored (D16).
+- [x] `POST /assistant/summaries` (`{period: WEEK|MONTH, date}`) on demand, plus
       `@Async` execution and a `@Scheduled` job that auto-generates for opted-in
       users (weekly Monday AM, monthly on the 1st).
-- [ ] `GET /assistant/runs?kind=&from=&to=` for history.
-- [ ] Web: a summaries screen with history.
+- [x] `GET /assistant/runs?kind=&from=&to=&page=&pageSize=` for history.
+- [x] Web: a "Summaries" nav entry and screen — history list, on-demand
+      generate buttons, and a polling detail view rendering the markdown
+      narrative + stats table (`react-markdown` + `remark-gfm`, D17).
 
 ## M10 — Weekly journal reflection
 

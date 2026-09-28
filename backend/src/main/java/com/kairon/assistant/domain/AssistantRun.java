@@ -115,6 +115,16 @@ public class AssistantRun {
         this.outputTokens = (int) outputTokens;
     }
 
+    /**
+     * Moves to {@code SUCCEEDED} with the narrated markdown output (M9's
+     * {@code WEEKLY_SUMMARY}/{@code MONTHLY_SUMMARY} runs — docs/milestones/
+     * M9-execution-summaries.md D6).
+     */
+    public void succeed(String outputMarkdown, long inputTokens, long outputTokens) {
+        this.outputMarkdown = outputMarkdown;
+        succeed(inputTokens, outputTokens);
+    }
+
     /** Moves to {@code FAILED} with a short, sanitized detail (never a raw exception message). */
     public void fail(String error) {
         this.status = AssistantRunStatus.FAILED;

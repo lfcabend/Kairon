@@ -9,10 +9,12 @@ import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.errors.InternalServerException;
 import com.anthropic.errors.RateLimitException;
 import com.anthropic.models.messages.CacheControlEphemeral;
+import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.StopReason;
 import com.anthropic.models.messages.StructuredMessage;
 import com.anthropic.models.messages.StructuredMessageCreateParams;
+import com.anthropic.models.messages.TextBlock;
 import com.anthropic.models.messages.TextBlockParam;
 
 import com.kairon.assistant.app.AssistantProperties;
@@ -182,6 +184,65 @@ class AnthropicClientImpl implements AnthropicClient {
 
     @SuppressWarnings("unused")
     private ProjectPlanResult generateProjectPlanFallback(ProjectPlanRequest request, Throwable t) {
+        if (t instanceof AssistantUpstreamException upstream) {
+            throw upstream;
+        }
+        log.warn("Anthropic call failed via circuit breaker: {}", t.toString());
+        throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", t);
+    }
+
+    @Override
+    @CircuitBreaker(name = "anthropic", fallbackMethod = "generateSummaryFallback")
+    public SummaryResult generateSummary(SummaryRequest request) {
+        // Plain (non-structured) call — the output is a narrative, not a typed
+        // payload (M9 D6). Same fixed-system-prompt caching shape as the two
+        // structured-output methods above.
+        MessageCreateParams params = MessageCreateParams.builder()
+                .model(request.model())
+                .maxTokens(MAX_OUTPUT_TOKENS)
+                .systemOfTextBlockParams(List.of(
+                        TextBlockParam.builder()
+                                .text(request.systemPrompt())
+                                .cacheControl(CacheControlEphemeral.builder().build())
+                                .build()))
+                .addUserMessage(request.userContent())
+                .build();
+
+        Message response;
+        try {
+            response = sdk.messages().create(params);
+        } catch (RateLimitException | InternalServerException | AnthropicIoException e) {
+            throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", e);
+        } catch (AnthropicInvalidDataException e) {
+            log.warn("Anthropic response failed to parse (likely truncated): {}", e.getMessage());
+            throw new AssistantUpstreamException(false,
+                    "The assistant's response was too large or invalid to use.", e);
+        } catch (AnthropicServiceException e) {
+            throw new AssistantUpstreamException(false, "The assistant could not complete this request.", e);
+        }
+
+        if (response.stopReason().filter(StopReason.REFUSAL::equals).isPresent()) {
+            log.warn("Anthropic call refused model={}", request.model());
+            throw new AssistantUpstreamException(false, "The assistant declined to respond.", null);
+        }
+
+        String markdown = response.content().stream()
+                .flatMap(cb -> cb.text().stream())
+                .findFirst()
+                .map(TextBlock::text)
+                .orElseThrow(() -> new AssistantUpstreamException(false,
+                        "The assistant returned an empty response.", null));
+
+        long inputTokens = response.usage().inputTokens();
+        long outputTokens = response.usage().outputTokens();
+        meterRegistry.counter("assistant.tokens", "kind", "SUMMARY", "direction", "input").increment(inputTokens);
+        meterRegistry.counter("assistant.tokens", "kind", "SUMMARY", "direction", "output").increment(outputTokens);
+
+        return new SummaryResult(markdown, request.model(), inputTokens, outputTokens);
+    }
+
+    @SuppressWarnings("unused")
+    private SummaryResult generateSummaryFallback(SummaryRequest request, Throwable t) {
         if (t instanceof AssistantUpstreamException upstream) {
             throw upstream;
         }

@@ -2,6 +2,7 @@ package com.kairon.identity.app;
 
 import java.time.DateTimeException;
 import java.time.ZoneId;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -81,6 +82,12 @@ public class UserProfileService implements UserAccountApi {
     @Transactional(readOnly = true)
     public AssistantPreferencesView assistantPreferences(UserId userId) {
         return AssistantPreferenceMapper.of(require(userId).getPreferences());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<UserId> usersOptedIntoExecutionSummaries() {
+        return users.findIdsOptedIntoExecutionSummaries().stream().map(UserId::new).toList();
     }
 
     private AppUser require(UserId userId) {

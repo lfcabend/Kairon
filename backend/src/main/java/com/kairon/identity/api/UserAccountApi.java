@@ -1,5 +1,6 @@
 package com.kairon.identity.api;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.kairon.common.security.UserId;
@@ -20,4 +21,11 @@ public interface UserAccountApi {
      * itself (docs/milestones/M8-assistant-foundations.md D3).
      */
     AssistantPreferencesView assistantPreferences(UserId userId);
+
+    /**
+     * Every user opted into execution summaries — the {@code @Scheduled} sweep's
+     * own use only, never called from a request (no {@code @CurrentUser}). Added
+     * for M9 (docs/milestones/M9-execution-summaries.md D7).
+     */
+    List<UserId> usersOptedIntoExecutionSummaries();
 }

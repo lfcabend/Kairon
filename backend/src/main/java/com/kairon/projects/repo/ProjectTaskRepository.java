@@ -1,10 +1,12 @@
 package com.kairon.projects.repo;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.kairon.projects.api.ProjectsApi;
 import com.kairon.projects.domain.ProjectTask;
 
 import org.springframework.data.domain.Page;
@@ -56,4 +58,22 @@ public interface ProjectTaskRepository extends JpaRepository<ProjectTask, UUID> 
             ORDER BY p.name ASC, t.plannedEnd ASC NULLS LAST
             """)
     List<ProjectTask> findOpenInActiveProjects(@Param("userId") UUID userId);
+
+    // Backs ProjectsApi.projectPeriodStats (M9 D4/D5/D15) — "completed" is
+    // approximated as DONE with updatedAt in the window (no completed_at column
+    // exists on project_task); categoryId/categoryName are denormalized via a
+    // LEFT JOIN so a category-less or since-deleted-category project still groups.
+    @Query("""
+            SELECT new com.kairon.projects.api.ProjectsApi$ProjectPeriodStats(
+                p.id, p.name, c.id, c.name, COUNT(t.id),
+                COALESCE(SUM(t.estimateHours), 0), COALESCE(SUM(t.actualHours), 0))
+            FROM ProjectTask t JOIN Project p ON t.projectId = p.id
+                 LEFT JOIN ProjectCategory c ON p.categoryId = c.id
+            WHERE p.userId = :userId AND p.deletedAt IS NULL AND t.deletedAt IS NULL
+              AND t.status = com.kairon.projects.domain.ProjectTaskStatus.DONE
+              AND t.updatedAt >= :fromInstant AND t.updatedAt < :toInstantExclusive
+            GROUP BY p.id, p.name, c.id, c.name
+            """)
+    List<ProjectsApi.ProjectPeriodStats> projectPeriodStats(@Param("userId") UUID userId,
+            @Param("fromInstant") Instant fromInstant, @Param("toInstantExclusive") Instant toInstantExclusive);
 }

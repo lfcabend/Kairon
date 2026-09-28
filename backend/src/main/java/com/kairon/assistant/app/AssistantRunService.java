@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import com.kairon.assistant.domain.AssistantRun;
 import com.kairon.assistant.domain.AssistantRunKind;
+import com.kairon.assistant.domain.AssistantRunStatus;
 import com.kairon.assistant.domain.AssistantSuggestedProject;
 import com.kairon.assistant.domain.AssistantSuggestedTask;
 import com.kairon.assistant.llm.AnthropicClient;
@@ -30,6 +31,8 @@ import tools.jackson.databind.ObjectMapper;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -149,6 +152,46 @@ public class AssistantRunService {
         }
     }
 
+    /**
+     * Queues a {@code WEEKLY_SUMMARY}/{@code MONTHLY_SUMMARY} run and returns
+     * immediately — the caller (the controller, or {@code SummaryScheduler})
+     * dispatches the actual generation only after this method's transaction has
+     * committed (M9 D2).
+     */
+    @Transactional
+    public AssistantRunView requestSummary(UserId userId, SummaryPeriod period, LocalDate date) {
+        requireExecutionSummariesAvailable(userId);
+        requireWithinBudget(userId);
+        requireNoRunInFlight(userId);
+
+        SummaryPeriod.Range range = period.resolve(date);
+        String model = resolveModel(accounts.assistantPreferences(userId));
+        AssistantRun run = AssistantRun.pending(userId.value(), period.kind(), range.start(), range.end(), model);
+        runs.save(run);
+        log.info("Queued {} run {} userId={} period=[{},{}]",
+                period.kind(), run.getId(), userId.value(), range.start(), range.end());
+        return AssistantMapper.toRunView(run, List.of());
+    }
+
+    /** Paginated run history (any kind), most recent first (M9 D12). */
+    @Transactional(readOnly = true)
+    public AssistantRunPage list(UserId userId, List<String> kind, LocalDate from, LocalDate to, int page,
+            int pageSize) {
+        boolean hasKinds = kind != null && !kind.isEmpty();
+        List<AssistantRunKind> kinds = hasKinds ? kind.stream().map(AssistantRunService::parseKind).toList()
+                : List.of();
+        boolean hasFrom = from != null;
+        Instant fromInstant = hasFrom ? from.atStartOfDay(ZoneOffset.UTC).toInstant() : Instant.EPOCH;
+        boolean hasTo = to != null;
+        Instant toInstant = hasTo ? to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant() : Instant.now(clock);
+        Page<AssistantRun> result = runs.findPage(userId.value(), hasKinds, kinds, hasFrom, fromInstant, hasTo,
+                toInstant, PageRequest.of(page, pageSize));
+        List<AssistantRunView> views = result.getContent().stream().map(AssistantMapper::toRunListView).toList();
+        log.debug("Listed {} assistant run(s) userId={} kind={} range {}..{}",
+                views.size(), userId.value(), kind, from, to);
+        return new AssistantRunPage(views, result.getNumber(), result.getTotalElements());
+    }
+
     @Transactional(readOnly = true)
     public AssistantRunView get(UserId userId, UUID id) {
         AssistantRun run = require(userId, id);
@@ -264,6 +307,38 @@ public class AssistantRunService {
             throw ApiException.forbidden("You haven't enabled project generation in Settings.");
         }
         return prefs;
+    }
+
+    private AssistantPreferencesView requireExecutionSummariesAvailable(UserId userId) {
+        if (!properties.available()) {
+            log.warn("Assistant unavailable (master switch off or no API key) userId={}", userId.value());
+            throw ApiException.forbidden("Assistant features are not enabled on this instance.");
+        }
+        AssistantPreferencesView prefs = accounts.assistantPreferences(userId);
+        if (!prefs.executionSummariesEnabled()) {
+            log.warn("Execution summaries not opted into userId={}", userId.value());
+            throw ApiException.forbidden("You haven't enabled execution summaries in Settings.");
+        }
+        return prefs;
+    }
+
+    // D3 — at most one PENDING/RUNNING summary run per user at a time.
+    private void requireNoRunInFlight(UserId userId) {
+        boolean inFlight = runs.existsByUserIdAndKindInAndStatusIn(userId.value(),
+                List.of(AssistantRunKind.WEEKLY_SUMMARY, AssistantRunKind.MONTHLY_SUMMARY),
+                List.of(AssistantRunStatus.PENDING, AssistantRunStatus.RUNNING));
+        if (inFlight) {
+            log.warn("Summary run rejected: another summary run is already in flight userId={}", userId.value());
+            throw ApiException.conflict("A summary run is already in progress. Wait for it to finish.");
+        }
+    }
+
+    private static AssistantRunKind parseKind(String raw) {
+        try {
+            return AssistantRunKind.valueOf(raw);
+        } catch (IllegalArgumentException ex) {
+            throw ApiException.badRequest("Unknown run kind: " + raw);
+        }
     }
 
     private void requireWithinBudget(UserId userId) {

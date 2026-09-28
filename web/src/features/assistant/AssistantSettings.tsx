@@ -30,10 +30,10 @@ function currentAssistantPrefs(me: Me | undefined): AssistantPreferences {
 }
 
 /**
- * Todo suggestions (M8) and project generation (M8.5) are implemented —
- * execution summaries and journal reflection (M9/M10) don't exist yet, so
- * this panel deliberately doesn't offer toggles for them (a control for a
- * feature that does nothing would just be misleading). Same read-modify-write
+ * Todo suggestions (M8), project generation (M8.5), and execution summaries
+ * (M9) are implemented — journal reflection (M10) doesn't exist yet, so this
+ * panel deliberately doesn't offer a toggle for it (a control for a feature
+ * that does nothing would just be misleading). Same read-modify-write
  * `PATCH /me` pattern the existing rollover setting on this page already uses.
  */
 export function AssistantSettings({ me }: { me: Me | undefined }) {
@@ -91,6 +91,24 @@ export function AssistantSettings({ me }: { me: Me | undefined }) {
           <span className="block text-xs text-muted-foreground">
             Show a "New project from description" option on the project list. Kairon
             sends your project description and dates to Anthropic when you generate a plan.
+          </span>
+        </span>
+      </label>
+
+      <label className="mt-4 flex items-start gap-3 text-sm">
+        <Checkbox
+          className="mt-0.5"
+          checked={prefs.executionSummaries.enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(checked) =>
+            mutation.mutate({ executionSummaries: { enabled: checked === true } })
+          }
+        />
+        <span>
+          <span className="font-medium">Execution summaries</span>
+          <span className="block text-xs text-muted-foreground">
+            Auto-generate a weekly and monthly summary of your todo and project activity
+            (also available on demand from the Summaries page).
           </span>
         </span>
       </label>

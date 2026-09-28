@@ -52,6 +52,20 @@ public interface ProjectsApi {
      */
     ProjectView createFromPlan(UserId userId, ProjectPlanCommand command);
 
+    /**
+     * Per-project task-completion stats for tasks marked {@code DONE} with
+     * {@code updatedAt} in {@code [from, to]} — an approximation, not a true
+     * completed-at timestamp (there is no {@code completed_at} column on
+     * {@code project_task}). Added for M9's execution-summary aggregation
+     * (docs/milestones/M9-execution-summaries.md D4/D5/D15).
+     */
+    List<ProjectPeriodStats> projectPeriodStats(UserId userId, LocalDate from, LocalDate to);
+
+    record ProjectPeriodStats(
+            UUID projectId, String projectName, UUID categoryId, String categoryName,
+            long tasksCompleted, BigDecimal estimateHoursCompleted, BigDecimal actualHoursCompleted) {
+    }
+
     record ProjectPlanCommand(
             String name, String description, String size, LocalDate startDate, LocalDate endDate,
             List<PlannedTask> tasks, List<PlannedDependency> dependencies) {

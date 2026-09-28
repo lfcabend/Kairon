@@ -16,6 +16,29 @@ final class AssistantMapper {
         return toRunView(run, tasks, null);
     }
 
+    /**
+     * The light row shape for {@code GET /assistant/runs}' history list (M9
+     * D12) — omits {@code outputMarkdown}/{@code suggestions}/
+     * {@code suggestedProject} bodies; the detail endpoint
+     * ({@code GET /assistant/runs/{id}}, {@link #toRunView}) still carries them.
+     */
+    static AssistantRunView toRunListView(AssistantRun run) {
+        return new AssistantRunView(
+                run.getId(),
+                run.getKind().name(),
+                run.getStatus().name(),
+                run.getModel(),
+                run.getPeriodStart(),
+                run.getPeriodEnd(),
+                run.getInputTokens(),
+                run.getOutputTokens(),
+                run.getError(),
+                run.getCreatedAt(),
+                List.of(),
+                null,
+                null);
+    }
+
     static AssistantRunView toRunView(AssistantRun run, List<AssistantSuggestedTask> tasks,
             AssistantSuggestedProjectView suggestedProject) {
         return new AssistantRunView(
@@ -30,7 +53,8 @@ final class AssistantMapper {
                 run.getError(),
                 run.getCreatedAt(),
                 tasks.stream().map(AssistantMapper::toSuggestedTaskView).toList(),
-                suggestedProject);
+                suggestedProject,
+                run.getOutputMarkdown());
     }
 
     static AssistantSuggestedProjectView toSuggestedProjectView(AssistantSuggestedProject row,

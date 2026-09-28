@@ -344,11 +344,40 @@ export interface AssistantRun {
   suggestions: AssistantSuggestedTask[];
   /** Set only for a `PROJECT_GENERATION` run (M8.5) — `suggestions` is set only for `TODO_SUGGESTION`. */
   suggestedProject?: SuggestedProjectPlan | null;
+  /**
+   * Set only once a `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` run reaches `SUCCEEDED`
+   * (M9) — the model's narrative plus a deterministic stats table, as one
+   * markdown string. A row from the `GET /assistant/runs` list omits this.
+   */
+  outputMarkdown?: string | null;
 }
 
 export interface TodoSuggestionBody {
   day: string;
   horizon: Horizon;
+}
+
+// --- Execution summaries (M9) --------------------------------------------------
+
+export type SummaryPeriod = "WEEK" | "MONTH";
+
+export interface RequestSummaryBody {
+  period: SummaryPeriod;
+  date: string;
+}
+
+export interface AssistantRunListFilter {
+  kind?: string[];
+  from?: string;
+  to?: string;
+  page?: number;
+  pageSize?: number;
+}
+
+export interface AssistantRunPage {
+  content: AssistantRun[];
+  page: number;
+  totalElements: number;
 }
 
 export interface AssistantPreferences {

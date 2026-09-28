@@ -6,8 +6,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
 journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
-(hardening & prod), M8 (assistant foundations & todo suggestions), and M8.5
-(AI project generation from a description) are implemented.**
+(hardening & prod), M8 (assistant foundations & todo suggestions), M8.5
+(AI project generation from a description), and M9 (weekly & monthly
+execution summaries) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -19,7 +20,8 @@ updated when decisions change.
   `id` — `Uuidv7`; `logging` — `CorrelationIdFilter`, per-request id in the MDC +
   `X-Request-Id`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
   `repo`, `app` services, `web` controllers, `dev` — the `local`-profile
-  `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView`, `domain`
+  `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView` (gained
+  `periodStats`/`PeriodStats` for M9's execution-summary aggregation), `domain`
   `TodoItem`/`TodoStatus`, `repo`, `app` `TodoService`/`RolloverService`/
   `TodoProperties`, `config`, `web` `TodoController`), `journal` (`api` port
   `JournalApi`/`JournalEntryView`/`JournalSearchHitView`/`JournalSearchPage`,
@@ -29,10 +31,15 @@ updated when decisions change.
   `config`, `web` `JournalController`), `projects` (`api` port `ProjectsApi`/
   `ProjectView`/`ProjectTaskView`/`ProjectPage`/`ProjectTaskPage`/
   `ProjectPlanCommand`/`PlannedTask`/`PlannedDependency` (M8.5, the
-  string-`key`-based cross-reference shape `createFromPlan` takes), `domain`
+  string-`key`-based cross-reference shape `createFromPlan` takes)/
+  `ProjectPeriodStats` (M9 — per-project completed-task counts, estimate-vs-actual
+  hours, and the denormalized owning category, for execution-summary
+  aggregation), `domain`
   `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
   `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
-  `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query)/
+  `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query and,
+  for M9, `projectPeriodStats` — a `GROUP BY`/`LEFT JOIN ProjectCategory`
+  aggregate of tasks completed in a date range)/
   `TaskDependencyRepository` (M5), `app`
   `ProjectCategoryService`/`ProjectService`/`ProjectTaskService` (implements
   `ProjectsApi`, incl. M6's `requireTask` — resolves a task the caller owns via
@@ -66,7 +73,8 @@ updated when decisions change.
   monthly-token-budget `sumTokensSince` query)/`AssistantSuggestedTaskRepository`/
   `AssistantSuggestedProjectRepository` (M8.5),
   `llm` `AnthropicClient` (the SDK wrapper interface, now
-  `suggestTodos`/`generateProjectPlan`)/`AnthropicClientImpl`
+  `suggestTodos`/`generateProjectPlan`/`generateSummary` (M9 — plain markdown,
+  not structured output))/`AnthropicClientImpl`
   (Resilience4j `@CircuitBreaker`, structured outputs via
   `StructuredMessageCreateParams`)/`FakeAnthropicClient` (`local` profile +
   `kairon.assistant.fake-client=true` — stands in for Playwright e2e, never a
@@ -74,29 +82,58 @@ updated when decisions change.
   `ProjectPlanPayload`/`PlannedTaskPayload`/`PlannedDependencyPayload` (M8.5,
   the structured-output shape for a `PROJECT_GENERATION` run), `app`
   `AssistantRunService` (run lifecycle, budget/availability gating, suggestion
-  capping/clamping; M8.5's `requestProjectPlan` follows the same shape)/
+  capping/clamping; M8.5's `requestProjectPlan` follows the same shape; M9's
+  `requestSummary` queues a `PENDING` run and returns — the actual generation
+  is dispatched by the caller only after that transaction commits)/
   `SuggestedTaskService` (accept/dismiss)/`SuggestedProjectService` (M8.5 —
   accept/dismiss for a whole plan; accept cascades caller-excluded task keys
   to their children, then calls `ProjectsApi.createFromPlan`)/
+  `SummaryGenerationService` (M9 — a separate `@Async`/`@Transactional` bean,
+  deliberately not a self-call on `AssistantRunService`, since Spring's
+  proxy-based AOP can't intercept one; builds the context, calls
+  `AnthropicClient.generateSummary`, and persists `SUCCEEDED`/`FAILED`)/
+  `SummaryScheduler` (M9 — two `@Scheduled` cron triggers, weekly
+  Monday AM/monthly on the 1st, both UTC by default; resolves "yesterday" via
+  the shared `Clock` bean so a Monday firing summarizes the week that just
+  ended; every per-user failure is caught and logged so the sweep always
+  reaches the next user)/
   `TodoSuggestionContextBuilder` (the system prompt + per-request context)/
   `ProjectPlanContextBuilder` (M8.5, lighter — no cross-module aggregation,
   just the user's own description + dates)/
-  `AssistantProperties`/`Horizon`/`AssistantMapper`/`AssistantRunView`
+  `SummaryContextBuilder` (M9 — five `todo`/`projects` data sources, no
+  journal, no tone; `Context.renderStatsTable()` is a pure function that
+  formats the same structured values already in the prompt into a markdown
+  table, appended to the model's narrative after the call returns — never
+  model-authored)/`SummaryPeriod` (`WEEK`/`MONTH`, `.resolve(LocalDate)` ->
+  the Mon–Sun week or calendar month containing that date, `.kind()` -> the
+  matching `AssistantRunKind`)/
+  `AssistantProperties` (gained a `Summary` nested config record — cron
+  schedules, `zone`, `maxHighlightItems`, `effort`)/`Horizon`/`AssistantMapper`/
+  `AssistantRunView`
   (M8.5: gained a `suggestedProject` field alongside `suggestions`, one run
-  view for both kinds)/`AssistantSuggestedTaskView`/`AssistantUpstreamException`/
+  view for both kinds; M9: gained `outputMarkdown`, populated only for
+  `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` runs)/`AssistantRunPage` (M9 — the
+  `content`/`page`/`totalElements` shape backing `GET /assistant/runs`, same
+  convention as `ProjectPage`)/`AssistantSuggestedTaskView`/
+  `AssistantUpstreamException`/
   `AssistantSuggestedProjectView`/`PlannedTaskView`/`PlannedDependencyView`/
   `PersistedProjectPlan` (M8.5 — the latter is what's actually stored as
   `assistant_suggested_project.plan`: the model's payload plus the
   caller-supplied `startDate`/`endDate` it never chooses itself), `config`
-  `AssistantConfig`, `web` `AssistantRunController`/`SuggestedTaskController`/
+  `AssistantConfig`, `web` `AssistantRunController` (M9: gained
+  `POST /assistant/summaries` and `GET /assistant/runs`)/`SuggestedTaskController`/
   `AssistantDtos`/`ProjectPlanController`/`SuggestedProjectController`/
-  `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range`, `JournalApi` with `range`,
-  `ProjectsApi` with `openTasksInActiveProjects` and, for M8.5, `createFromPlan`,
+  `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range` and, for M9,
+  `periodStats`; `JournalApi` with `range`;
+  `ProjectsApi` with `openTasksInActiveProjects`, for M8.5 `createFromPlan`,
+  and for M9 `projectPeriodStats`;
   and `UserAccountApi` with
   `assistantPreferences` (backed by `identity.app.AssistantPreferenceMapper`,
   a defensive parse of `app_user.preferences.assistant`, now including a
-  `projectGenerationEnabled` flag) — all four added
-  specifically for the assistant module's context-building (M8).
+  `projectGenerationEnabled` flag) and, for M9, `usersOptedIntoExecutionSummaries`
+  (an unauthenticated, no-`@CurrentUser` native jsonb query — the
+  `@Scheduled` sweep's own cross-user use, never exposed on any controller) —
+  all five added specifically for the assistant module's context-building (M8/M9).
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
   generated `content_tsv` + GIN index), `V004__projects.sql`
@@ -108,7 +145,9 @@ updated when decisions change.
   `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md),
   `V008__project_plan.sql` (widens `assistant_run.kind` to add
   `PROJECT_GENERATION`; adds `assistant_suggested_project`, M8.5).
-  M6 adds no migration; there is no `V006`.
+  M6 and M9 add no migration; there is no `V006` or `V009` — M8's `V007`
+  deliberately over-specified `assistant_run.kind`/`output_markdown`/
+  `period_start`/`period_end` for exactly M9's use.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -144,17 +183,29 @@ updated when decisions change.
   `SuggestTodosButton` (a two-step dialog: horizon choice, then
   `SuggestedTaskList` review-and-accept, used on both `TodayPage` and
   `DayView`)/`SuggestedTaskList`/`AssistantSettings` (embedded in
-  `AccountPage`, now four toggles — todo suggestions, project generation, and
-  the still-inert execution-summaries/journal-reflection placeholders remain
-  absent — + model override); M8.5 adds `GenerateProjectDialog` (a two-step
+  `AccountPage`, now three real toggles — todo suggestions, project
+  generation, execution summaries — and the still-inert journal-reflection
+  placeholder remains absent — + model override); M8.5 adds
+  `GenerateProjectDialog` (a two-step
   dialog on `ProjectListPage`: description+dates form, then
   `ProjectPlanReview` in the same dialog once a plan comes back — no field
   editing, only per-task exclude checkboxes that cascade to children;
   "Create project" navigates to the new project's normal detail page)/
-  `ProjectPlanReview`, hooks in `useAssistant.ts` + `assistantKeys`).
+  `ProjectPlanReview`; M9 adds `SummariesPage` (a standalone top-level screen,
+  a deliberate exception to M8/M8.5's "embed a button in an existing screen"
+  pattern — history list, "Generate weekly/monthly summary" buttons; a row
+  click opens `SummaryDetail`)/`SummaryDetail` (a dialog rendering one run's
+  `outputMarkdown` — narrative + the deterministic stats table — via
+  `react-markdown`/`remark-gfm`, this app's first read-only markdown/GFM-table
+  render; while the run is `PENDING`/`RUNNING`, polls instead and shows a
+  spinner), hooks in `useAssistant.ts`/`useAssistantRuns.ts` (M9 — the first
+  `refetchInterval`-based polling hook in this app) + `assistantKeys`
+  (gained `runs.list(filter)`).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
-  and the app's default landing route (M6). API access is hand-written
+  and the app's default landing route (M6); M9 adds a "Summaries" top-level
+  nav entry after "Projects" (`/summaries`), the same deliberate exception to
+  M8/M8.5's own nav pattern. API access is hand-written
   types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
   `auth.ts`/`about.ts`/`planning.ts`/`assistant.ts` over `client.ts` (the
   single-flight 401→refresh→retry fetch wrapper). Tests: Vitest + MSW
@@ -191,7 +242,7 @@ updated when decisions change.
   ConfigMap entries, and a `deploy/RUNBOOK.md` section on enabling/rotating
   the key.
 
-Next milestone is **M9 — Weekly & monthly execution summaries** (see
+Next milestone is **M10 — Weekly journal reflection** (see
 `docs/ROADMAP.md`).
 
 ## What Kairon is
@@ -266,6 +317,7 @@ PostgreSQL 18 · Flyway · Spring Security 7 + JWT · MapStruct · Bean Validati
 springdoc-openapi · Bucket4j (rate limiting) · Testcontainers · ArchUnit ·
 React 18 + TypeScript + Vite · React Router · TanStack Query · Zustand ·
 React Hook Form + Zod · Tailwind + shadcn/ui · `gantt-task-react` ·
+`react-markdown` + `remark-gfm` (M9, read-only) ·
 generated API client (`openapi-typescript` + orval) · Vitest + RTL + MSW + Playwright ·
 Docker (one multi-stage image) · Kubernetes + Helm 3 · GitHub Actions.
 

@@ -1,5 +1,6 @@
 package com.kairon.projects.repo;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -7,7 +8,9 @@ import java.util.UUID;
 
 import com.kairon.identity.domain.AppUser;
 import com.kairon.identity.repo.AppUserRepository;
+import com.kairon.projects.api.ProjectsApi;
 import com.kairon.projects.domain.Project;
+import com.kairon.projects.domain.ProjectCategory;
 import com.kairon.projects.domain.ProjectTask;
 import com.kairon.projects.domain.ProjectTaskStatus;
 
@@ -42,6 +45,9 @@ class ProjectTaskRepositoryTest {
 
     @Autowired
     ProjectRepository projects;
+
+    @Autowired
+    ProjectCategoryRepository categories;
 
     @Autowired
     AppUserRepository users;
@@ -130,5 +136,69 @@ class ProjectTaskRepositoryTest {
         List<ProjectTask> due = repo.findDueOrOverdue(user, DAY);
 
         assertThat(due).extracting(ProjectTask::getName).containsExactly("overdue-open", "within");
+    }
+
+    @Test
+    void projectPeriodStatsGroupsByProjectSumsHoursOnlyForDoneTasksInWindowAndDenormalizesTheCategory() {
+        UUID categoryId = categories.save(ProjectCategory.create(user, "Home", "#ff0000", 100)).getId();
+        UUID categorizedProjectId = projects
+                .save(Project.create(user, categoryId, "Kitchen remodel", null, "#ffffff", null, 100, null, null))
+                .getId();
+
+        ProjectTask doneWithHours = ProjectTask.create(categorizedProjectId, null, "Order hardware", null, 100);
+        doneWithHours.setEstimateHours(new BigDecimal("2.0"));
+        doneWithHours.setActualHours(new BigDecimal("3.0"));
+        doneWithHours.changeStatus(ProjectTaskStatus.DONE);
+        repo.saveAndFlush(doneWithHours);
+
+        ProjectTask doneNoHours = ProjectTask.create(categorizedProjectId, null, "Pick tile", null, 200);
+        doneNoHours.changeStatus(ProjectTaskStatus.DONE);
+        repo.saveAndFlush(doneNoHours);
+
+        ProjectTask stillOpen = ProjectTask.create(categorizedProjectId, null, "Not done yet", null, 300);
+        repo.saveAndFlush(stillOpen);
+
+        UUID uncategorizedProjectId = projects
+                .save(Project.create(user, null, "Fix bike", null, "#000000", null, 100, null, null)).getId();
+        ProjectTask uncategorizedDone = ProjectTask.create(uncategorizedProjectId, null, "Patch tube", null, 100);
+        uncategorizedDone.changeStatus(ProjectTaskStatus.DONE);
+        repo.saveAndFlush(uncategorizedDone);
+
+        UUID otherProjectId = projects.save(
+                Project.create(otherUser, null, "Other project", null, "#6366f1", null, 100, null, null)).getId();
+        ProjectTask notMine = ProjectTask.create(otherProjectId, null, "not mine", null, 100);
+        notMine.changeStatus(ProjectTaskStatus.DONE);
+        repo.saveAndFlush(notMine);
+
+        Instant from = Instant.now().minusSeconds(300);
+        Instant to = Instant.now().plusSeconds(300);
+        List<ProjectsApi.ProjectPeriodStats> stats = repo.projectPeriodStats(user, from, to);
+
+        assertThat(stats).hasSize(2);
+        ProjectsApi.ProjectPeriodStats kitchen = stats.stream()
+                .filter(s -> s.projectId().equals(categorizedProjectId)).findFirst().orElseThrow();
+        assertThat(kitchen.tasksCompleted()).isEqualTo(2);
+        assertThat(kitchen.categoryId()).isEqualTo(categoryId);
+        assertThat(kitchen.categoryName()).isEqualTo("Home");
+        assertThat(kitchen.estimateHoursCompleted()).isEqualByComparingTo("2.0");
+        assertThat(kitchen.actualHoursCompleted()).isEqualByComparingTo("3.0");
+
+        ProjectsApi.ProjectPeriodStats bike = stats.stream()
+                .filter(s -> s.projectId().equals(uncategorizedProjectId)).findFirst().orElseThrow();
+        assertThat(bike.tasksCompleted()).isEqualTo(1);
+        assertThat(bike.categoryId()).isNull();
+        assertThat(bike.categoryName()).isNull();
+    }
+
+    @Test
+    void projectPeriodStatsExcludesTasksDoneOutsideTheWindow() {
+        ProjectTask doneLongAgo = ProjectTask.create(projectId, null, "Old task", null, 100);
+        doneLongAgo.changeStatus(ProjectTaskStatus.DONE);
+        repo.saveAndFlush(doneLongAgo);
+
+        List<ProjectsApi.ProjectPeriodStats> stats = repo.projectPeriodStats(user,
+                Instant.now().minusSeconds(3600), Instant.now().minusSeconds(1800));
+
+        assertThat(stats).isEmpty();
     }
 }

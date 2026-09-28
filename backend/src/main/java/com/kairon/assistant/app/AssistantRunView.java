@@ -23,5 +23,6 @@ public record AssistantRunView(
         String error,
         Instant createdAt,
         List<AssistantSuggestedTaskView> suggestions,
-        AssistantSuggestedProjectView suggestedProject) {
+        AssistantSuggestedProjectView suggestedProject,
+        String outputMarkdown) {
 }

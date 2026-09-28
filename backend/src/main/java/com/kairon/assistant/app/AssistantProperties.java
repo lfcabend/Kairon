@@ -18,7 +18,8 @@ public record AssistantProperties(
         Duration requestTimeout,
         long monthlyTokenBudgetPerUser,
         TodoSuggestions todoSuggestions,
-        ProjectPlan projectPlan) {
+        ProjectPlan projectPlan,
+        Summary summary) {
 
     public AssistantProperties {
         if (model == null || model.isBlank()) {
@@ -35,6 +36,9 @@ public record AssistantProperties(
         }
         if (projectPlan == null) {
             projectPlan = new ProjectPlan(40);
+        }
+        if (summary == null) {
+            summary = new Summary(null, null, null, 0, null);
         }
     }
 
@@ -76,6 +80,34 @@ public record AssistantProperties(
         public ProjectPlan {
             if (maxTasks <= 0) {
                 maxTasks = 40;
+            }
+        }
+    }
+
+    /**
+     * Cron schedule/timezone and context sizing for {@code WEEKLY_SUMMARY}/
+     * {@code MONTHLY_SUMMARY} runs (M9 D9/D13). {@code zone} must stay UTC unless
+     * {@code SummaryScheduler} is also given a zoned {@link java.time.Clock} — the
+     * app's only {@code Clock} bean is {@code Clock.systemUTC()}, and the "yesterday"
+     * period resolution in {@code SummaryScheduler} is computed from it.
+     */
+    public record Summary(String weeklyCron, String monthlyCron, String zone, int maxHighlightItems, String effort) {
+
+        public Summary {
+            if (weeklyCron == null || weeklyCron.isBlank()) {
+                weeklyCron = "0 0 7 * * MON";
+            }
+            if (monthlyCron == null || monthlyCron.isBlank()) {
+                monthlyCron = "0 0 7 1 * *";
+            }
+            if (zone == null || zone.isBlank()) {
+                zone = "UTC";
+            }
+            if (maxHighlightItems <= 0) {
+                maxHighlightItems = 8;
+            }
+            if (effort == null || effort.isBlank()) {
+                effort = "HIGH";
             }
         }
     }

@@ -135,6 +135,21 @@ kairon:
       # Cap on a generated plan's task count (M8.5 D7) — bounds prompt/response
       # cost and review-screen size for a runaway description.
       max-tasks: 40
+    summary:
+      # Both cron triggers and `zone` default to UTC (M9 D8/D9) — the app's
+      # only Clock bean is Clock.systemUTC(), and "yesterday" (SummaryScheduler)
+      # is computed from it, so `zone` must stay UTC unless the scheduler is
+      # also given a zoned Clock.
+      weekly-cron: "0 0 7 * * MON"
+      monthly-cron: "0 0 7 1 * *"
+      zone: UTC
+      # Per-list cap (completed-work projects, overdue-by-project, category
+      # breakdown) on the narrative's "notable items" (M9 D13) — unmeasured
+      # guess, same posture as todo-suggestions'/project-plan's own defaults.
+      max-highlight-items: 8
+      # A synthesis/narrative task, given more room than todo-suggestions'
+      # bounded extraction (MEDIUM).
+      effort: HIGH
     rate-limit:
       enabled: true
       capacity: 5
@@ -142,3 +157,4 @@ kairon:
       paths:
         - /api/v1/assistant/todo-suggestions
         - /api/v1/assistant/project-plan
+        - /api/v1/assistant/summaries

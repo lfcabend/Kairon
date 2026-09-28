@@ -2,6 +2,7 @@ package com.kairon.todo.app;
 
 import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.HashMap;
 import java.util.List;
@@ -246,6 +247,14 @@ public class TodoService implements TodoApi {
                 command.priority(),
                 command.estimateMinutes(),
                 command.sourceProjectTaskId()));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PeriodStats periodStats(UserId userId, LocalDate from, LocalDate to) {
+        return items.periodStats(userId.value(), from, to,
+                from.atStartOfDay(ZoneOffset.UTC).toInstant(),
+                to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
     }
 
     // --- internals -----------------------------------------------------------

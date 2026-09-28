@@ -6,6 +6,7 @@ import AboutPage from "@/features/about/AboutPage";
 import AccountPage from "@/features/auth/AccountPage";
 import LoginPage from "@/features/auth/LoginPage";
 import RegisterPage from "@/features/auth/RegisterPage";
+import { SummariesPage } from "@/features/assistant/SummariesPage";
 import { JournalDayView } from "@/features/journal/JournalDayView";
 import { JournalSearchPage } from "@/features/journal/JournalSearchPage";
 import { ProjectDetailPage } from "@/features/projects/ProjectDetailPage";
@@ -27,6 +28,7 @@ export default function App() {
           <Route path="journal/search" element={<JournalSearchPage />} />
           <Route path="projects" element={<ProjectListPage />} />
           <Route path="projects/:id" element={<ProjectDetailPage />} />
+          <Route path="summaries" element={<SummariesPage />} />
           <Route path="account" element={<AccountPage />} />
           <Route path="about" element={<AboutPage />} />
         </Route>
