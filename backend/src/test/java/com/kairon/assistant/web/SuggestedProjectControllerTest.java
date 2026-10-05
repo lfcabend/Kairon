@@ -94,7 +94,7 @@ class SuggestedProjectControllerTest {
     void dismissReturns200WithTheDismissedPlan() throws Exception {
         UUID id = UUID.randomUUID();
         AssistantSuggestedProjectView view = new AssistantSuggestedProjectView(id, UUID.randomUUID(), "DISMISSED",
-                "Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), List.of(), List.of(), null);
+                "Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), null, null, List.of(), List.of(), null);
         when(suggestedProjects.dismiss(any(), eq(id))).thenReturn(view);
 
         mvc.perform(post("/api/v1/assistant/suggested-projects/" + id + ":dismiss").with(asUser()))

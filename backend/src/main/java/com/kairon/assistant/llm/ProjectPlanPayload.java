@@ -20,6 +20,12 @@ public record ProjectPlanPayload(
         String description,
         @JsonPropertyDescription("Rough t-shirt size for the whole project: XS, S, M, L, or XL.")
         String size,
+        @JsonPropertyDescription("The best-fit category for this project. Match one of the "
+                + "user's existing categories exactly by name (listed in the prompt) if one "
+                + "clearly fits; otherwise propose a short new category name (e.g. 'Home', "
+                + "'Health'), a reusable grouping, not a restatement of the project name. "
+                + "Null if nothing fits.")
+        String categoryName,
         @JsonPropertyDescription("Every task's key referenced by parentKey/predecessorKey/"
                 + "successorKey must appear in this list.")
         List<PlannedTaskPayload> tasks,

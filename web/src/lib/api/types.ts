@@ -418,6 +418,14 @@ export interface SuggestedProjectPlan {
   size: string | null;
   startDate: string | null;
   endDate: string | null;
+  /** Set when the model matched one of the user's existing categories by name. */
+  categoryId: string | null;
+  /**
+   * The category's display name. Set alongside `categoryId` for an existing
+   * match; set alone (categoryId null) when the model proposed a new
+   * category name with no existing match — created on accept.
+   */
+  categoryName: string | null;
   tasks: PlannedTask[];
   dependencies: PlannedDependency[];
   acceptedProjectId?: string | null;

@@ -13,6 +13,8 @@ public record AssistantSuggestedProjectView(
         String size,
         LocalDate startDate,
         LocalDate endDate,
+        UUID categoryId,
+        String categoryName,
         List<PlannedTaskView> tasks,
         List<PlannedDependencyView> dependencies,
         UUID acceptedProjectId) {

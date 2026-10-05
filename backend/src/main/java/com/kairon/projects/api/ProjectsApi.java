@@ -61,13 +61,33 @@ public interface ProjectsApi {
      */
     List<ProjectPeriodStats> projectPeriodStats(UserId userId, LocalDate from, LocalDate to);
 
+    /**
+     * The user's categories, id + name only — ordered the same as the
+     * category module's own list. Added so the assistant module can offer a
+     * project-generation prompt the user's existing categories to choose
+     * from, without depending on {@code projects.app}/{@code projects.domain}.
+     */
+    List<ProjectCategorySummary> categories(UserId userId);
+
     record ProjectPeriodStats(
             UUID projectId, String projectName, UUID categoryId, String categoryName,
             long tasksCompleted, BigDecimal estimateHoursCompleted, BigDecimal actualHoursCompleted) {
     }
 
+    record ProjectCategorySummary(UUID id, String name) {
+    }
+
+    /**
+     * {@code categoryId} and {@code newCategoryName} are mutually exclusive
+     * (resolved by the caller before this command is built): a non-null
+     * {@code categoryId} assigns the project to that existing category;
+     * otherwise a non-blank {@code newCategoryName} creates a new category
+     * (falling back to an exact-name match if one was created concurrently)
+     * and assigns that; both null leaves the project uncategorized.
+     */
     record ProjectPlanCommand(
             String name, String description, String size, LocalDate startDate, LocalDate endDate,
+            UUID categoryId, String newCategoryName,
             List<PlannedTask> tasks, List<PlannedDependency> dependencies) {
     }
 

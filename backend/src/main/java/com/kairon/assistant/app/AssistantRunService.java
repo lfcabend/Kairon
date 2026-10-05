@@ -26,6 +26,7 @@ import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
+import com.kairon.projects.api.ProjectsApi.ProjectCategorySummary;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -127,7 +128,7 @@ public class AssistantRunService {
                 targetDeadline, model);
         runs.save(run);
 
-        ProjectPlanContextBuilder.Context context = projectPlanContextBuilder.build(description, startDate,
+        ProjectPlanContextBuilder.Context context = projectPlanContextBuilder.build(userId, description, startDate,
                 targetDeadline);
         run.start(context.inputSnapshot());
         runs.save(run);
@@ -136,7 +137,8 @@ public class AssistantRunService {
             AnthropicClient.ProjectPlanResult result = anthropicClient.generateProjectPlan(
                     new AnthropicClient.ProjectPlanRequest(context.systemPrompt(), context.userContent(), model));
 
-            AssistantSuggestedProject saved = saveSuggestedProject(run, result.plan(), startDate, targetDeadline);
+            AssistantSuggestedProject saved = saveSuggestedProject(run, result.plan(), startDate, targetDeadline,
+                    context.categories());
             run.succeed(result.inputTokens(), result.outputTokens());
             runs.save(run);
             PersistedProjectPlan plan = objectMapper.convertValue(saved.getPlan(), PersistedProjectPlan.class);
@@ -236,20 +238,44 @@ public class AssistantRunService {
     }
 
     private AssistantSuggestedProject saveSuggestedProject(AssistantRun run, ProjectPlanPayload payload,
-            LocalDate startDate, LocalDate endDate) {
+            LocalDate startDate, LocalDate endDate, List<ProjectCategorySummary> categories) {
         int max = properties.projectPlan().maxTasks();
         List<PlannedTaskPayload> tasks = normalizeParentKeys(payload.tasks());
         if (tasks.size() > max) {
             log.warn("Run {} plan returned {} tasks, capped to {}", run.getId(), tasks.size(), max);
             tasks = tasks.subList(0, max);
         }
+        CategoryResolution category = resolveCategory(payload.categoryName(), categories);
         PersistedProjectPlan persisted = new PersistedProjectPlan(payload.name(), payload.description(),
-                payload.size(), startDate, endDate, tasks, payload.dependencies());
+                payload.size(), startDate, endDate, category.categoryId(), category.categoryName(), tasks,
+                payload.dependencies());
         @SuppressWarnings("unchecked")
         Map<String, Object> planMap = objectMapper.convertValue(persisted, Map.class);
         AssistantSuggestedProject saved = AssistantSuggestedProject.propose(run.getId(), run.getUserId(), planMap);
         suggestedProjects.save(saved);
         return saved;
+    }
+
+    private record CategoryResolution(UUID categoryId, String categoryName) {
+    }
+
+    /**
+     * Case-insensitive exact match against the categories passed to the model
+     * in {@link ProjectPlanContextBuilder#build}. A match carries the existing
+     * category's real id and its own stored name (for display); no match
+     * carries just the model's proposed name, to be created on accept.
+     */
+    private CategoryResolution resolveCategory(String categoryName,
+            List<ProjectCategorySummary> categories) {
+        if (categoryName == null || categoryName.isBlank()) {
+            return new CategoryResolution(null, null);
+        }
+        String trimmed = categoryName.trim();
+        return categories.stream()
+                .filter(c -> c.name().equalsIgnoreCase(trimmed))
+                .findFirst()
+                .map(c -> new CategoryResolution(c.id(), c.name()))
+                .orElse(new CategoryResolution(null, trimmed));
     }
 
     /**

@@ -53,18 +53,20 @@ public class ProjectTaskService implements ProjectsApi {
     private final TaskDependencyRepository dependencies;
     private final ProjectsProperties properties;
     private final Clock clock;
+    private final ProjectCategoryService categoryService;
     // @Lazy breaks the constructor cycle: ProjectPlanImportService itself depends
     // on this service (to create each planned task) — M8.5 D3.
     private final ProjectPlanImportService planImportService;
 
     public ProjectTaskService(ProjectTaskRepository tasks, ProjectRepository projects,
             TaskDependencyRepository dependencies, ProjectsProperties properties, Clock clock,
-            @Lazy ProjectPlanImportService planImportService) {
+            ProjectCategoryService categoryService, @Lazy ProjectPlanImportService planImportService) {
         this.tasks = tasks;
         this.projects = projects;
         this.dependencies = dependencies;
         this.properties = properties;
         this.clock = clock;
+        this.categoryService = categoryService;
         this.planImportService = planImportService;
     }
 
@@ -269,6 +271,15 @@ public class ProjectTaskService implements ProjectsApi {
         log.debug("Computed period stats for {} project(s) userId={} range {}..{}",
                 stats.size(), userId.value(), from, to);
         return stats;
+    }
+
+    @Override
+    public List<ProjectCategorySummary> categories(UserId userId) {
+        List<ProjectCategorySummary> result = categoryService.list(userId).stream()
+                .map(c -> new ProjectCategorySummary(c.id(), c.name()))
+                .toList();
+        log.debug("Listed {} categor(y/ies) userId={}", result.size(), userId.value());
+        return result;
     }
 
     // --- internals -----------------------------------------------------------

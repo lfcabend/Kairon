@@ -90,7 +90,7 @@ class ProjectPlanFlowIntegrationTest {
                 new PlannedTaskPayload("m1", null, "Design approved", null, true,
                         START.plusDays(6), START.plusDays(6), null));
         List<PlannedDependencyPayload> deps = List.of(new PlannedDependencyPayload("t1", "m1", "FS", 0));
-        return new ProjectPlanPayload("Kitchen remodel", "A full remodel", "M", tasks, deps);
+        return new ProjectPlanPayload("Kitchen remodel", "A full remodel", "M", "Home", tasks, deps);
     }
 
     @Test
@@ -119,6 +119,11 @@ class ProjectPlanFlowIntegrationTest {
                 .andExpect(jsonPath("$.status").value("SUCCEEDED"))
                 .andExpect(jsonPath("$.suggestedProject.status").value("PROPOSED"))
                 .andExpect(jsonPath("$.suggestedProject.tasks.length()").value(3))
+                // No existing category named "Home" for a freshly registered user, so
+                // the model's categoryName (FakeAnthropicClient-equivalent canned payload)
+                // comes back unmatched: categoryId null, categoryName carries the proposal.
+                .andExpect(jsonPath("$.suggestedProject.categoryId").value(org.hamcrest.Matchers.nullValue()))
+                .andExpect(jsonPath("$.suggestedProject.categoryName").value("Home"))
                 .andReturn();
         String body = runResult.getResponse().getContentAsString();
         String suggestedProjectId = JsonPath.read(body, "$.suggestedProject.id");
@@ -133,8 +138,17 @@ class ProjectPlanFlowIntegrationTest {
                         .content("{\"excludedTaskKeys\":[\"t1\"]}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.name").value("Kitchen remodel"))
+                // The proposed "Home" category (unmatched above) was created on accept
+                // and assigned to the project in the same transaction.
+                .andExpect(jsonPath("$.categoryId").value(org.hamcrest.Matchers.notNullValue()))
                 .andReturn();
         String projectId = JsonPath.read(accepted.getResponse().getContentAsString(), "$.id");
+
+        mvc.perform(get("/api/v1/project-categories")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].name").value("Home"));
 
         mvc.perform(get("/api/v1/projects/" + projectId + "/tasks")
                         .header("Authorization", "Bearer " + token))

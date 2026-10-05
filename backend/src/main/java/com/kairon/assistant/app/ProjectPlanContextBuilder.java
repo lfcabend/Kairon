@@ -3,17 +3,24 @@ package com.kairon.assistant.app;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
+
+import com.kairon.common.security.UserId;
+import com.kairon.projects.api.ProjectsApi;
+import com.kairon.projects.api.ProjectsApi.ProjectCategorySummary;
 
 import org.springframework.stereotype.Component;
 
 /**
  * Builds the system prompt and per-request user content for a
- * {@code PROJECT_GENERATION} run. Much lighter than {@link TodoSuggestionContextBuilder}
- * — this feature's only input is what the user typed, not cross-module
- * aggregation (docs/milestones/M8.5-project-generation.md §4.4). The system
- * prompt is a fixed constant — no per-request data — so it stays cacheable,
- * same reasoning as M8 §4.5.
+ * {@code PROJECT_GENERATION} run. Lighter than {@link TodoSuggestionContextBuilder}
+ * — the only cross-module aggregation is the user's existing project
+ * categories (docs/milestones/M8.5-project-generation.md §4.4), fetched so
+ * the model can match an existing one by name instead of always proposing a
+ * new one. The system prompt is a fixed constant — no per-request data — so
+ * it stays cacheable, same reasoning as M8 §4.5.
  */
 @Component
 class ProjectPlanContextBuilder {
@@ -39,29 +46,46 @@ class ProjectPlanContextBuilder {
               successor's plannedStart should not fall before its FS predecessor's
               plannedEnd.
             - Set dependencies only where the description implies a real ordering
-              constraint, not for every consecutive pair of tasks.""";
+              constraint, not for every consecutive pair of tasks.
+            - Suggest a categoryName: match one of the user's existing categories
+              (listed below) exactly by name if one clearly fits; otherwise propose a
+              short, reusable new category name; leave it null if nothing fits.""";
 
     private final Clock clock;
+    private final ProjectsApi projectsApi;
 
-    ProjectPlanContextBuilder(Clock clock) {
+    ProjectPlanContextBuilder(Clock clock, ProjectsApi projectsApi) {
         this.clock = clock;
+        this.projectsApi = projectsApi;
     }
 
-    record Context(String systemPrompt, String userContent, Map<String, Object> inputSnapshot) {
+    record Context(String systemPrompt, String userContent, Map<String, Object> inputSnapshot,
+            List<ProjectCategorySummary> categories) {
     }
 
-    Context build(String description, LocalDate startDate, LocalDate targetDeadline) {
+    Context build(UserId userId, String description, LocalDate startDate, LocalDate targetDeadline) {
+        List<ProjectCategorySummary> categories = projectsApi.categories(userId);
+
         StringBuilder sb = new StringBuilder();
         sb.append("Plan a project starting ").append(startDate);
         if (targetDeadline != null) {
             sb.append(", targeting completion by ").append(targetDeadline);
         }
-        sb.append(".\nToday is ").append(LocalDate.now(clock)).append(".\n\nDescription:\n").append(description);
+        sb.append(".\nToday is ").append(LocalDate.now(clock)).append(".\n");
+        if (categories.isEmpty()) {
+            sb.append("\nThe user has no existing project categories yet.\n");
+        } else {
+            sb.append("\nThe user's existing project categories: ")
+                    .append(categories.stream().map(ProjectCategorySummary::name)
+                            .collect(Collectors.joining(", ")))
+                    .append(".\n");
+        }
+        sb.append("\nDescription:\n").append(description);
         String userContent = sb.toString();
 
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("systemPrompt", SYSTEM_PROMPT);
         snapshot.put("userContent", userContent);
-        return new Context(SYSTEM_PROMPT, userContent, snapshot);
+        return new Context(SYSTEM_PROMPT, userContent, snapshot, categories);
     }
 }

@@ -77,6 +77,8 @@ test("reviewing a plan shows its task tree with milestone markers, cascades excl
   expect(within(dialog).getByRole("checkbox", { name: "Design" })).toBeInTheDocument();
   expect(within(dialog).getByRole("checkbox", { name: "Pick materials" })).toBeInTheDocument();
   expect(within(dialog).getByRole("checkbox", { name: "◆ Design approved" })).toBeInTheDocument();
+  // defaultProjectPlan() proposes "Home" with no existing match -> shown as new.
+  expect(within(dialog).getByText("New category: Home")).toBeInTheDocument();
 
   // Excluding the parent ("Design") disables its child's checkbox too.
   await user.click(within(dialog).getByRole("checkbox", { name: "Design" }));

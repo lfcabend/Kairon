@@ -48,7 +48,7 @@ class FakeAnthropicClient implements AnthropicClient {
         List<PlannedDependencyPayload> dependencies = List.of(
                 new PlannedDependencyPayload("t1", "m1", "FS", 0));
         ProjectPlanPayload plan = new ProjectPlanPayload("Generated project", "A canned e2e plan.", "M",
-                tasks, dependencies);
+                "Home", tasks, dependencies);
         return new ProjectPlanResult(plan, request.model(), 100, 80);
     }
 

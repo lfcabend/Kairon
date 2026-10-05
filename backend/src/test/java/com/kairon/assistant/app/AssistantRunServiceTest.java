@@ -126,7 +126,8 @@ class AssistantRunServiceTest {
     }
 
     private static ProjectPlanContextBuilder.Context planContext() {
-        return new ProjectPlanContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"));
+        return new ProjectPlanContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"),
+                List.of());
     }
 
     @Test
@@ -270,7 +271,7 @@ class AssistantRunServiceTest {
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
-        verify(projectPlanContextBuilder, never()).build(any(), any(), any());
+        verify(projectPlanContextBuilder, never()).build(any(), any(), any(), any());
         verify(accounts, never()).assistantPreferences(any());
     }
 
@@ -282,7 +283,7 @@ class AssistantRunServiceTest {
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
-        verify(projectPlanContextBuilder, never()).build(any(), any(), any());
+        verify(projectPlanContextBuilder, never()).build(any(), any(), any(), any());
     }
 
     @Test
@@ -300,15 +301,15 @@ class AssistantRunServiceTest {
     void requestProjectPlan_onSuccess_persistsSucceededRunAndAProposedPlan() {
         when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
-        when(projectPlanContextBuilder.build(eq("Kitchen remodel"), eq(DAY), any())).thenReturn(planContext());
+        when(projectPlanContextBuilder.build(eq(USER), eq("Kitchen remodel"), eq(DAY), any())).thenReturn(planContext());
         PlannedTaskPayload task = new PlannedTaskPayload("t1", null, "Design", null, false, DAY, DAY.plusDays(6),
                 null);
-        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M", List.of(task),
+        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M", null, List.of(task),
                 List.of());
         when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
                 .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 640, 890));
-        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null, List.of(task),
-                List.of());
+        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null, null, null,
+                List.of(task), List.of());
 
         AssistantRunView view = service.requestProjectPlan(USER, "Kitchen remodel", DAY, null);
 
@@ -331,15 +332,15 @@ class AssistantRunServiceTest {
         // as "top-level" and would flatten the whole tree (see AssistantRunService).
         when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
-        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        when(projectPlanContextBuilder.build(any(), any(), any(), any())).thenReturn(planContext());
         PlannedTaskPayload blankParent = new PlannedTaskPayload("t1", "", "Design", null, false, DAY, DAY, null);
         PlannedTaskPayload realChild = new PlannedTaskPayload("t2", "t1", "Pick materials", null, false, DAY, DAY,
                 null);
-        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M",
+        ProjectPlanPayload payload = new ProjectPlanPayload("Kitchen remodel", "desc", "M", null,
                 List.of(blankParent, realChild), List.of());
         when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
                 .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 100, 100));
-        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null,
+        lastPersistedPlan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, null, null, null,
                 List.of(blankParent, realChild), List.of());
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Object> persistedCaptor = ArgumentCaptor.forClass(Object.class);
@@ -356,17 +357,17 @@ class AssistantRunServiceTest {
     void requestProjectPlan_capsTasksAtTheConfiguredMax() {
         when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
-        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        when(projectPlanContextBuilder.build(any(), any(), any(), any())).thenReturn(planContext());
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
                 500_000, null, new AssistantProperties.ProjectPlan(2), null);
         service = newService();
         List<PlannedTaskPayload> fiveTasks = java.util.stream.IntStream.range(0, 5)
                 .mapToObj(i -> new PlannedTaskPayload("t" + i, null, "Task " + i, null, false, DAY, DAY, null))
                 .toList();
-        ProjectPlanPayload payload = new ProjectPlanPayload("Big project", "desc", "L", fiveTasks, List.of());
+        ProjectPlanPayload payload = new ProjectPlanPayload("Big project", "desc", "L", null, fiveTasks, List.of());
         when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
                 .thenReturn(new ProjectPlanResult(payload, "claude-sonnet-5", 100, 100));
-        lastPersistedPlan = new PersistedProjectPlan("Big project", "desc", "L", DAY, null,
+        lastPersistedPlan = new PersistedProjectPlan("Big project", "desc", "L", DAY, null, null, null,
                 fiveTasks.subList(0, 2), List.of());
 
         AssistantRunView view = service.requestProjectPlan(USER, "Big project", DAY, null);
@@ -378,7 +379,7 @@ class AssistantRunServiceTest {
     void requestProjectPlan_onUpstreamFailure_marksTheRunFailedAndRethrowsAsAProblem() {
         when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectGeneration());
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
-        when(projectPlanContextBuilder.build(any(), any(), any())).thenReturn(planContext());
+        when(projectPlanContextBuilder.build(any(), any(), any(), any())).thenReturn(planContext());
         when(anthropicClient.generateProjectPlan(any(ProjectPlanRequest.class)))
                 .thenThrow(new AssistantUpstreamException(false, "The assistant could not complete this request.",
                         null));

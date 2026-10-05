@@ -46,7 +46,10 @@ updated when decisions change.
   `TaskResolution`, 404 if missing/foreign; M8.5's `createFromPlan` delegates
   to `ProjectPlanImportService` via a `@Lazy`-injected reference, breaking
   the constructor cycle that collaborator's own reuse of `ProjectTaskService`
-  would otherwise create)/`ProjectsProperties`/`SortParsing`/
+  would otherwise create; `categories` delegates to its same-module peer
+  `ProjectCategoryService#list`, mapped down to id+name — added so the
+  assistant module can read the user's categories through the port without
+  depending on `projects.app`)/`ProjectsProperties`/`SortParsing`/
   `TaskResolution` (M5, the shared "resolve a task with no projectId in the
   URL" helper extracted out of `ProjectTaskService`)/`TaskDependencyService`/
   `TaskDependencyView`/`TaskDependencyMapper` (M5 — dependency CRUD incl. cycle
@@ -55,7 +58,11 @@ updated when decisions change.
   dependency edges from a `ProjectPlanCommand` in one transaction, calling
   `ProjectService`/`ProjectTaskService`/`TaskDependencyService` as ordinary
   collaborators; flattens excessive nesting and drops unresolvable/cycle-forming
-  dependency edges rather than failing the whole import), `config`, `web`
+  dependency edges rather than failing the whole import; `resolveCategory`
+  passes an already-matched `categoryId` straight through, or creates a new
+  category for a `newCategoryName` via `ProjectCategoryService` in the same
+  transaction — falling back to a same-name existing category on a create
+  conflict rather than failing the import), `config`, `web`
   `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`/
   `TaskDependencyController` (M5)), `planning` (M6 — no `domain`/`repo`, no
   migration: a pure aggregation over `todo`/`projects`/`journal` for the Today
@@ -98,8 +105,12 @@ updated when decisions change.
   ended; every per-user failure is caught and logged so the sweep always
   reaches the next user)/
   `TodoSuggestionContextBuilder` (the system prompt + per-request context)/
-  `ProjectPlanContextBuilder` (M8.5, lighter — no cross-module aggregation,
-  just the user's own description + dates)/
+  `ProjectPlanContextBuilder` (M8.5, lighter than the todo-suggestion builder
+  — the only cross-module aggregation is `ProjectsApi.categories`, fetched so
+  the model can match the user's existing categories by name instead of
+  always proposing a new one; the same list comes back on `Context` so
+  `AssistantRunService` can resolve the model's answer without a second
+  query)/
   `SummaryContextBuilder` (M9 — five `todo`/`projects` data sources, no
   journal, no tone; `Context.renderStatsTable()` is a pure function that
   formats the same structured values already in the prompt into a markdown
@@ -119,14 +130,19 @@ updated when decisions change.
   `AssistantSuggestedProjectView`/`PlannedTaskView`/`PlannedDependencyView`/
   `PersistedProjectPlan` (M8.5 — the latter is what's actually stored as
   `assistant_suggested_project.plan`: the model's payload plus the
-  caller-supplied `startDate`/`endDate` it never chooses itself), `config`
+  caller-supplied `startDate`/`endDate` it never chooses itself, plus a
+  `categoryId`/`categoryName` pair resolved against the user's existing
+  categories right after the model call — a non-null `categoryId` means an
+  exact name match; a null `categoryId` with a non-null `categoryName` means
+  no match, to be created as a new category on accept), `config`
   `AssistantConfig`, `web` `AssistantRunController` (M9: gained
   `POST /assistant/summaries` and `GET /assistant/runs`)/`SuggestedTaskController`/
   `AssistantDtos`/`ProjectPlanController`/`SuggestedProjectController`/
   `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range` and, for M9,
   `periodStats`; `JournalApi` with `range`;
-  `ProjectsApi` with `openTasksInActiveProjects`, for M8.5 `createFromPlan`,
-  and for M9 `projectPeriodStats`;
+  `ProjectsApi` with `openTasksInActiveProjects`, for M8.5 `createFromPlan`
+  and (added for this same feature, post-launch) `categories`, and for M9
+  `projectPeriodStats`;
   and `UserAccountApi` with
   `assistantPreferences` (backed by `identity.app.AssistantPreferenceMapper`,
   a defensive parse of `app_user.preferences.assistant`, now including a
@@ -189,8 +205,11 @@ updated when decisions change.
   `GenerateProjectDialog` (a two-step
   dialog on `ProjectListPage`: description+dates form, then
   `ProjectPlanReview` in the same dialog once a plan comes back — no field
-  editing, only per-task exclude checkboxes that cascade to children;
-  "Create project" navigates to the new project's normal detail page)/
+  editing, only per-task exclude checkboxes that cascade to children, plus
+  (added for this same feature, post-launch) a read-only category badge —
+  "Home" for a matched existing category, "New category: Home" for one the
+  model proposed with no match, nothing if uncategorized; "Create project"
+  navigates to the new project's normal detail page)/
   `ProjectPlanReview`; M9 adds `SummariesPage` (a standalone top-level screen,
   a deliberate exception to M8/M8.5's "embed a button in an existing screen"
   pattern — history list, "Generate weekly/monthly summary" buttons; a row

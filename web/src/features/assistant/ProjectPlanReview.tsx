@@ -46,6 +46,11 @@ export function ProjectPlanReview({ plan, excludedKeys, onToggle, onCreate, onCa
           {plan.endDate && ` – ${formatShortDate(plan.endDate)}`}
           {plan.size && ` · ${plan.size}`}
         </p>
+        {plan.categoryName && (
+          <p className="mt-1.5 inline-block rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+            {plan.categoryId ? plan.categoryName : `New category: ${plan.categoryName}`}
+          </p>
+        )}
       </div>
 
       <ul className="max-h-[50vh] space-y-1 overflow-y-auto">

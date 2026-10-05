@@ -667,6 +667,8 @@ function defaultProjectPlan(): Partial<SuggestedProjectPlan> {
     name: "Generated project",
     description: "A canned plan.",
     size: "M",
+    categoryId: null,
+    categoryName: "Home",
     tasks: [
       { key: "t1", parentKey: null, name: "Design", description: null, isMilestone: false,
         plannedStart: null, plannedEnd: null, estimateHours: null },
@@ -855,6 +857,8 @@ const assistantHandlers = [
       size: plan.size ?? null,
       startDate: plan.startDate ?? body.startDate,
       endDate: plan.endDate ?? body.targetDeadline ?? null,
+      categoryId: plan.categoryId ?? null,
+      categoryName: plan.categoryName ?? null,
       tasks: plan.tasks ?? [],
       dependencies: plan.dependencies ?? [],
     };

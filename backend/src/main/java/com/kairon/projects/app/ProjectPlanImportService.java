@@ -27,10 +27,11 @@ import org.springframework.transaction.annotation.Transactional;
  * {@link ProjectTaskService}, and {@link TaskDependencyService} as ordinary
  * collaborators — the same entity-construction/validation code a manual
  * create/PATCH already goes through, not a second copy of those rules
- * (docs/milestones/M8.5-project-generation.md D3). The model never chooses a
- * category, color, or status (D10) — {@link ProjectService#create} is called
- * with a null category/color, leaving the project uncategorized with the
- * default color and {@code PLANNING} status.
+ * (docs/milestones/M8.5-project-generation.md D3). The model may propose a
+ * category by name (never a color or status — still never chosen by the
+ * model); {@link #resolveCategory} matches it against the user's existing
+ * categories or creates a new one, both inside this same transaction, so the
+ * whole project (including a brand-new category) is created or nothing is.
  */
 @Service
 class ProjectPlanImportService {
@@ -40,18 +41,21 @@ class ProjectPlanImportService {
     private final ProjectService projectService;
     private final ProjectTaskService taskService;
     private final TaskDependencyService dependencyService;
+    private final ProjectCategoryService categoryService;
 
     ProjectPlanImportService(ProjectService projectService, ProjectTaskService taskService,
-            TaskDependencyService dependencyService) {
+            TaskDependencyService dependencyService, ProjectCategoryService categoryService) {
         this.projectService = projectService;
         this.taskService = taskService;
         this.dependencyService = dependencyService;
+        this.categoryService = categoryService;
     }
 
     @Transactional
     ProjectView createFromPlan(UserId userId, ProjectPlanCommand command) {
+        UUID categoryId = resolveCategory(userId, command.categoryId(), command.newCategoryName());
         ProjectView project = projectService.create(userId, new ProjectService.CreateCommand(
-                null, command.name(), command.description(), command.size(), null,
+                categoryId, command.name(), command.description(), command.size(), null,
                 command.startDate(), command.endDate()));
 
         Map<String, UUID> idByKey = new HashMap<>();
@@ -113,6 +117,34 @@ class ProjectPlanImportService {
             }
         }
         return result;
+    }
+
+    /**
+     * {@code categoryId} (an existing category matched earlier, in the
+     * assistant module) wins outright. Otherwise, a non-blank
+     * {@code newCategoryName} is created fresh; on a name conflict — someone
+     * created a same-named category in the time between plan generation and
+     * accept — the existing one is reused instead of failing the whole import.
+     */
+    private UUID resolveCategory(UserId userId, UUID categoryId, String newCategoryName) {
+        if (categoryId != null) {
+            return categoryId;
+        }
+        if (newCategoryName == null || newCategoryName.isBlank()) {
+            return null;
+        }
+        try {
+            UUID created = categoryService.create(userId,
+                    new ProjectCategoryService.CreateCommand(newCategoryName, null)).id();
+            log.info("Created category '{}' for plan import userId={}", newCategoryName, userId.value());
+            return created;
+        } catch (ApiException e) {
+            return categoryService.list(userId).stream()
+                    .filter(c -> c.name().equalsIgnoreCase(newCategoryName))
+                    .map(ProjectCategoryView::id)
+                    .findFirst()
+                    .orElseThrow(() -> e);
+        }
     }
 
     /** Stable partition — roots then children — sufficient since depth is capped at 2 levels. */

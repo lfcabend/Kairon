@@ -68,6 +68,8 @@ final class AssistantMapper {
                 plan.size(),
                 plan.startDate(),
                 plan.endDate(),
+                plan.categoryId(),
+                plan.categoryName(),
                 plan.tasks().stream()
                         .map(t -> new PlannedTaskView(t.key(), t.parentKey(), t.name(), t.description(),
                                 t.isMilestone(), t.plannedStart(), t.plannedEnd(), t.estimateHours()))

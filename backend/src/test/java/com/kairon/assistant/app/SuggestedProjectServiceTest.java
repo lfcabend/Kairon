@@ -57,7 +57,7 @@ class SuggestedProjectServiceTest {
     @BeforeEach
     void setUp() {
         service = new SuggestedProjectService(suggestedProjects, projectsApi, objectMapper);
-        plan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30),
+        plan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), null, null,
                 List.of(
                         new PlannedTaskPayload("t1", null, "Design", null, false, DAY, DAY.plusDays(6), null),
                         new PlannedTaskPayload("t2", "t1", "Pick materials", null, false, DAY, DAY.plusDays(2),
@@ -102,6 +102,39 @@ class SuggestedProjectServiceTest {
         // t1 excluded -> t2 (its child) cascades out too -> no tasks, no dependency left.
         assertThat(captor.getValue().tasks()).isEmpty();
         assertThat(captor.getValue().dependencies()).isEmpty();
+    }
+
+    @Test
+    void acceptWithAMatchedExistingCategoryPassesItsIdThroughAndNoNewCategoryName() {
+        UUID categoryId = UUID.randomUUID();
+        plan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), categoryId, "Home",
+                List.of(), List.of());
+        AssistantSuggestedProject row = proposed();
+        when(suggestedProjects.findByIdAndUserId(row.getId(), USER.value())).thenReturn(Optional.of(row));
+        when(projectsApi.createFromPlan(eq(USER), any())).thenReturn(projectView());
+
+        service.accept(USER, row.getId(), List.of());
+
+        ArgumentCaptor<ProjectPlanCommand> captor = ArgumentCaptor.forClass(ProjectPlanCommand.class);
+        verify(projectsApi).createFromPlan(eq(USER), captor.capture());
+        assertThat(captor.getValue().categoryId()).isEqualTo(categoryId);
+        assertThat(captor.getValue().newCategoryName()).isNull();
+    }
+
+    @Test
+    void acceptWithAnUnmatchedProposedCategoryPassesItAsANewCategoryName() {
+        plan = new PersistedProjectPlan("Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), null, "Home",
+                List.of(), List.of());
+        AssistantSuggestedProject row = proposed();
+        when(suggestedProjects.findByIdAndUserId(row.getId(), USER.value())).thenReturn(Optional.of(row));
+        when(projectsApi.createFromPlan(eq(USER), any())).thenReturn(projectView());
+
+        service.accept(USER, row.getId(), List.of());
+
+        ArgumentCaptor<ProjectPlanCommand> captor = ArgumentCaptor.forClass(ProjectPlanCommand.class);
+        verify(projectsApi).createFromPlan(eq(USER), captor.capture());
+        assertThat(captor.getValue().categoryId()).isNull();
+        assertThat(captor.getValue().newCategoryName()).isEqualTo("Home");
     }
 
     @Test

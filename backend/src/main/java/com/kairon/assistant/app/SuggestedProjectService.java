@@ -97,8 +97,12 @@ public class SuggestedProjectService {
                 dependencies.add(new PlannedDependency(d.predecessorKey(), d.successorKey(), d.type(), d.lagDays()));
             }
         }
+        // plan.categoryId() (an existing match) wins; otherwise plan.categoryName()
+        // — if the model proposed one with no existing match — is a new category
+        // name for ProjectPlanImportService to create (PersistedProjectPlan's Javadoc).
+        String newCategoryName = plan.categoryId() == null ? plan.categoryName() : null;
         return new ProjectPlanCommand(plan.name(), plan.description(), plan.size(), plan.startDate(),
-                plan.endDate(), tasks, dependencies);
+                plan.endDate(), plan.categoryId(), newCategoryName, tasks, dependencies);
     }
 
     private PersistedProjectPlan parse(AssistantSuggestedProject row) {

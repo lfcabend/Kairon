@@ -44,11 +44,14 @@ class ProjectPlanImportServiceTest {
     @Mock
     TaskDependencyService dependencyService;
 
+    @Mock
+    ProjectCategoryService categoryService;
+
     ProjectPlanImportService service;
 
     @BeforeEach
     void setUp() {
-        service = new ProjectPlanImportService(projectService, taskService, dependencyService);
+        service = new ProjectPlanImportService(projectService, taskService, dependencyService, categoryService);
         when(projectService.create(eq(USER), any())).thenReturn(project());
         when(projectService.get(USER, PROJECT_ID)).thenReturn(project());
     }
@@ -70,7 +73,7 @@ class ProjectPlanImportServiceTest {
     @Test
     void createsRootsBeforeChildrenAndMapsKeysToRealIds() {
         // Deliberately out of order: t2 (child) listed before t1 (its parent).
-        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null,
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, null,
                 List.of(task("t2", "t1"), task("t1", null)), List.of());
         UUID rootId = UUID.randomUUID();
         UUID childId = UUID.randomUUID();
@@ -89,7 +92,7 @@ class ProjectPlanImportServiceTest {
     @Test
     void flattensAThreeLevelNestingChainToTopLevel() {
         // t1 root, t2 parent=t1, t3 parent=t2 (3rd generation — must be flattened).
-        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null,
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, null,
                 List.of(task("t1", null), task("t2", "t1"), task("t3", "t2")), List.of());
         when(taskService.create(eq(USER), eq(PROJECT_ID), any()))
                 .thenReturn(taskView(UUID.randomUUID()), taskView(UUID.randomUUID()), taskView(UUID.randomUUID()));
@@ -109,7 +112,7 @@ class ProjectPlanImportServiceTest {
 
     @Test
     void dropsADependencyReferencingAnUnknownOrExcludedKeyWithoutThrowing() {
-        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null,
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, null,
                 List.of(task("t1", null)),
                 List.of(new PlannedDependency("t1", "ghost", "FS", 0)));
         when(taskService.create(eq(USER), eq(PROJECT_ID), any())).thenReturn(taskView(UUID.randomUUID()));
@@ -122,7 +125,7 @@ class ProjectPlanImportServiceTest {
 
     @Test
     void dropsACycleCreatingEdgeInsteadOfPropagatingTheRejection() {
-        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null,
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, null,
                 List.of(task("t1", null), task("t2", null)),
                 List.of(new PlannedDependency("t1", "t2", "FS", 0)));
         UUID id1 = UUID.randomUUID();
@@ -134,5 +137,55 @@ class ProjectPlanImportServiceTest {
         ProjectView result = service.createFromPlan(USER, command);
 
         assertThat(result.id()).isEqualTo(PROJECT_ID);
+    }
+
+    @Test
+    void anExistingCategoryIdIsPassedThroughDirectly() {
+        UUID categoryId = UUID.randomUUID();
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, categoryId,
+                null, List.of(), List.of());
+
+        service.createFromPlan(USER, command);
+
+        ArgumentCaptor<ProjectService.CreateCommand> captor =
+                ArgumentCaptor.forClass(ProjectService.CreateCommand.class);
+        verify(projectService).create(eq(USER), captor.capture());
+        assertThat(captor.getValue().categoryId()).isEqualTo(categoryId);
+        verify(categoryService, never()).create(any(), any());
+    }
+
+    @Test
+    void aNewCategoryNameIsCreatedAndItsIdUsed() {
+        UUID newCategoryId = UUID.randomUUID();
+        when(categoryService.create(eq(USER), eq(new ProjectCategoryService.CreateCommand("Home", null))))
+                .thenReturn(new ProjectCategoryView(newCategoryId, "Home", "#6366f1", 100, Instant.now(),
+                        Instant.now(), 0));
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, "Home",
+                List.of(), List.of());
+
+        service.createFromPlan(USER, command);
+
+        ArgumentCaptor<ProjectService.CreateCommand> captor =
+                ArgumentCaptor.forClass(ProjectService.CreateCommand.class);
+        verify(projectService).create(eq(USER), captor.capture());
+        assertThat(captor.getValue().categoryId()).isEqualTo(newCategoryId);
+    }
+
+    @Test
+    void aNameConflictOnCategoryCreationReusesTheExistingCategoryInstead() {
+        UUID existingId = UUID.randomUUID();
+        when(categoryService.create(eq(USER), eq(new ProjectCategoryService.CreateCommand("Home", null))))
+                .thenThrow(ApiException.conflict("A category named \"Home\" already exists."));
+        when(categoryService.list(USER)).thenReturn(List.of(
+                new ProjectCategoryView(existingId, "Home", "#6366f1", 100, Instant.now(), Instant.now(), 0)));
+        ProjectPlanCommand command = new ProjectPlanCommand("Kitchen remodel", null, null, DAY, null, null, "Home",
+                List.of(), List.of());
+
+        service.createFromPlan(USER, command);
+
+        ArgumentCaptor<ProjectService.CreateCommand> captor =
+                ArgumentCaptor.forClass(ProjectService.CreateCommand.class);
+        verify(projectService).create(eq(USER), captor.capture());
+        assertThat(captor.getValue().categoryId()).isEqualTo(existingId);
     }
 }
