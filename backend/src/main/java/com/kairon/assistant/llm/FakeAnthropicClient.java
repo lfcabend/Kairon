@@ -61,6 +61,16 @@ class FakeAnthropicClient implements AnthropicClient {
     }
 
     @Override
+    public ProjectEditResult generateProjectEdit(ProjectEditRequest request) {
+        log.info("FakeAnthropicClient.generateProjectEdit (local e2e stub) model={}", request.model());
+        LocalDate day = parseFirstDate(request.userContent());
+        TaskOperationPayload addTask = new TaskOperationPayload("ADD", null, "n1", null,
+                "Canned e2e task", null, false, day, day.plusDays(1), null);
+        ProjectEditPayload diff = new ProjectEditPayload(null, List.of(addTask), List.of(), List.of());
+        return new ProjectEditResult(diff, request.model(), 90, 40);
+    }
+
+    @Override
     public SummaryResult generateSummary(SummaryRequest request) {
         log.info("FakeAnthropicClient.generateSummary (local e2e stub) model={}", request.model());
         String markdown = """

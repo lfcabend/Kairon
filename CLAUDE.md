@@ -8,8 +8,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
 (hardening & prod), M8 (assistant foundations & todo suggestions), M8.5
 (AI project generation from a description), M9 (weekly & monthly
-execution summaries), and M10 (weekly journal reflection, plus a Batch API
-migration for M9's scheduled summary sweep) are implemented.**
+execution summaries), M9.5 (AI project editing from a description), and
+M10 (weekly journal reflection, plus a Batch API migration for M9's
+scheduled summary sweep) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -35,7 +36,15 @@ updated when decisions change.
   string-`key`-based cross-reference shape `createFromPlan` takes)/
   `ProjectPeriodStats` (M9 — per-project completed-task counts, estimate-vs-actual
   hours, and the denormalized owning category, for execution-summary
-  aggregation), `domain`
+  aggregation)/`requireProject`/`tasksForProject`/`dependenciesForProject`/
+  `DependencyEdge` (M9.5 — the three read-side additions the assistant module
+  needs to build "the project as it stands today" edit context, plus the thin
+  cross-module equivalent of `projects.app`'s own internal `TaskDependencyView`)/
+  `applyProjectEdit`/`ProjectEditCommand`/`ProjectFieldChanges`/`TaskOperation`/
+  `DependencyOperation`/`ReorderOperation` (M9.5 — the write-side port method
+  and its command shape: operations reference a task either by its real
+  existing id or, for one being added in the same command, a caller-chosen
+  string `key`, resolved existing-id-first), `domain`
   `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
   `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
   `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query and,
@@ -50,20 +59,38 @@ updated when decisions change.
   would otherwise create; `categories` delegates to its same-module peer
   `ProjectCategoryService#list`, mapped down to id+name — added so the
   assistant module can read the user's categories through the port without
-  depending on `projects.app`)/`ProjectsProperties`/`SortParsing`/
+  depending on `projects.app`; M9.5 adds a same-module `TaskDependencyService`
+  dependency (no cycle — that service never depends back on this one) backing
+  `dependenciesForProject`, and a second `@Lazy`-injected collaborator,
+  `ProjectEditApplyService`, backing `applyProjectEdit` the same way
+  `planImportService` backs `createFromPlan`; the private "resolve + own the
+  project" helper was renamed `requireOwnedProject` to free up the `ProjectsApi`
+  method name `requireProject`)/`ProjectsProperties`/`SortParsing`/
   `TaskResolution` (M5, the shared "resolve a task with no projectId in the
   URL" helper extracted out of `ProjectTaskService`)/`TaskDependencyService`/
   `TaskDependencyView`/`TaskDependencyMapper` (M5 — dependency CRUD incl. cycle
-  rejection and the computed `violatesConstraint` flag)/`ProjectPlanImportService`
+  rejection and the computed `violatesConstraint` flag)/`CategoryResolver`
+  (M9.5, package-private — the create-or-match-by-name category logic
+  extracted out of `ProjectPlanImportService` so `ProjectEditApplyService` can
+  reuse it too, rather than duplicating it)/`ProjectPlanImportService`
   (M8.5, package-private — creates a project + its ≤2-level task tree + its
   dependency edges from a `ProjectPlanCommand` in one transaction, calling
   `ProjectService`/`ProjectTaskService`/`TaskDependencyService` as ordinary
   collaborators; flattens excessive nesting and drops unresolvable/cycle-forming
-  dependency edges rather than failing the whole import; `resolveCategory`
-  passes an already-matched `categoryId` straight through, or creates a new
-  category for a `newCategoryName` via `ProjectCategoryService` in the same
-  transaction — falling back to a same-name existing category on a create
-  conflict rather than failing the import), `config`, `web`
+  dependency edges rather than failing the whole import; delegates category
+  resolution to `CategoryResolver`)/`ProjectEditApplyService` (M9.5,
+  package-private — applies an accepted `ProjectEditCommand` diff to an
+  *existing* project in one transaction: `projectChanges` via
+  `ProjectService.patch` (falling back to the project's own current value for
+  any field the diff left `null`, since nothing enforces that the model
+  actually echoed it — same tolerant posture as the rest of this milestone),
+  then task `REMOVE` → `ADD` (parent-before-child within the new set) →
+  `UPDATE` → `reorderOperations` (passed straight through to
+  `ProjectTaskService.reorder`, no port method needed — same package) →
+  dependency `REMOVE` → `ADD`; every reference string is resolved
+  existing-id-first (`UUID.fromString`, falling back to a same-command `key`),
+  and a stale/unresolvable reference is dropped and logged rather than failing
+  the whole apply), `config`, `web`
   `ProjectCategoryController`/`ProjectController`/`ProjectTaskController`/
   `TaskDependencyController` (M5)), `planning` (M6 — no `domain`/`repo`, no
   migration: a pure aggregation over `todo`/`projects`/`journal` for the Today
@@ -77,30 +104,47 @@ updated when decisions change.
   `assistant` (M8 — the only module allowed to import the Anthropic SDK. `domain`
   `AssistantRun`/`AssistantRunKind`/`AssistantRunStatus`/`AssistantSuggestedTask`/
   `AssistantSuggestedTaskStatus`/`AssistantSuggestedProject`/
-  `AssistantSuggestedProjectStatus` (M8.5)/`AssistantBatch`/`AssistantBatchStatus`
-  (M10 — the latter mirrors `MessageBatch.ProcessingStatus.Known` 1:1), `repo`
+  `AssistantSuggestedProjectStatus` (M8.5)/`AssistantSuggestedProjectEdit`/
+  `AssistantSuggestedProjectEditStatus` (M9.5 — scoped to the one existing
+  `projectId` it targets; unlike `AssistantSuggestedProject`, accepting never
+  creates a new row elsewhere, so there's no `acceptedProjectId` to track)/
+  `AssistantBatch`/`AssistantBatchStatus` (M10 — the latter mirrors
+  `MessageBatch.ProcessingStatus.Known` 1:1), `repo`
   `AssistantRunRepository` (incl. the
   monthly-token-budget `sumTokensSince` query and, for M10, `findByBatchId`)/
   `AssistantSuggestedTaskRepository`/
-  `AssistantSuggestedProjectRepository` (M8.5)/`AssistantBatchRepository`
+  `AssistantSuggestedProjectRepository` (M8.5)/
+  `AssistantSuggestedProjectEditRepository` (M9.5)/`AssistantBatchRepository`
   (M10 — `findByStatusNot`, backing `SummaryBatchPollingScheduler`'s sweep),
   `llm` `AnthropicClient` (the SDK wrapper interface, now
   `suggestTodos`/`generateProjectPlan`/`generateSummary` (M9 — plain markdown,
-  not structured output)/`generateReflection` (M10, identical shape to
-  `generateSummary`)/`submitBatch`/`pollBatch`/`retrieveBatchResults` (M10 —
-  the Batch API trio used only by `SummaryBatchDispatcher`/
-  `SummaryBatchPollingScheduler`))/`AnthropicClientImpl`
+  not structured output)/`generateProjectEdit` (M9.5)/`generateReflection`
+  (M10, identical shape to `generateSummary`)/`submitBatch`/`pollBatch`/
+  `retrieveBatchResults` (M10 — the Batch API trio used only by
+  `SummaryBatchDispatcher`/`SummaryBatchPollingScheduler`))/`AnthropicClientImpl`
   (Resilience4j `@CircuitBreaker`, structured outputs via
   `StructuredMessageCreateParams`)/`FakeAnthropicClient` (`local` profile +
   `kairon.assistant.fake-client=true` — stands in for Playwright e2e, never a
   real network call; M10 adds a same-tick-"ended" fake for its three batch
   methods)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`/
   `ProjectPlanPayload`/`PlannedTaskPayload`/`PlannedDependencyPayload` (M8.5,
-  the structured-output shape for a `PROJECT_GENERATION` run), `app`
+  the structured-output shape for a `PROJECT_GENERATION` run)/
+  `ProjectEditPayload`/`ProjectFieldChangesPayload`/`TaskOperationPayload`/
+  `DependencyOperationPayload`/`ReorderOperationPayload` (M9.5, the
+  structured-output shape for a `PROJECT_EDIT` run — a diff, not a whole new
+  tree: only operations representing an actual change are emitted, and an
+  `UPDATE` always carries its complete new field set rather than a partial
+  patch), `app`
   `AssistantRunService` (run lifecycle, budget/availability gating, suggestion
   capping/clamping; M8.5's `requestProjectPlan` follows the same shape; M9's
   `requestSummary` queues a `PENDING` run and returns — the actual generation
-  is dispatched by the caller only after that transaction commits; M10's
+  is dispatched by the caller only after that transaction commits; M9.5's
+  `requestProjectEdit` follows the same shape as `requestProjectPlan` but 404s
+  via `ProjectsApi.requireProject` before even creating a run row if the
+  target project isn't the caller's; `saveSuggestedEdit`/
+  `capProjectEditOperations` cap the *total* operation count, not a task
+  count, truncating task operations first, then dependency operations,
+  dropping reorder operations entirely if nothing's left; M10's
   `requestJournalReflection` follows the same queue-and-return shape, refusing
   up front with a 422 if the target week has no journal entries, and the
   formerly-summary-only in-flight guard is now `requireNoRunInFlight(userId,
@@ -111,6 +155,10 @@ updated when decisions change.
   `SuggestedTaskService` (accept/dismiss)/`SuggestedProjectService` (M8.5 —
   accept/dismiss for a whole plan; accept cascades caller-excluded task keys
   to their children, then calls `ProjectsApi.createFromPlan`)/
+  `SuggestedProjectEditService` (M9.5 — accept/dismiss for a diff; accept
+  cascades a caller-excluded new task's positional key — `"task:<index>"` —
+  to any other operation in the diff referencing that task's own semantic
+  `key`, then calls `ProjectsApi.applyProjectEdit`)/
   `SummaryGenerationService` (M9 — a separate `@Async`/`@Transactional` bean,
   deliberately not a self-call on `AssistantRunService`, since Spring's
   proxy-based AOP can't intercept one; builds the context, calls
@@ -149,6 +197,10 @@ updated when decisions change.
   always proposing a new one; the same list comes back on `Context` so
   `AssistantRunService` can resolve the model's answer without a second
   query)/
+  `ProjectEditContextBuilder` (M9.5 — fetches "the project as it stands
+  today" via `ProjectsApi.requireProject`/`tasksForProject`/
+  `dependenciesForProject`/`categories` and renders it into the prompt with
+  every task's real id, so the model can reference existing rows directly)/
   `SummaryContextBuilder` (M9 — five `todo`/`projects` data sources, no
   journal, no tone; `Context.renderStatsTable()` is a pure function that
   formats the same structured values already in the prompt into a markdown
@@ -167,15 +219,19 @@ updated when decisions change.
   variants selected by the user's `assistant.tone` preference — no stats
   table, the model's narrative is the entire output)/
   `AssistantProperties` (gained a `Summary` nested config record — cron
-  schedules, `zone`, `maxHighlightItems`, `effort` — and, for M10, a
+  schedules, `zone`, `maxHighlightItems`, `effort` — a `ProjectEdit` nested
+  record for M9.5 — `maxOperations`, default 60 — and, for M10, a
   `JournalReflection` nested record — `maxEntries`/`maxProjects`/`effort`, no
   cron/zone fields since this kind has no scheduled trigger)/`Horizon`/
   `AssistantMapper`/
   `AssistantRunView`
   (M8.5: gained a `suggestedProject` field alongside `suggestions`, one run
   view for both kinds; M9: gained `outputMarkdown`, populated only for
-  `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` runs; M10: the same field is now also
-  populated for `JOURNAL_REFLECTION` runs, no shape change needed)/
+  `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` runs; M9.5: gained a fifth-and-a-half
+  field, `suggestedProjectEdit`, populated only for `PROJECT_EDIT` runs —
+  same "one run view, each kind populates only its own field" convention;
+  M10: the `outputMarkdown` field is now also populated for
+  `JOURNAL_REFLECTION` runs, no shape change needed)/
   `AssistantRunPage` (M9 — the
   `content`/`page`/`totalElements` shape backing `GET /assistant/runs`, same
   convention as `ProjectPage`)/`AssistantSuggestedTaskView`/
@@ -187,26 +243,41 @@ updated when decisions change.
   `categoryId`/`categoryName` pair resolved against the user's existing
   categories right after the model call — a non-null `categoryId` means an
   exact name match; a null `categoryId` with a non-null `categoryName` means
-  no match, to be created as a new category on accept), `config`
+  no match, to be created as a new category on accept)/
+  `AssistantSuggestedProjectEditView`/`TaskOperationView`/
+  `DependencyOperationView`/`ReorderOperationView`/`ProjectFieldChangesView`/
+  `PersistedProjectEdit` (M9.5 — the view types mirror the structured-output
+  payload shape but stay decoupled from it, same precedent as `PlannedTaskView`
+  vs. `PlannedTaskPayload`; `PersistedProjectEdit` is what's actually stored
+  as `assistant_suggested_project_edit.diff`, reusing the `llm` payload record
+  types directly for its operation lists the same way `PersistedProjectPlan`
+  reuses `PlannedTaskPayload`, with its own `PersistedProjectFieldChanges`
+  nested record resolving the model's `categoryName` the same way
+  `PersistedProjectPlan` does), `config`
   `AssistantConfig`, `web` `AssistantRunController` (M9: gained
   `POST /assistant/summaries` and `GET /assistant/runs`; M10: gained
   `POST /assistant/journal-reflection`)/`SuggestedTaskController`/
   `AssistantDtos` (M10: gained `JournalReflectionRequest`)/`ProjectPlanController`/
   `SuggestedProjectController`/
-  `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range` and, for M9,
+  `ProjectPlanDtos` (M8.5)/`ProjectEditController`/`SuggestedProjectEditController`/
+  `ProjectEditDtos` (M9.5)). Extends `TodoApi` with `range` and, for M9,
   `periodStats`; `JournalApi` with `range`, now also read directly by
   `AssistantRunService.requestJournalReflection` (M10, the empty-week check)
   and by `JournalReflectionContextBuilder`;
   `ProjectsApi` with `openTasksInActiveProjects`, for M8.5 `createFromPlan`
-  and (added for this same feature, post-launch) `categories`, and for M9
-  `projectPeriodStats`;
+  and (added for this same feature, post-launch) `categories`, for M9
+  `projectPeriodStats`, and for M9.5 `requireProject`/`tasksForProject`/
+  `dependenciesForProject`/`applyProjectEdit`;
   and `UserAccountApi` with
   `assistantPreferences` (backed by `identity.app.AssistantPreferenceMapper`,
   a defensive parse of `app_user.preferences.assistant`, now including a
-  `projectGenerationEnabled` flag) and, for M9, `usersOptedIntoExecutionSummaries`
+  `projectGenerationEnabled` flag and, for M9.5, a `projectEditingEnabled`
+  flag) and, for M9, `usersOptedIntoExecutionSummaries`
   (an unauthenticated, no-`@CurrentUser` native jsonb query — the
   `@Scheduled` sweep's own cross-user use, never exposed on any controller) —
-  all five added specifically for the assistant module's context-building (M8/M9).
+  every one of these `TodoApi`/`JournalApi`/`ProjectsApi`/`UserAccountApi`
+  additions (M8/M9/M9.5) exists specifically for the assistant module's own
+  context-building or write-back needs, never used by any other module.
   Migrations: `V001__identity.sql` (`app_user` + `refresh_token`),
   `V002__todo.sql` (`todo_item`), `V003__journal.sql` (`journal_entry` +
   generated `content_tsv` + GIN index), `V004__projects.sql`
@@ -218,12 +289,17 @@ updated when decisions change.
   `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md),
   `V008__project_plan.sql` (widens `assistant_run.kind` to add
   `PROJECT_GENERATION`; adds `assistant_suggested_project`, M8.5),
-  `V009__project_category_rank.sql` (`project.category_rank` — unrelated to
-  the assistant module; a projects-feature change merged to `main` while this
-  milestone was being planned, which is why M10's own migration below is
-  `V010`, not the `V009` its own plan document assumed), `V010__assistant_batch.sql`
+  `V009__project_category_rank.sql` (`project.category_rank` — per-category
+  manual project ordering, unrelated to the assistant module; a projects-feature
+  change merged to `main` while both M9.5 and M10 were being planned, which is
+  why each of their own migrations below landed one version higher than their
+  own plan document originally assumed), `V010__assistant_batch.sql`
   (`assistant_batch` + `assistant_run.batch_id`, M10's Batch API migration for
-  M9's scheduled summary sweep — see docs/DATA_MODEL.md).
+  M9's scheduled summary sweep — see docs/DATA_MODEL.md), `V011__project_edit.sql`
+  (widens `assistant_run.kind` to add `PROJECT_EDIT`; adds
+  `assistant_suggested_project_edit`, M9.5 — landed after M10's `V010` by
+  merge order, even though M9.5 shipped first; renumbered from this file's
+  own `V010` on rebase to avoid colliding with M10's).
   M6 adds no migration; there is no `V006`. M9 and M10's own `JOURNAL_REFLECTION`
   feature likewise add no migration — M8's `V007` deliberately over-specified
   `assistant_run.kind`/`output_markdown`/`period_start`/`period_end` for
@@ -240,7 +316,9 @@ updated when decisions change.
   "New project from description" button (M8.5) opening
   `assistant/GenerateProjectDialog`)/
   `ProjectCard`/`ProjectFormDialog`/`CategoryManagerDialog`/`ProjectDetailPage`
-  (Tabs: `TaskTree` ⇄ `TaskBoard` ⇄ `GanttView`, M5)/`TaskRow`/`TaskQuickAdd`/
+  (Tabs: `TaskTree` ⇄ `TaskBoard` ⇄ `GanttView`, M5; an "Edit with AI" button
+  (M9.5) alongside the existing "Edit"/"Delete" buttons, opening
+  `assistant/EditProjectDialog`)/`TaskRow`/`TaskQuickAdd`/
   `TaskFormDialog` (edit mode embeds `TaskDependencySection`, M5's "Depends on"
   picker)/`TaskCard`/`GanttView` (M5 — `gantt-task-react` bars/milestones/
   dependency arrows/progress fill, an "Unscheduled" panel for undated tasks, a
@@ -263,15 +341,16 @@ updated when decisions change.
   `SuggestTodosButton` (a two-step dialog: horizon choice, then
   `SuggestedTaskList` review-and-accept, used on both `TodayPage` and
   `DayView`)/`SuggestedTaskList`/`AssistantSettings` (embedded in
-  `AccountPage`; M10 brings it to four real toggles — todo suggestions,
-  project generation, execution summaries, and journal reflection — plus a
-  tone `Select` (encouraging/balanced/direct) and model override. The
-  journal-reflection checkbox is the one exception to this page's own
-  "checkbox PATCHes immediately" pattern: turning it **on** opens a
-  `Dialog`-based confirmation (reusing the existing component, not a new
-  `alert-dialog` package) naming that full journal text is sent to Anthropic,
-  and only commits the `PATCH` once confirmed there; turning it off needs no
-  confirmation, same as the other three); M8.5 adds
+  `AccountPage`; M9.5 brought it to four real toggles — todo suggestions,
+  project generation, execution summaries, project editing; M10 brings it to
+  five — adding journal reflection — plus a tone `Select`
+  (encouraging/balanced/direct) and model override. The journal-reflection
+  checkbox is the one exception to this page's own "checkbox PATCHes
+  immediately" pattern: turning it **on** opens a `Dialog`-based confirmation
+  (reusing the existing component, not a new `alert-dialog` package) naming
+  that full journal text is sent to Anthropic, and only commits the `PATCH`
+  once confirmed there; turning it off needs no confirmation, same as the
+  other four); M8.5 adds
   `GenerateProjectDialog` (a two-step
   dialog on `ProjectListPage`: description+dates form, then
   `ProjectPlanReview` in the same dialog once a plan comes back — no field
@@ -287,15 +366,31 @@ updated when decisions change.
   `outputMarkdown` — narrative + the deterministic stats table — via
   `react-markdown`/`remark-gfm`, this app's first read-only markdown/GFM-table
   render; while the run is `PENDING`/`RUNNING`, polls instead and shows a
-  spinner); M10 adds `JOURNAL_REFLECTION` as a third kind on both
-  `SummariesPage` (a "Generate weekly reflection" button, shown only when
-  `me.preferences.assistant.journalReflection.enabled`, targeting "this week"
-  with no date picker — same simplicity as M9's own summary buttons) and
-  `SummaryDetail` (a `KIND_LABEL` entry; rendering itself needed no change,
-  already kind-agnostic), hooks in `useAssistant.ts`/`useAssistantRuns.ts` (M9
-  — the first `refetchInterval`-based polling hook in this app; M10 adds
+  spinner); M9.5 adds `EditProjectDialog` (a two-step dialog on
+  `ProjectDetailPage`, mirroring `GenerateProjectDialog`'s own shape but
+  editing an existing project: a free-text description of the desired change,
+  then `ProjectEditReview` in the same dialog once a diff comes back — fetches
+  the project's own current tasks/dependencies via `useProjectTasks`/
+  `useTaskDependencies` so the review can show real names instead of bare ids;
+  "Apply changes" calls `useAcceptProjectEdit` and closes)/`ProjectEditReview`
+  (grouped by change type — project fields, tasks added/updated/removed,
+  dependencies added/removed, reordering — with per-change exclude checkboxes
+  using the backend's positional exclusion keys (`"project"`/`"task:<i>"`/
+  `"dependency:<i>"`) and the same visual parent-exclusion-cascades-to-children
+  pattern `ProjectPlanReview` already uses, generalized to "any operation
+  referencing an excluded new task's key"); M10 adds `JOURNAL_REFLECTION` as a
+  third kind on both `SummariesPage` (a "Generate weekly reflection" button,
+  shown only when `me.preferences.assistant.journalReflection.enabled`,
+  targeting "this week" with no date picker — same simplicity as M9's own
+  summary buttons) and `SummaryDetail` (a `KIND_LABEL` entry; rendering
+  itself needed no change, already kind-agnostic), hooks in
+  `useAssistant.ts`/`useAssistantRuns.ts` (M9 — the first
+  `refetchInterval`-based polling hook in this app; M10 adds
   `useRequestJournalReflection`, same shape as `useRequestSummary`) +
-  `assistantKeys` (gained `runs.list(filter)`).
+  `assistantKeys` (gained `runs.list(filter)`); M9.5's `useAcceptProjectEdit`
+  invalidates the edited project's own `projectKeys.detail`/`tasks`/
+  `dependencies` queries (a cross-feature import of `projectKeys`, same
+  precedent `todoKeys` already set for `useAssistant.ts`).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
   and the app's default landing route (M6); M9 adds a "Summaries" top-level

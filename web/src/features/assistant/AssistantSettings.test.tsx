@@ -64,6 +64,24 @@ test("toggling project generation PATCHes preferences.assistant.projectGeneratio
   });
 });
 
+test("toggling project editing PATCHes preferences.assistant.projectEditing without touching other keys", async () => {
+  const user = userEvent.setup();
+  Object.assign(meResponse, { preferences: { todo: { rollover: "manual" } } });
+  renderPage();
+
+  const toggle = await screen.findByRole("checkbox", { name: /Project editing/ });
+  await user.click(toggle);
+
+  await waitFor(() => {
+    const prefs = meResponse.preferences as {
+      todo?: { rollover?: string };
+      assistant?: { projectEditing?: { enabled?: boolean } };
+    };
+    expect(prefs.assistant?.projectEditing?.enabled).toBe(true);
+    expect(prefs.todo?.rollover).toBe("manual");
+  });
+});
+
 test("toggling execution summaries PATCHes preferences.assistant.executionSummaries without touching other keys", async () => {
   const user = userEvent.setup();
   Object.assign(meResponse, { preferences: { todo: { rollover: "manual" } } });

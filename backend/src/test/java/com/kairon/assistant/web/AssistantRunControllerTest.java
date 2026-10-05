@@ -71,7 +71,7 @@ class AssistantRunControllerTest {
                 "Order cabinet hardware", null, "Overdue kitchen-remodel task", DAY, 20, null,
                 "PROPOSED", null, 0);
         return new AssistantRunView(id, "TODO_SUGGESTION", "SUCCEEDED", "claude-sonnet-5", DAY, DAY,
-                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion), null, null);
+                1840, 310, null, Instant.parse("2026-09-21T08:00:00Z"), List.of(suggestion), null, null, null);
     }
 
     @Test
@@ -113,7 +113,7 @@ class AssistantRunControllerTest {
         when(assistantRuns.requestSummary(any(), eq(SummaryPeriod.WEEK), eq(DAY)))
                 .thenReturn(new AssistantRunView(runId, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
                         DAY, DAY.plusDays(6), null, null, null, Instant.parse("2026-09-21T08:00:00Z"),
-                        List.of(), null, null));
+                        List.of(), null, null, null));
 
         mvc.perform(post("/api/v1/assistant/summaries").with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)
@@ -140,7 +140,7 @@ class AssistantRunControllerTest {
         when(assistantRuns.requestJournalReflection(any(), eq(DAY)))
                 .thenReturn(new AssistantRunView(runId, "JOURNAL_REFLECTION", "PENDING", "claude-sonnet-5",
                         DAY, DAY.plusDays(6), null, null, null, Instant.parse("2026-09-21T08:00:00Z"),
-                        List.of(), null, null));
+                        List.of(), null, null, null));
 
         mvc.perform(post("/api/v1/assistant/journal-reflection").with(asUser())
                         .contentType(MediaType.APPLICATION_JSON)

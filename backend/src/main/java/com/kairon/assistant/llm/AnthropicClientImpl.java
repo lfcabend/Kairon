@@ -198,6 +198,67 @@ class AnthropicClientImpl implements AnthropicClient {
     }
 
     @Override
+    @CircuitBreaker(name = "anthropic", fallbackMethod = "generateProjectEditFallback")
+    public ProjectEditResult generateProjectEdit(ProjectEditRequest request) {
+        // Same shape as generateProjectPlan above (M9.5 §4.3): a fixed system prompt
+        // (no per-request data) is a stable prefix worth Anthropic's prompt caching.
+        StructuredMessageCreateParams<ProjectEditPayload> params = MessageCreateParams.builder()
+                .model(request.model())
+                .maxTokens(MAX_OUTPUT_TOKENS)
+                .systemOfTextBlockParams(List.of(
+                        TextBlockParam.builder()
+                                .text(request.systemPrompt())
+                                .cacheControl(CacheControlEphemeral.builder().build())
+                                .build()))
+                .outputConfig(ProjectEditPayload.class)
+                .addUserMessage(request.userContent())
+                .build();
+
+        StructuredMessage<ProjectEditPayload> response;
+        try {
+            response = sdk.messages().create(params);
+        } catch (RateLimitException | InternalServerException | AnthropicIoException e) {
+            throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", e);
+        } catch (AnthropicInvalidDataException e) {
+            log.warn("Anthropic response failed structured-output parsing (likely truncated): {}", e.getMessage());
+            throw new AssistantUpstreamException(false,
+                    "The assistant's response was too large or invalid to use. Try a shorter description.", e);
+        } catch (AnthropicServiceException e) {
+            throw new AssistantUpstreamException(false, "The assistant could not complete this request.", e);
+        }
+
+        if (response.stopReason().filter(StopReason.REFUSAL::equals).isPresent()) {
+            log.warn("Anthropic call refused model={}", request.model());
+            throw new AssistantUpstreamException(false, "The assistant declined to respond.", null);
+        }
+
+        ProjectEditPayload payload = response.content().stream()
+                .flatMap(cb -> cb.text().stream())
+                .findFirst()
+                .map(com.anthropic.models.messages.StructuredTextBlock::text)
+                .orElseThrow(() -> new AssistantUpstreamException(false,
+                        "The assistant returned an empty response.", null));
+
+        long inputTokens = response.usage().inputTokens();
+        long outputTokens = response.usage().outputTokens();
+        meterRegistry.counter("assistant.tokens", "kind", "PROJECT_EDIT", "direction", "input")
+                .increment(inputTokens);
+        meterRegistry.counter("assistant.tokens", "kind", "PROJECT_EDIT", "direction", "output")
+                .increment(outputTokens);
+
+        return new ProjectEditResult(payload, request.model(), inputTokens, outputTokens);
+    }
+
+    @SuppressWarnings("unused")
+    private ProjectEditResult generateProjectEditFallback(ProjectEditRequest request, Throwable t) {
+        if (t instanceof AssistantUpstreamException upstream) {
+            throw upstream;
+        }
+        log.warn("Anthropic call failed via circuit breaker: {}", t.toString());
+        throw new AssistantUpstreamException(true, "The assistant is temporarily unavailable.", t);
+    }
+
+    @Override
     @CircuitBreaker(name = "anthropic", fallbackMethod = "generateSummaryFallback")
     public SummaryResult generateSummary(SummaryRequest request) {
         // Plain (non-structured) call — the output is a narrative, not a typed

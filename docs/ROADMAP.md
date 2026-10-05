@@ -241,6 +241,44 @@ are `@Async` and always polled via `GET /assistant/runs/{id}` (`DESIGN.md`
       generate buttons, and a polling detail view rendering the markdown
       narrative + stats table (`react-markdown` + `remark-gfm`, D17).
 
+## M9.5 — AI project editing from a description
+
+See [`milestones/M9.5-ai-project-editing.md`](milestones/M9.5-ai-project-editing.md)
+for the full plan and rationale (Status: Accepted — implemented). A fifth `assistant` feature,
+slotted between M9 and M10 rather than renumbering, the same way M8.5 was
+slotted between M8 and M9: given an existing project plus a free-text
+description of a desired change, the LLM proposes a diff — tasks added/
+updated/removed, dependencies added/removed, sibling reordering, and
+project-level field/category changes — for the user to review and apply in
+one action.
+
+- [x] `PROJECT_EDIT` added to `assistant_run.kind` (`V010` — widens
+      the check constraint again); `assistant_suggested_project_edit` table
+      (one row per run, scoped to the target project, the whole diff as
+      `jsonb`, `PROPOSED → ACCEPTED | DISMISSED`).
+- [x] `ProjectsApi` gains `requireProject`/`tasksForProject`/
+      `dependenciesForProject` (context-building reads) and
+      `applyProjectEdit` — one transactional call applying project field
+      changes, task add/update/remove, sibling reordering, and dependency
+      add/remove together, reusing `ProjectService`/`ProjectTaskService`/
+      `TaskDependencyService`/`ProjectCategoryService` as internal
+      collaborators.
+- [x] `POST /assistant/project-edits` (`{projectId, description}`,
+      synchronous like M8.5's project-plan call).
+- [x] `POST /assistant/suggested-project-edits/{id}:accept` (body:
+      `excludedOperationKeys` — cascades to any operation referencing an
+      excluded new task) and `:dismiss`.
+- [x] Reuses M8/M8.5's budget/rate-limit/circuit-breaker/error-mapping
+      infrastructure unchanged; a fifth per-feature opt-in
+      (`assistant.projectEditing.enabled`).
+- [x] Web: "Edit with AI" on the project detail page, a description form, a
+      diff-review screen (grouped by change type, per-change
+      include/exclude checkboxes, no inline field editing), applying the
+      accepted subset in one action.
+- [x] Tests: apply-service unit tests (ordering/resolution/cycle/exclusion
+      edge cases), MockMvc, an `@SpringBootTest` flow test, Vitest, a
+      Playwright happy path.
+
 ## M10 — Weekly journal reflection
 
 See [`milestones/M10-journal-reflection.md`](milestones/M10-journal-reflection.md)

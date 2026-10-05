@@ -40,6 +40,7 @@ function currentAssistantPrefs(me: Me | undefined): AssistantPreferences {
     executionSummaries: { enabled: raw?.executionSummaries?.enabled ?? false },
     journalReflection: { enabled: raw?.journalReflection?.enabled ?? false },
     projectGeneration: { enabled: raw?.projectGeneration?.enabled ?? false },
+    projectEditing: { enabled: raw?.projectEditing?.enabled ?? false },
     modelOverride: raw?.modelOverride ?? null,
     tone: raw?.tone ?? "balanced",
   };
@@ -47,8 +48,8 @@ function currentAssistantPrefs(me: Me | undefined): AssistantPreferences {
 
 /**
  * Todo suggestions (M8), project generation (M8.5), execution summaries (M9),
- * and journal reflection (M10) are implemented. Same read-modify-write
- * `PATCH /me` pattern the existing rollover setting on this page already uses.
+ * project editing (M9.5), and journal reflection (M10) are implemented. Same
+ * read-modify-write `PATCH /me` pattern the existing rollover setting on this page already uses.
  * Journal reflection's checkbox is the one exception: turning it **on** opens
  * a confirmation dialog first (M10 D13) — it's the one feature that sends full
  * journal entry text, not a summary, off the instance — and only commits the
@@ -111,6 +112,25 @@ export function AssistantSettings({ me }: { me: Me | undefined }) {
           <span className="block text-xs text-muted-foreground">
             Show a "New project from description" option on the project list. Kairon
             sends your project description and dates to Anthropic when you generate a plan.
+          </span>
+        </span>
+      </label>
+
+      <label className="mt-4 flex items-start gap-3 text-sm">
+        <Checkbox
+          className="mt-0.5"
+          checked={prefs.projectEditing.enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(checked) =>
+            mutation.mutate({ projectEditing: { enabled: checked === true } })
+          }
+        />
+        <span>
+          <span className="font-medium">Project editing</span>
+          <span className="block text-xs text-muted-foreground">
+            Show an "Edit with AI" option on a project's detail page. Kairon sends that
+            project's current tasks, dependencies, and your description of the change to
+            Anthropic.
           </span>
         </span>
       </label>

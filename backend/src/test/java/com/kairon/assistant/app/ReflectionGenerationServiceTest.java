@@ -50,12 +50,12 @@ class ReflectionGenerationServiceTest {
     @BeforeEach
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null, null,
-                new AssistantProperties.JournalReflection(30, 5, "HIGH"));
+                new AssistantProperties.JournalReflection(30, 5, "HIGH"), null);
         service = new ReflectionGenerationService(runs, contextBuilder, anthropicClient, properties, accounts);
         run = AssistantRun.pending(USER_ID, AssistantRunKind.JOURNAL_REFLECTION, START, END, "claude-sonnet-5");
         when(runs.findById(run.getId())).thenReturn(Optional.of(run));
         when(accounts.assistantPreferences(any())).thenReturn(
-                new AssistantPreferencesView(false, false, true, false, null, "balanced"));
+                new AssistantPreferencesView(false, false, true, false, false, null, "balanced"));
         when(contextBuilder.build(any(), any(), any(), any())).thenReturn(
                 new JournalReflectionContextBuilder.Context("system", "user content", java.util.Map.of()));
     }
@@ -77,7 +77,7 @@ class ReflectionGenerationServiceTest {
     @Test
     void generate_fetchesToneFromThePreferencesApiAndPassesItToTheContextBuilder() {
         when(accounts.assistantPreferences(any())).thenReturn(
-                new AssistantPreferencesView(false, false, true, false, null, "direct"));
+                new AssistantPreferencesView(false, false, true, false, false, null, "direct"));
         when(anthropicClient.generateReflection(any(ReflectionRequest.class)))
                 .thenReturn(new ReflectionResult("narrative", "claude-sonnet-5", 100, 50));
 

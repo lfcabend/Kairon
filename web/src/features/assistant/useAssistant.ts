@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { assistantApi } from "@/lib/api/assistant";
-import type { GenerateProjectPlanBody, Horizon } from "@/lib/api/types";
+import type { GenerateProjectEditBody, GenerateProjectPlanBody, Horizon } from "@/lib/api/types";
 
+import { projectKeys } from "../projects/projectKeys";
 import { todoKeys } from "../todo/todoKeys";
 
 /**
@@ -52,5 +53,32 @@ export function useAcceptProjectPlan() {
 export function useDismissProjectPlan() {
   return useMutation({
     mutationFn: (id: string) => assistantApi.dismissProjectPlan(id),
+  });
+}
+
+/** Same "no cache entry for the run itself" reasoning as `useGenerateProjectPlan` (M9.5). */
+export function useGenerateProjectEdit() {
+  return useMutation({
+    mutationFn: (body: GenerateProjectEditBody) => assistantApi.generateProjectEdit(body),
+  });
+}
+
+/** Invalidates the edited project's own detail/tasks/dependencies so its page reflects the change immediately. */
+export function useAcceptProjectEdit(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, excludedOperationKeys }: { id: string; excludedOperationKeys: string[] }) =>
+      assistantApi.acceptProjectEdit(id, excludedOperationKeys),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: projectKeys.detail(projectId) });
+      void qc.invalidateQueries({ queryKey: projectKeys.tasks(projectId) });
+      void qc.invalidateQueries({ queryKey: projectKeys.dependencies(projectId) });
+    },
+  });
+}
+
+export function useDismissProjectEdit() {
+  return useMutation({
+    mutationFn: (id: string) => assistantApi.dismissProjectEdit(id),
   });
 }

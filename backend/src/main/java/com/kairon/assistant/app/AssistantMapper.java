@@ -1,9 +1,11 @@
 package com.kairon.assistant.app;
 
 import java.util.List;
+import java.util.UUID;
 
 import com.kairon.assistant.domain.AssistantRun;
 import com.kairon.assistant.domain.AssistantSuggestedProject;
+import com.kairon.assistant.domain.AssistantSuggestedProjectEdit;
 import com.kairon.assistant.domain.AssistantSuggestedTask;
 
 /** Hand-rolled entity -> view mapping, matching the rest of the app (e.g. ProjectTaskMapper). */
@@ -13,14 +15,20 @@ final class AssistantMapper {
     }
 
     static AssistantRunView toRunView(AssistantRun run, List<AssistantSuggestedTask> tasks) {
-        return toRunView(run, tasks, null);
+        return toRunView(run, tasks, null, null);
+    }
+
+    static AssistantRunView toRunView(AssistantRun run, List<AssistantSuggestedTask> tasks,
+            AssistantSuggestedProjectView suggestedProject) {
+        return toRunView(run, tasks, suggestedProject, null);
     }
 
     /**
      * The light row shape for {@code GET /assistant/runs}' history list (M9
      * D12) — omits {@code outputMarkdown}/{@code suggestions}/
-     * {@code suggestedProject} bodies; the detail endpoint
-     * ({@code GET /assistant/runs/{id}}, {@link #toRunView}) still carries them.
+     * {@code suggestedProject}/{@code suggestedProjectEdit} bodies; the
+     * detail endpoint ({@code GET /assistant/runs/{id}}, {@link #toRunView})
+     * still carries them.
      */
     static AssistantRunView toRunListView(AssistantRun run) {
         return new AssistantRunView(
@@ -36,11 +44,12 @@ final class AssistantMapper {
                 run.getCreatedAt(),
                 List.of(),
                 null,
+                null,
                 null);
     }
 
     static AssistantRunView toRunView(AssistantRun run, List<AssistantSuggestedTask> tasks,
-            AssistantSuggestedProjectView suggestedProject) {
+            AssistantSuggestedProjectView suggestedProject, AssistantSuggestedProjectEditView suggestedProjectEdit) {
         return new AssistantRunView(
                 run.getId(),
                 run.getKind().name(),
@@ -54,6 +63,7 @@ final class AssistantMapper {
                 run.getCreatedAt(),
                 tasks.stream().map(AssistantMapper::toSuggestedTaskView).toList(),
                 suggestedProject,
+                suggestedProjectEdit,
                 run.getOutputMarkdown());
     }
 
@@ -79,6 +89,44 @@ final class AssistantMapper {
                                 d.lagDays()))
                         .toList(),
                 row.getAcceptedProjectId());
+    }
+
+    static AssistantSuggestedProjectEditView toSuggestedProjectEditView(AssistantSuggestedProjectEdit row,
+            PersistedProjectEdit diff) {
+        ProjectFieldChangesView projectChanges = diff.projectChanges() == null ? null
+                : new ProjectFieldChangesView(diff.projectChanges().name(), diff.projectChanges().description(),
+                        diff.projectChanges().size(), diff.projectChanges().startDate(),
+                        diff.projectChanges().endDate(), diff.projectChanges().categoryId(),
+                        diff.projectChanges().categoryName());
+        return new AssistantSuggestedProjectEditView(
+                row.getId(),
+                row.getRunId(),
+                row.getStatus().name(),
+                row.getProjectId(),
+                projectChanges,
+                diff.taskOperations().stream()
+                        .map(t -> new TaskOperationView(t.op(), parseUuidOrNull(t.existingTaskId()), t.key(),
+                                t.parentRef(), t.name(), t.description(), t.isMilestone(), t.plannedStart(),
+                                t.plannedEnd(), t.estimateHours()))
+                        .toList(),
+                diff.dependencyOperations().stream()
+                        .map(d -> new DependencyOperationView(d.op(), parseUuidOrNull(d.existingDependencyId()),
+                                d.predecessorRef(), d.successorRef(), d.type(), d.lagDays()))
+                        .toList(),
+                diff.reorderOperations().stream()
+                        .map(r -> new ReorderOperationView(r.parentRef(), r.orderedRefs()))
+                        .toList());
+    }
+
+    private static UUID parseUuidOrNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     static AssistantSuggestedTaskView toSuggestedTaskView(AssistantSuggestedTask task) {

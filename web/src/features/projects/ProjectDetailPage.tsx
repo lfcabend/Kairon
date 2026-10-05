@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+import { EditProjectDialog } from "../assistant/EditProjectDialog";
 import { GanttView } from "./GanttView";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import { TaskBoard } from "./TaskBoard";
@@ -31,6 +32,7 @@ export function ProjectDetailPage() {
   const [editingProject, setEditingProject] = useState(false);
   const [creatingTask, setCreatingTask] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [editingWithAi, setEditingWithAi] = useState(false);
 
   if (isLoading) return null;
   if (!project) return <p className="text-sm text-muted-foreground">Project not found.</p>;
@@ -50,6 +52,9 @@ export function ProjectDetailPage() {
         <div className="flex gap-2">
           <Button variant="outline" onClick={() => setEditingProject(true)}>
             Edit
+          </Button>
+          <Button variant="outline" onClick={() => setEditingWithAi(true)}>
+            Edit with AI
           </Button>
           <Button
             variant="outline"
@@ -99,6 +104,7 @@ export function ProjectDetailPage() {
         projectId={id}
         parentCandidates={topLevel}
       />
+      <EditProjectDialog open={editingWithAi} onOpenChange={setEditingWithAi} projectId={id} />
 
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
         <DialogContent>

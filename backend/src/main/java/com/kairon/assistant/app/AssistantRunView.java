@@ -8,8 +8,9 @@ import java.util.UUID;
 /**
  * The run itself plus its suggestions, if any (D12's response shape, §5).
  * {@code suggestedProject} is set only for a {@code PROJECT_GENERATION} run
- * (M8.5 §5); {@code suggestions} is set only for a {@code TODO_SUGGESTION}
- * run — a run only ever populates the field matching its own kind.
+ * (M8.5 §5); {@code suggestedProjectEdit} only for a {@code PROJECT_EDIT} run
+ * (M9.5 §4.7); {@code suggestions} only for a {@code TODO_SUGGESTION} run —
+ * a run only ever populates the field matching its own kind.
  */
 public record AssistantRunView(
         UUID id,
@@ -24,5 +25,6 @@ public record AssistantRunView(
         Instant createdAt,
         List<AssistantSuggestedTaskView> suggestions,
         AssistantSuggestedProjectView suggestedProject,
+        AssistantSuggestedProjectEditView suggestedProjectEdit,
         String outputMarkdown) {
 }

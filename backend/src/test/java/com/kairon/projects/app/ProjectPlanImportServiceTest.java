@@ -51,7 +51,8 @@ class ProjectPlanImportServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new ProjectPlanImportService(projectService, taskService, dependencyService, categoryService);
+        service = new ProjectPlanImportService(projectService, taskService, dependencyService,
+                new CategoryResolver(categoryService));
         when(projectService.create(eq(USER), any())).thenReturn(project());
         when(projectService.get(USER, PROJECT_ID)).thenReturn(project());
     }

@@ -11,15 +11,21 @@ import java.util.UUID;
 
 import com.kairon.assistant.domain.AssistantRunKind;
 import com.kairon.assistant.domain.AssistantSuggestedProject;
+import com.kairon.assistant.domain.AssistantSuggestedProjectEdit;
 import com.kairon.assistant.llm.AnthropicClient;
+import com.kairon.assistant.llm.AnthropicClient.ProjectEditRequest;
+import com.kairon.assistant.llm.AnthropicClient.ProjectEditResult;
 import com.kairon.assistant.llm.AnthropicClient.ProjectPlanRequest;
 import com.kairon.assistant.llm.AnthropicClient.ProjectPlanResult;
 import com.kairon.assistant.llm.AnthropicClient.TodoSuggestionRequest;
 import com.kairon.assistant.llm.AnthropicClient.TodoSuggestionsResult;
 import com.kairon.assistant.llm.PlannedTaskPayload;
+import com.kairon.assistant.llm.ProjectEditPayload;
 import com.kairon.assistant.llm.ProjectPlanPayload;
 import com.kairon.assistant.llm.SuggestedTaskPayload;
+import com.kairon.assistant.llm.TaskOperationPayload;
 import com.kairon.assistant.repo.AssistantRunRepository;
+import com.kairon.assistant.repo.AssistantSuggestedProjectEditRepository;
 import com.kairon.assistant.repo.AssistantSuggestedProjectRepository;
 import com.kairon.assistant.repo.AssistantSuggestedTaskRepository;
 import com.kairon.common.error.ApiException;
@@ -28,6 +34,8 @@ import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
 import com.kairon.journal.api.JournalApi;
 import com.kairon.journal.api.JournalEntryView;
+import com.kairon.projects.api.ProjectsApi;
+import com.kairon.projects.api.ProjectView;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -64,13 +72,22 @@ class AssistantRunServiceTest {
     AssistantSuggestedProjectRepository suggestedProjects;
 
     @Mock
+    AssistantSuggestedProjectEditRepository suggestedProjectEdits;
+
+    @Mock
     UserAccountApi accounts;
+
+    @Mock
+    ProjectsApi projectsApi;
 
     @Mock
     TodoSuggestionContextBuilder contextBuilder;
 
     @Mock
     ProjectPlanContextBuilder projectPlanContextBuilder;
+
+    @Mock
+    ProjectEditContextBuilder projectEditContextBuilder;
 
     @Mock
     JournalApi journal;
@@ -88,14 +105,15 @@ class AssistantRunServiceTest {
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
                 500_000, new AssistantProperties.TodoSuggestions(7, 21, 5, 5, "MEDIUM"),
-                new AssistantProperties.ProjectPlan(40), null, null);
+                new AssistantProperties.ProjectPlan(40), null, null, null);
         service = newService();
         stubPlanRoundTrip();
     }
 
     private AssistantRunService newService() {
-        return new AssistantRunService(runs, suggestedTasks, suggestedProjects, properties, accounts, contextBuilder,
-                projectPlanContextBuilder, journal, anthropicClient, objectMapper, CLOCK);
+        return new AssistantRunService(runs, suggestedTasks, suggestedProjects, suggestedProjectEdits, properties,
+                accounts, projectsApi, contextBuilder, projectPlanContextBuilder, projectEditContextBuilder, journal,
+                anthropicClient, objectMapper, CLOCK);
     }
 
     @SuppressWarnings("unchecked")
@@ -110,25 +128,34 @@ class AssistantRunServiceTest {
                 .thenAnswer(inv -> Map.of());
         org.mockito.Mockito.lenient().when(objectMapper.convertValue(any(), eq(PersistedProjectPlan.class)))
                 .thenAnswer(inv -> lastPersistedPlan);
+        org.mockito.Mockito.lenient().when(objectMapper.convertValue(any(), eq(PersistedProjectEdit.class)))
+                .thenAnswer(inv -> lastPersistedEdit);
     }
 
     // Set by tests that need the "stored -> re-read" round trip to reflect a specific plan.
     private PersistedProjectPlan lastPersistedPlan;
 
+    // Same, for requestProjectEdit's own round trip.
+    private PersistedProjectEdit lastPersistedEdit;
+
     private static AssistantPreferencesView optedIn() {
-        return new AssistantPreferencesView(true, false, false, true, null, "balanced");
+        return new AssistantPreferencesView(true, false, false, true, false, null, "balanced");
     }
 
     private static AssistantPreferencesView optedInToProjectGeneration() {
-        return new AssistantPreferencesView(false, false, false, true, null, "balanced");
+        return new AssistantPreferencesView(false, false, false, true, false, null, "balanced");
     }
 
     private static AssistantPreferencesView optedInToExecutionSummaries() {
-        return new AssistantPreferencesView(false, true, false, false, null, "balanced");
+        return new AssistantPreferencesView(false, true, false, false, false, null, "balanced");
     }
 
     private static AssistantPreferencesView optedInToJournalReflection() {
-        return new AssistantPreferencesView(false, false, true, false, null, "balanced");
+        return new AssistantPreferencesView(false, false, true, false, false, null, "balanced");
+    }
+
+    private static AssistantPreferencesView optedInToProjectEditing() {
+        return new AssistantPreferencesView(false, false, false, false, true, null, "balanced");
     }
 
     private static JournalEntryView anEntry() {
@@ -144,9 +171,19 @@ class AssistantRunServiceTest {
                 List.of());
     }
 
+    private static ProjectEditContextBuilder.Context editContext() {
+        return new ProjectEditContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"),
+                List.of());
+    }
+
+    private static ProjectView project(UUID id) {
+        return new ProjectView(id, null, "Kitchen remodel", null, "ACTIVE", null, 100, 100, "#6366f1", DAY, DAY,
+                null, null, Instant.now(), Instant.now(), 0);
+    }
+
     @Test
     void requestTodoSuggestions_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -158,7 +195,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenNoApiKey_throwsForbidden() {
-        properties = new AssistantProperties(true, "  ", null, null, 0, null, null, null, null);
+        properties = new AssistantProperties(true, "  ", null, null, 0, null, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -169,7 +206,7 @@ class AssistantRunServiceTest {
     @Test
     void requestTodoSuggestions_whenNotOptedIn_throwsForbiddenAndNeverBuildsContext() {
         when(accounts.assistantPreferences(USER))
-                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, false, null, "balanced"));
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
                 .isInstanceOf(ApiException.class)
@@ -264,7 +301,7 @@ class AssistantRunServiceTest {
     @Test
     void requestTodoSuggestions_withAnUnknownModelOverride_fallsBackToTheInstanceDefault() {
         when(accounts.assistantPreferences(USER)).thenReturn(
-                new AssistantPreferencesView(true, false, false, false, "not-a-real-model", "balanced"));
+                new AssistantPreferencesView(true, false, false, false, false, "not-a-real-model", "balanced"));
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
         when(contextBuilder.build(USER, DAY, Horizon.DAY)).thenReturn(context());
         when(anthropicClient.suggestTodos(any(TodoSuggestionRequest.class)))
@@ -279,7 +316,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestProjectPlan_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
@@ -292,7 +329,7 @@ class AssistantRunServiceTest {
     @Test
     void requestProjectPlan_whenNotOptedIn_throwsForbidden() {
         when(accounts.assistantPreferences(USER))
-                .thenReturn(new AssistantPreferencesView(true, false, false, false, null, "balanced"));
+                .thenReturn(new AssistantPreferencesView(true, false, false, false, false, null, "balanced"));
 
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
                 .isInstanceOf(ApiException.class)
@@ -373,7 +410,7 @@ class AssistantRunServiceTest {
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
         when(projectPlanContextBuilder.build(any(), any(), any(), any())).thenReturn(planContext());
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
-                500_000, null, new AssistantProperties.ProjectPlan(2), null, null);
+                500_000, null, new AssistantProperties.ProjectPlan(2), null, null, null);
         service = newService();
         List<PlannedTaskPayload> fiveTasks = java.util.stream.IntStream.range(0, 5)
                 .mapToObj(i -> new PlannedTaskPayload("t" + i, null, "Task " + i, null, false, DAY, DAY, null))
@@ -404,11 +441,130 @@ class AssistantRunServiceTest {
         verify(suggestedProjects, never()).save(any());
     }
 
+    // --- requestProjectEdit (M9.5) ---------------------------------------------
+
+    @Test
+    void requestProjectEdit_whenInstanceDisabled_throwsForbiddenAndNeverChecksTheProject() {
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null, null);
+        service = newService();
+
+        assertThatThrownBy(() -> service.requestProjectEdit(USER, UUID.randomUUID(), "add a task"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(projectsApi, never()).requireProject(any(), any());
+        verify(projectEditContextBuilder, never()).build(any(), any(), any());
+    }
+
+    @Test
+    void requestProjectEdit_whenNotOptedIn_throwsForbidden() {
+        when(accounts.assistantPreferences(USER))
+                .thenReturn(new AssistantPreferencesView(true, false, false, true, false, null, "balanced"));
+
+        assertThatThrownBy(() -> service.requestProjectEdit(USER, UUID.randomUUID(), "add a task"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(projectsApi, never()).requireProject(any(), any());
+    }
+
+    @Test
+    void requestProjectEdit_whenProjectNotOwned_throws404BeforeCreatingARun() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectEditing());
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenThrow(ApiException.notFound("Project not found."));
+
+        assertThatThrownBy(() -> service.requestProjectEdit(USER, projectId, "add a task"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(404));
+        verify(runs, never()).save(any());
+        verify(anthropicClient, never()).generateProjectEdit(any());
+    }
+
+    @Test
+    void requestProjectEdit_whenBudgetAlreadyAtOrOverLimit_throwsForbiddenAndNeverCallsTheClient() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectEditing());
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenReturn(project(projectId));
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(500_000L);
+
+        assertThatThrownBy(() -> service.requestProjectEdit(USER, projectId, "add a task"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(anthropicClient, never()).generateProjectEdit(any());
+    }
+
+    @Test
+    void requestProjectEdit_onSuccess_persistsSucceededRunAndAProposedDiff() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectEditing());
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenReturn(project(projectId));
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectEditContextBuilder.build(eq(USER), eq(projectId), eq("add a task"))).thenReturn(editContext());
+        TaskOperationPayload addTask = new TaskOperationPayload("ADD", null, "n1", null, "Inspection", null,
+                false, DAY, DAY.plusDays(1), null);
+        ProjectEditPayload payload = new ProjectEditPayload(null, List.of(addTask), List.of(), List.of());
+        when(anthropicClient.generateProjectEdit(any(ProjectEditRequest.class)))
+                .thenReturn(new ProjectEditResult(payload, "claude-sonnet-5", 500, 200));
+        lastPersistedEdit = new PersistedProjectEdit(null, List.of(addTask), List.of(), List.of());
+
+        AssistantRunView view = service.requestProjectEdit(USER, projectId, "add a task");
+
+        assertThat(view.status()).isEqualTo("SUCCEEDED");
+        assertThat(view.kind()).isEqualTo("PROJECT_EDIT");
+        assertThat(view.inputTokens()).isEqualTo(500);
+        assertThat(view.outputTokens()).isEqualTo(200);
+        assertThat(view.suggestedProject()).isNull();
+        assertThat(view.suggestedProjectEdit()).isNotNull();
+        assertThat(view.suggestedProjectEdit().status()).isEqualTo("PROPOSED");
+        assertThat(view.suggestedProjectEdit().taskOperations()).hasSize(1);
+        verify(suggestedProjectEdits, times(1)).save(any(AssistantSuggestedProjectEdit.class));
+    }
+
+    @Test
+    void requestProjectEdit_capsOperationsAtTheConfiguredMax() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectEditing());
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenReturn(project(projectId));
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectEditContextBuilder.build(any(), any(), any())).thenReturn(editContext());
+        properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
+                500_000, null, null, null, null, new AssistantProperties.ProjectEdit(2));
+        service = newService();
+        List<TaskOperationPayload> fiveOps = java.util.stream.IntStream.range(0, 5)
+                .mapToObj(i -> new TaskOperationPayload("ADD", null, "n" + i, null, "Task " + i, null, false, DAY,
+                        DAY, null))
+                .toList();
+        ProjectEditPayload payload = new ProjectEditPayload(null, fiveOps, List.of(), List.of());
+        when(anthropicClient.generateProjectEdit(any(ProjectEditRequest.class)))
+                .thenReturn(new ProjectEditResult(payload, "claude-sonnet-5", 100, 100));
+        lastPersistedEdit = new PersistedProjectEdit(null, fiveOps.subList(0, 2), List.of(), List.of());
+
+        AssistantRunView view = service.requestProjectEdit(USER, projectId, "add many tasks");
+
+        assertThat(view.suggestedProjectEdit().taskOperations()).hasSize(2);
+    }
+
+    @Test
+    void requestProjectEdit_onUpstreamFailure_marksTheRunFailedAndRethrowsAsAProblem() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToProjectEditing());
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenReturn(project(projectId));
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(projectEditContextBuilder.build(any(), any(), any())).thenReturn(editContext());
+        when(anthropicClient.generateProjectEdit(any(ProjectEditRequest.class)))
+                .thenThrow(new AssistantUpstreamException(false, "The assistant could not complete this request.",
+                        null));
+
+        assertThatThrownBy(() -> service.requestProjectEdit(USER, projectId, "add a task"))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(502));
+        verify(suggestedProjectEdits, never()).save(any());
+    }
+
     // --- requestSummary ---------------------------------------------------------
 
     @Test
     void requestSummary_whenInstanceDisabled_throwsForbidden() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
@@ -420,7 +576,7 @@ class AssistantRunServiceTest {
     @Test
     void requestSummary_whenNotOptedIn_throwsForbidden() {
         when(accounts.assistantPreferences(USER))
-                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, false, null, "balanced"));
 
         assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
                 .isInstanceOf(ApiException.class)
@@ -472,7 +628,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestJournalReflection_whenInstanceDisabled_throwsForbidden() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
@@ -485,7 +641,7 @@ class AssistantRunServiceTest {
     @Test
     void requestJournalReflection_whenNotOptedIn_throwsForbidden() {
         when(accounts.assistantPreferences(USER))
-                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, false, null, "balanced"));
 
         assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
                 .isInstanceOf(ApiException.class)

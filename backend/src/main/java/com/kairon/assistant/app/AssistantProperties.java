@@ -20,7 +20,8 @@ public record AssistantProperties(
         TodoSuggestions todoSuggestions,
         ProjectPlan projectPlan,
         Summary summary,
-        JournalReflection journalReflection) {
+        JournalReflection journalReflection,
+        ProjectEdit projectEdit) {
 
     public AssistantProperties {
         if (model == null || model.isBlank()) {
@@ -43,6 +44,9 @@ public record AssistantProperties(
         }
         if (journalReflection == null) {
             journalReflection = new JournalReflection(0, 0, null);
+        }
+        if (projectEdit == null) {
+            projectEdit = new ProjectEdit(0);
         }
     }
 
@@ -84,6 +88,22 @@ public record AssistantProperties(
         public ProjectPlan {
             if (maxTasks <= 0) {
                 maxTasks = 40;
+            }
+        }
+    }
+
+    /**
+     * Output-size cap for {@code PROJECT_EDIT} runs (M9.5 D9) — the total
+     * operation count ({@code taskOperations} + {@code dependencyOperations}
+     * + {@code reorderOperations} entries, each reorder entry counted by its
+     * {@code orderedRefs} size), not a task count, since this payload's size
+     * isn't just "how many tasks."
+     */
+    public record ProjectEdit(int maxOperations) {
+
+        public ProjectEdit {
+            if (maxOperations <= 0) {
+                maxOperations = 60;
             }
         }
     }

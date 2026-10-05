@@ -11,12 +11,13 @@ Conventions:
 - Soft delete: `deleted_at timestamptz null` on entities that mobile will sync
   (todo items, journal entries, projects, project tasks). Queries filter it out.
 - The `assistant` module's tables (`assistant_run`, `assistant_suggested_task`,
-  `assistant_suggested_project`, `assistant_batch`) are **not** mobile-synced
-  and carry **no soft delete**: a run is regenerable and is hard-deleted when
-  the user removes it (which is also how stored prompt/journal excerpts are
-  purged). `assistant_batch` carries no user-identifying content of its own
-  (bookkeeping only for M10's scheduled-sweep batch dispatch), so it is never
-  deleted alongside a single user's run.
+  `assistant_suggested_project`, `assistant_suggested_project_edit`,
+  `assistant_batch`) are **not** mobile-synced and carry **no soft delete**:
+  a run is regenerable and is hard-deleted when the user removes it (which is
+  also how stored prompt/journal excerpts are purged). `assistant_batch`
+  carries no user-identifying content of its own (bookkeeping only for M10's
+  scheduled-sweep batch dispatch), so it is never deleted alongside a single
+  user's run.
 - Enums are stored as `varchar` with a `check` constraint, mapped in JPA with
   `@Enumerated(EnumType.STRING)`.
 - `day` columns are `date` (no time); interpreted in the owning user's timezone.
@@ -44,6 +45,8 @@ erDiagram
     todo_item ||--o| assistant_suggested_task     : "accepted as"
     assistant_run ||--o| assistant_suggested_project : produces
     project ||--o| assistant_suggested_project    : "accepted as"
+    assistant_run ||--o| assistant_suggested_project_edit : produces
+    project ||--o{ assistant_suggested_project_edit : "edited via"
     assistant_batch ||--o{ assistant_run           : "batches (scheduled sweep only)"
 
     app_user {
@@ -210,6 +213,17 @@ erDiagram
         jsonb plan
         varchar status
         uuid accepted_project_id FK
+        timestamptz created_at
+        timestamptz updated_at
+        bigint version
+    }
+    assistant_suggested_project_edit {
+        uuid id PK
+        uuid run_id FK
+        uuid user_id FK
+        uuid project_id FK
+        jsonb diff
+        varchar status
         timestamptz created_at
         timestamptz updated_at
         bigint version
@@ -383,7 +397,7 @@ dependency graph).
 | --- | --- | --- |
 | `id` | uuid PK | |
 | `user_id` | uuid FK → app_user | |
-| `kind` | varchar | `TODO_SUGGESTION` \| `WEEKLY_SUMMARY` \| `MONTHLY_SUMMARY` \| `JOURNAL_REFLECTION` \| `PROJECT_GENERATION` (added `V008`, M8.5) |
+| `kind` | varchar | `TODO_SUGGESTION` \| `WEEKLY_SUMMARY` \| `MONTHLY_SUMMARY` \| `JOURNAL_REFLECTION` \| `PROJECT_GENERATION` (added `V008`, M8.5) \| `PROJECT_EDIT` (added `V011`, M9.5) |
 | `status` | varchar | `PENDING` \| `RUNNING` \| `SUCCEEDED` \| `FAILED` |
 | `period_start`,`period_end` | date null | the window the run plans for / summarises |
 | `model` | varchar | model id actually used, e.g. `claude-sonnet-5` |
@@ -455,6 +469,29 @@ row (parent tasks before children). The assistant never writes those rows
 itself — accept is always a user action, same discipline as
 `assistant_suggested_task`.
 
+### `assistant_suggested_project_edit`  (module: assistant)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `run_id` | uuid FK → assistant_run, unique | the `PROJECT_EDIT` run that produced it (1:1) |
+| `user_id` | uuid FK → app_user | denormalised for scoping |
+| `project_id` | uuid FK → project | the existing project this diff targets |
+| `diff` | jsonb | the proposed diff against that project's current state: an optional whole-new-value `projectChanges` block (name/description/size/dates/category), a `taskOperations` list (`ADD`/`UPDATE`/`REMOVE`, cross-referencing a new task by a caller-chosen string `key` or an existing one by its real id), a `dependencyOperations` list (`ADD`/`REMOVE` — no update), and a `reorderOperations` list (a full new sibling order per parent group) — see `milestones/M9.5-ai-project-editing.md` §3 |
+| `status` | varchar | `PROPOSED` \| `ACCEPTED` \| `DISMISSED` |
+| `created_at`,`updated_at`,`version` | | |
+
+Indexes: `unique(run_id)`, `index(user_id, status)`, `index(project_id)`.
+Unlike `assistant_suggested_project`, accepting never creates a new row in
+`project` — it mutates the one `project_id` this row already targets, so
+there's no `accepted_project_id` column. Applying an accepted diff is one
+transactional call, **`ProjectsApi.applyProjectEdit`** (module: projects),
+which reuses the same `ProjectService`/`ProjectTaskService`/
+`TaskDependencyService`/`ProjectCategoryService` collaborators a manual
+create/PATCH already goes through. A stale or unresolvable reference (a task
+deleted since the diff was proposed, an unknown same-diff key) is dropped and
+logged, never failing the whole apply.
+
 ### `assistant_batch`  (module: assistant)
 
 | Column | Type | Notes |
@@ -488,12 +525,13 @@ No table: stored in `app_user.preferences` (jsonb), e.g.
   "executionSummaries": { "enabled": false },
   "journalReflection":  { "enabled": false },
   "projectGeneration":  { "enabled": false },
+  "projectEditing":     { "enabled": false },
   "modelOverride": null,
   "tone": "balanced"
 }
 ```
 
-All four feature flags default off and are toggled independently, so a user can
+All five feature flags default off and are toggled independently, so a user can
 enable planning help without enabling journal reflection.
 
 ---
@@ -533,6 +571,7 @@ tracking the roadmap:
 | `V008__project_plan.sql` | widens `assistant_run.kind` to add `PROJECT_GENERATION`; `assistant_suggested_project` (M8.5) |
 | `V009__project_category_rank.sql` | per-category manual project ordering (`project.category_rank`) |
 | `V010__assistant_batch.sql` | `assistant_batch` + `assistant_run.batch_id` (M10 — the Batch API migration for M9's scheduled sweep; M10's own `JOURNAL_REFLECTION` run needed no migration at all) |
+| `V011__project_edit.sql` | widens `assistant_run.kind` to add `PROJECT_EDIT`; `assistant_suggested_project_edit` (M9.5 — renumbered from this feature's own originally-planned `V010` once `V010__assistant_batch.sql` landed first) |
 | `V0xx__…` | tags, attachments, recurrence, etc. as they land |
 
 Repeatable migrations (`R__…`) only for views/functions if introduced.

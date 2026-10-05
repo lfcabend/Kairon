@@ -1,13 +1,16 @@
 import type {
+  AcceptProjectEditBody,
   AcceptProjectPlanBody,
   AssistantRun,
   AssistantRunListFilter,
   AssistantRunPage,
   AssistantSuggestedTask,
+  GenerateProjectEditBody,
   GenerateProjectPlanBody,
   JournalReflectionRequestBody,
   Project,
   RequestSummaryBody,
+  SuggestedProjectEdit,
   SuggestedProjectPlan,
   TodoItem,
   TodoSuggestionBody,
@@ -41,6 +44,18 @@ export const assistantApi = {
 
   dismissProjectPlan: (id: string) =>
     apiFetch<SuggestedProjectPlan>(`/assistant/suggested-projects/${id}:dismiss`, { method: "POST" }),
+
+  generateProjectEdit: (body: GenerateProjectEditBody) =>
+    apiFetch<AssistantRun>("/assistant/project-edits", { method: "POST", body }),
+
+  acceptProjectEdit: (id: string, excludedOperationKeys: string[]) =>
+    apiFetch<Project>(`/assistant/suggested-project-edits/${id}:accept`, {
+      method: "POST",
+      body: { excludedOperationKeys } satisfies AcceptProjectEditBody,
+    }),
+
+  dismissProjectEdit: (id: string) =>
+    apiFetch<SuggestedProjectEdit>(`/assistant/suggested-project-edits/${id}:dismiss`, { method: "POST" }),
 
   requestSummary: (body: RequestSummaryBody) =>
     apiFetch<AssistantRun>("/assistant/summaries", { method: "POST", body }),

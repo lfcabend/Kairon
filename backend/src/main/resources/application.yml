@@ -135,6 +135,11 @@ kairon:
       # Cap on a generated plan's task count (M8.5 D7) — bounds prompt/response
       # cost and review-screen size for a runaway description.
       max-tasks: 40
+    project-edit:
+      # Cap on a proposed edit diff's total operation count (M9.5 D9) — tasks +
+      # dependencies + reorder entries — bounds prompt/response cost and
+      # review-screen size for a runaway description against a large project.
+      max-operations: 60
     summary:
       # Both cron triggers and `zone` default to UTC (M9 D8/D9) — the app's
       # only Clock bean is Clock.systemUTC(), and "yesterday" (SummaryScheduler)
@@ -168,5 +173,6 @@ kairon:
       paths:
         - /api/v1/assistant/todo-suggestions
         - /api/v1/assistant/project-plan
+        - /api/v1/assistant/project-edits
         - /api/v1/assistant/summaries
         - /api/v1/assistant/journal-reflection

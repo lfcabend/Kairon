@@ -54,20 +54,26 @@ public class ProjectTaskService implements ProjectsApi {
     private final ProjectsProperties properties;
     private final Clock clock;
     private final ProjectCategoryService categoryService;
-    // @Lazy breaks the constructor cycle: ProjectPlanImportService itself depends
-    // on this service (to create each planned task) — M8.5 D3.
+    private final TaskDependencyService dependencyService;
+    // @Lazy breaks the constructor cycle: ProjectPlanImportService/ProjectEditApplyService
+    // themselves depend on this service (to create/patch/delete each task) — M8.5 D3,
+    // M9.5 D1.
     private final ProjectPlanImportService planImportService;
+    private final ProjectEditApplyService editApplyService;
 
     public ProjectTaskService(ProjectTaskRepository tasks, ProjectRepository projects,
             TaskDependencyRepository dependencies, ProjectsProperties properties, Clock clock,
-            ProjectCategoryService categoryService, @Lazy ProjectPlanImportService planImportService) {
+            ProjectCategoryService categoryService, TaskDependencyService dependencyService,
+            @Lazy ProjectPlanImportService planImportService, @Lazy ProjectEditApplyService editApplyService) {
         this.tasks = tasks;
         this.projects = projects;
         this.dependencies = dependencies;
         this.properties = properties;
         this.clock = clock;
         this.categoryService = categoryService;
+        this.dependencyService = dependencyService;
         this.planImportService = planImportService;
+        this.editApplyService = editApplyService;
     }
 
     public record CreateCommand(
@@ -83,7 +89,7 @@ public class ProjectTaskService implements ProjectsApi {
     }
 
     public ProjectTaskPage list(UserId userId, UUID projectId, Integer page, Integer size, List<String> sort) {
-        Project project = requireProject(userId, projectId);
+        Project project = requireOwnedProject(userId, projectId);
         Pageable pageable = PageRequest.of(page != null ? page : 0,
                 size != null ? size : properties.taskListDefaultSize(), SortParsing.parse(sort));
         Page<ProjectTask> result = tasks
@@ -97,7 +103,7 @@ public class ProjectTaskService implements ProjectsApi {
 
     @Transactional
     public ProjectTaskView create(UserId userId, UUID projectId, CreateCommand command) {
-        Project project = requireProject(userId, projectId);
+        Project project = requireOwnedProject(userId, projectId);
         String name = requireName(command.name());
         validateParent(projectId, command.parentTaskId());
         int position = nextPosition(projectId, command.parentTaskId());
@@ -158,7 +164,7 @@ public class ProjectTaskService implements ProjectsApi {
 
     @Transactional
     public List<ProjectTaskView> reorder(UserId userId, UUID projectId, UUID parentTaskId, List<UUID> orderedIds) {
-        Project project = requireProject(userId, projectId);
+        Project project = requireOwnedProject(userId, projectId);
         List<ProjectTask> current = tasks
                 .findByProjectIdAndParentTaskIdAndDeletedAtIsNullOrderByPositionAsc(projectId, parentTaskId);
         Map<UUID, ProjectTask> byId = new HashMap<>();
@@ -282,9 +288,40 @@ public class ProjectTaskService implements ProjectsApi {
         return result;
     }
 
+    @Override
+    public ProjectView requireProject(UserId userId, UUID projectId) {
+        return ProjectMapper.toView(requireOwnedProject(userId, projectId));
+    }
+
+    @Override
+    public List<ProjectTaskView> tasksForProject(UserId userId, UUID projectId) {
+        Project project = requireOwnedProject(userId, projectId);
+        List<ProjectTaskView> views = tasks.findByProjectIdAndDeletedAtIsNull(projectId).stream()
+                .map(t -> ProjectTaskMapper.toView(t, project))
+                .toList();
+        log.debug("Listed {} task(s) (unpaginated) userId={} projectId={}", views.size(), userId.value(), projectId);
+        return views;
+    }
+
+    @Override
+    public List<DependencyEdge> dependenciesForProject(UserId userId, UUID projectId) {
+        requireOwnedProject(userId, projectId);
+        List<DependencyEdge> edges = dependencyService.list(userId, projectId).stream()
+                .map(d -> new DependencyEdge(d.id(), d.predecessorId(), d.successorId(), d.type(), d.lagDays()))
+                .toList();
+        log.debug("Listed {} dependency edge(s) userId={} projectId={}", edges.size(), userId.value(), projectId);
+        return edges;
+    }
+
+    @Override
+    @Transactional
+    public ProjectView applyProjectEdit(UserId userId, UUID projectId, ProjectEditCommand command) {
+        return editApplyService.applyProjectEdit(userId, projectId, command);
+    }
+
     // --- internals -----------------------------------------------------------
 
-    private Project requireProject(UserId userId, UUID projectId) {
+    private Project requireOwnedProject(UserId userId, UUID projectId) {
         return projects.findByIdAndUserIdAndDeletedAtIsNull(projectId, userId.value())
                 .orElseThrow(() -> {
                     log.debug("Project {} not visible to userId={} (missing, deleted, or foreign)",

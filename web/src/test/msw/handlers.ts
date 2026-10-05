@@ -11,6 +11,7 @@ import type {
   Project,
   ProjectCategory,
   ProjectTask,
+  SuggestedProjectEdit,
   SuggestedProjectPlan,
   SummaryPeriod,
   TaskDependency,
@@ -599,6 +600,10 @@ let suggestedProjects: SuggestedProjectPlan[] = [];
 let suggestedProjectSeq = 0;
 /** What the next `POST /assistant/project-plan` call returns — set via `seedProjectPlan`. */
 let nextProjectPlan: Partial<SuggestedProjectPlan> | null = null;
+let suggestedProjectEdits: SuggestedProjectEdit[] = [];
+let suggestedProjectEditSeq = 0;
+/** What the next `POST /assistant/project-edits` call returns — set via `seedProjectEdit`. */
+let nextProjectEdit: Partial<SuggestedProjectEdit> | null = null;
 
 // GET /assistant/runs/:id for a WEEKLY_SUMMARY/MONTHLY_SUMMARY run reports
 // PENDING on the first poll and SUCCEEDED from the second poll onward — lets
@@ -614,6 +619,9 @@ export function resetAssistantStore() {
   suggestedProjects = [];
   suggestedProjectSeq = 0;
   nextProjectPlan = null;
+  suggestedProjectEdits = [];
+  suggestedProjectEditSeq = 0;
+  nextProjectEdit = null;
   summaryPollCounts = new Map();
 }
 
@@ -625,6 +633,11 @@ export function seedAssistantSuggestions(items: Partial<AssistantSuggestedTask>[
 /** Configures what the next project-plan request returns (default: a small 3-task canned plan). */
 export function seedProjectPlan(plan: Partial<SuggestedProjectPlan>) {
   nextProjectPlan = plan;
+}
+
+/** Configures what the next project-edit request returns (default: a single canned ADD operation). */
+export function seedProjectEdit(diff: Partial<SuggestedProjectEdit>) {
+  nextProjectEdit = diff;
 }
 
 /** Pushes a fully-formed run straight into the store — e.g. a `SUCCEEDED` summary, skipping the poll cycle. */
@@ -673,10 +686,17 @@ function isJournalReflectionEnabled(): boolean {
   return assistant?.journalReflection?.enabled === true;
 }
 
+function isProjectEditingEnabled(): boolean {
+  const assistant = (meResponse.preferences as { assistant?: { projectEditing?: { enabled?: boolean } } })
+    .assistant;
+  return assistant?.projectEditing?.enabled === true;
+}
+
 const CANNED_REFLECTION_MARKDOWN =
   "### Patterns\n\nA canned test reflection — no real Anthropic call was made.\n\n" +
   "### Worth noticing\n\nNothing in particular; this is a stub.\n\n" +
   "### A question to sit with\n\nWhat would make next week feel different?\n";
+
 
 const CANNED_SUMMARY_MARKDOWN =
   "## This week: steady progress\n\nA canned test narrative — no real Anthropic call was made.\n\n" +
@@ -727,6 +747,28 @@ function cascadeExclude(tasks: PlannedTask[], excludedTaskKeys: string[]): Set<s
     if (t.parentKey && excluded.has(t.parentKey)) excluded.add(t.key);
   }
   return excluded;
+}
+
+function defaultProjectEdit(): Partial<SuggestedProjectEdit> {
+  return {
+    projectChanges: null,
+    taskOperations: [
+      { op: "ADD", existingTaskId: null, key: "n1", parentRef: null, name: "Final inspection",
+        description: null, isMilestone: false, plannedStart: null, plannedEnd: null, estimateHours: null },
+    ],
+    dependencyOperations: [],
+    reorderOperations: [],
+  };
+}
+
+/** Positional exclusion keys the backend expects: "project", "task:<i>", "dependency:<i>" (M9.5 D1). */
+function excludedNewTaskKeysFor(diff: SuggestedProjectEdit, excludedOperationKeys: string[]): Set<string> {
+  const excluded = new Set(excludedOperationKeys);
+  const result = new Set<string>();
+  diff.taskOperations.forEach((op, i) => {
+    if (op.op === "ADD" && op.key && excluded.has(`task:${i}`)) result.add(op.key);
+  });
+  return result;
 }
 
 const assistantHandlers = [
@@ -1027,6 +1069,195 @@ const assistantHandlers = [
     if (!row) return problem(404, "Suggested project not found.");
     if (row.status !== "PROPOSED") {
       return problem(409, `This project plan was already ${row.status.toLowerCase()}.`);
+    }
+    row.status = "DISMISSED";
+    return HttpResponse.json(row);
+  }),
+
+  http.post(/\/api\/v1\/assistant\/project-edits$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!isProjectEditingEnabled()) {
+      return problem(403, "You haven't enabled project editing in Settings.");
+    }
+    const body = (await request.json()) as { projectId: string; description: string };
+    const project = liveProjects().find((p) => p.id === body.projectId);
+    if (!project) return problem(404, "Project not found.");
+    assistantRunSeq += 1;
+    const runId = `assistant-run-${assistantRunSeq}`;
+    suggestedProjectEditSeq += 1;
+    const diffPartial = { ...defaultProjectEdit(), ...nextProjectEdit };
+    const suggestedProjectEdit: SuggestedProjectEdit = {
+      id: diffPartial.id ?? `suggested-edit-${suggestedProjectEditSeq}`,
+      runId,
+      status: "PROPOSED",
+      projectId: project.id,
+      projectChanges: diffPartial.projectChanges ?? null,
+      taskOperations: diffPartial.taskOperations ?? [],
+      dependencyOperations: diffPartial.dependencyOperations ?? [],
+      reorderOperations: diffPartial.reorderOperations ?? [],
+    };
+    suggestedProjectEdits.push(suggestedProjectEdit);
+    const run: AssistantRun = {
+      id: runId,
+      kind: "PROJECT_EDIT",
+      status: "SUCCEEDED",
+      model: "claude-sonnet-5",
+      inputTokens: 900,
+      outputTokens: 300,
+      createdAt: new Date().toISOString(),
+      suggestions: [],
+      suggestedProjectEdit,
+    };
+    assistantRuns.push(run);
+    return HttpResponse.json(run, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-project-edits\/([^/]+):accept$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":accept", ""),
+    );
+    const row = suggestedProjectEdits.find((e) => e.id === id);
+    if (!row) return problem(404, "Suggested project edit not found.");
+    if (row.status !== "PROPOSED") {
+      return problem(409, `This project edit was already ${row.status.toLowerCase()}.`);
+    }
+    const body = (await request.json().catch(() => ({}))) as { excludedOperationKeys?: string[] };
+    const excludedKeys = new Set(body.excludedOperationKeys ?? []);
+    const excludedNewTaskKeys = excludedNewTaskKeysFor(row, body.excludedOperationKeys ?? []);
+    const projectRow = projects.find((p) => p.id === row.projectId);
+    if (!projectRow) return problem(404, "Project not found.");
+
+    function resolveRef(ref: string | null, idByKey: Map<string, string>): string | null {
+      if (!ref) return null;
+      const existing = tasks.find((t) => t.id === ref);
+      return existing ? existing.id : idByKey.get(ref) ?? null;
+    }
+
+    if (row.projectChanges && !excludedKeys.has("project")) {
+      const changes = row.projectChanges;
+      let categoryId = changes.categoryId;
+      if (!categoryId && changes.categoryName) {
+        const existingCategory = categories.find(
+          (c) => c.name.toLowerCase() === changes.categoryName!.toLowerCase(),
+        );
+        if (existingCategory) {
+          categoryId = existingCategory.id;
+        } else {
+          const maxPos = categories.reduce((m, c) => Math.max(m, c.position), 0);
+          const created = makeCategory({ name: changes.categoryName, position: maxPos + 100 });
+          categories.push(created);
+          categoryId = created.id;
+        }
+      }
+      Object.assign(projectRow, {
+        name: changes.name ?? projectRow.name,
+        description: changes.description ?? projectRow.description,
+        size: changes.size ?? projectRow.size,
+        startDate: changes.startDate ?? projectRow.startDate,
+        endDate: changes.endDate ?? projectRow.endDate,
+        categoryId: categoryId ?? projectRow.categoryId,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    const removeOps = row.taskOperations.filter((op, i) => op.op === "REMOVE" && !excludedKeys.has(`task:${i}`));
+    for (const op of removeOps) {
+      const target = tasks.find((t) => t.id === op.existingTaskId);
+      if (!target) continue;
+      target.removed = true;
+      const cascadedIds = [target.id];
+      for (const t of tasks) {
+        if (t.parentTaskId === target.id) {
+          t.removed = true;
+          cascadedIds.push(t.id);
+        }
+      }
+      dependencies = dependencies.filter(
+        (d) => !cascadedIds.includes(d.predecessorId) && !cascadedIds.includes(d.successorId),
+      );
+    }
+
+    const idByKey = new Map<string, string>();
+    const addOps = row.taskOperations.filter(
+      (op, i) => op.op === "ADD" && !excludedKeys.has(`task:${i}`) && !(op.parentRef && excludedNewTaskKeys.has(op.parentRef)),
+    );
+    const newKeys = new Set(addOps.map((op) => op.key));
+    const orderedAdds = [
+      ...addOps.filter((op) => !op.parentRef || !newKeys.has(op.parentRef)),
+      ...addOps.filter((op) => op.parentRef && newKeys.has(op.parentRef)),
+    ];
+    for (const op of orderedAdds) {
+      const parentTaskId = resolveRef(op.parentRef, idByKey);
+      const siblings = liveTasks().filter((t) => t.projectId === projectRow.id && t.parentTaskId === parentTaskId);
+      const maxPos = siblings.reduce((m, t) => Math.max(m, t.position), 0);
+      const created = makeTask({
+        projectId: projectRow.id,
+        parentTaskId,
+        name: op.name ?? "",
+        description: op.description,
+        isMilestone: op.isMilestone,
+        plannedStart: op.plannedStart,
+        plannedEnd: op.plannedEnd,
+        estimateHours: op.estimateHours,
+        position: maxPos + 100,
+      });
+      tasks.push(created);
+      if (op.key) idByKey.set(op.key, created.id);
+    }
+
+    row.taskOperations.forEach((op, i) => {
+      if (op.op !== "UPDATE" || excludedKeys.has(`task:${i}`)) return;
+      const target = tasks.find((t) => t.id === op.existingTaskId);
+      if (!target) return;
+      Object.assign(target, {
+        name: op.name ?? target.name,
+        description: op.description ?? target.description,
+        isMilestone: op.isMilestone,
+        plannedStart: op.plannedStart,
+        plannedEnd: op.plannedEnd,
+        estimateHours: op.estimateHours,
+        parentTaskId: resolveRef(op.parentRef, idByKey) ?? target.parentTaskId,
+        updatedAt: new Date().toISOString(),
+      });
+    });
+
+    for (const op of row.reorderOperations) {
+      const orderedIds = op.orderedRefs.map((ref) => resolveRef(ref, idByKey));
+      if (orderedIds.some((refId) => !refId)) continue;
+      orderedIds.forEach((taskId, i) => {
+        const t = tasks.find((row2) => row2.id === taskId);
+        if (t) t.position = (i + 1) * 100;
+      });
+    }
+
+    row.dependencyOperations.forEach((op, i) => {
+      if (op.op !== "REMOVE" || excludedKeys.has(`dependency:${i}`)) return;
+      dependencies = dependencies.filter((d) => d.id !== op.existingDependencyId);
+    });
+    row.dependencyOperations.forEach((op, i) => {
+      if (op.op !== "ADD" || excludedKeys.has(`dependency:${i}`)) return;
+      const predecessorId = resolveRef(op.predecessorRef, idByKey);
+      const successorId = resolveRef(op.successorRef, idByKey);
+      if (!predecessorId || !successorId) return;
+      dependencies.push(
+        makeDependency({ predecessorId, successorId, type: op.type ?? "FS", lagDays: op.lagDays ?? 0 }),
+      );
+    });
+
+    row.status = "ACCEPTED";
+    return HttpResponse.json(projectRow, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/suggested-project-edits\/([^/]+):dismiss$/, ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const id = decodeURIComponent(
+      new URL(request.url).pathname.split("/").pop()!.replace(":dismiss", ""),
+    );
+    const row = suggestedProjectEdits.find((e) => e.id === id);
+    if (!row) return problem(404, "Suggested project edit not found.");
+    if (row.status !== "PROPOSED") {
+      return problem(409, `This project edit was already ${row.status.toLowerCase()}.`);
     }
     row.status = "DISMISSED";
     return HttpResponse.json(row);

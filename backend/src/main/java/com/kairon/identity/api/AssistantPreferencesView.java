@@ -14,6 +14,7 @@ public record AssistantPreferencesView(
         boolean executionSummariesEnabled,
         boolean journalReflectionEnabled,
         boolean projectGenerationEnabled,
+        boolean projectEditingEnabled,
         String modelOverride,
         String tone) {
 }

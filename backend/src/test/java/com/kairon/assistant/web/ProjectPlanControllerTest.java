@@ -58,7 +58,7 @@ class ProjectPlanControllerTest {
                 "PROPOSED", "Kitchen remodel", "desc", "M", DAY, DAY.plusDays(30), null, null, List.of(), List.of(),
                 null);
         return new AssistantRunView(id, "PROJECT_GENERATION", "SUCCEEDED", "claude-sonnet-5", DAY, DAY.plusDays(30),
-                640, 890, null, Instant.parse("2026-09-25T08:00:00Z"), List.of(), suggestedProject, null);
+                640, 890, null, Instant.parse("2026-09-25T08:00:00Z"), List.of(), suggestedProject, null, null);
     }
 
     @Test

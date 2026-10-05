@@ -346,6 +346,8 @@ export interface AssistantRun {
   suggestions: AssistantSuggestedTask[];
   /** Set only for a `PROJECT_GENERATION` run (M8.5) — `suggestions` is set only for `TODO_SUGGESTION`. */
   suggestedProject?: SuggestedProjectPlan | null;
+  /** Set only for a `PROJECT_EDIT` run (M9.5). */
+  suggestedProjectEdit?: SuggestedProjectEdit | null;
   /**
    * Set only once a `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` run reaches `SUCCEEDED`
    * (M9) — the model's narrative plus a deterministic stats table, as one
@@ -393,6 +395,7 @@ export interface AssistantPreferences {
   executionSummaries: { enabled: boolean };
   journalReflection: { enabled: boolean };
   projectGeneration: { enabled: boolean };
+  projectEditing: { enabled: boolean };
   modelOverride: string | null;
   tone: string;
 }
@@ -447,6 +450,76 @@ export interface GenerateProjectPlanBody {
 
 export interface AcceptProjectPlanBody {
   excludedTaskKeys: string[];
+}
+
+// --- AI project editing (M9.5) ------------------------------------------------
+
+/** Present only when the project's own fields are changing; every field carries its complete new value. */
+export interface ProjectFieldChanges {
+  name: string | null;
+  description: string | null;
+  size: ProjectSize | null;
+  startDate: string | null;
+  endDate: string | null;
+  /** Set when the model matched one of the user's existing categories by name. */
+  categoryId: string | null;
+  /** The category's display name — set alongside `categoryId` for a match, alone for a new one to create on accept. */
+  categoryName: string | null;
+}
+
+/**
+ * `op` is `ADD`, `UPDATE`, or `REMOVE`. For `ADD`, `key` names this new task
+ * for other operations in the same diff to reference before it exists. For
+ * `UPDATE`/`REMOVE`, `existingTaskId` is the real id. `parentRef` (`ADD`/
+ * `UPDATE`) is either an existing task's real id or another `ADD`'s key.
+ */
+export interface TaskOperation {
+  op: "ADD" | "UPDATE" | "REMOVE";
+  existingTaskId: string | null;
+  key: string | null;
+  parentRef: string | null;
+  name: string | null;
+  description: string | null;
+  isMilestone: boolean;
+  plannedStart: string | null;
+  plannedEnd: string | null;
+  estimateHours: number | null;
+}
+
+/** `op` is `ADD` or `REMOVE` — there's no update for a dependency (D4); change type/lag via remove + add. */
+export interface DependencyOperation {
+  op: "ADD" | "REMOVE";
+  existingDependencyId: string | null;
+  predecessorRef: string | null;
+  successorRef: string | null;
+  type: TaskDependencyType | null;
+  lagDays: number | null;
+}
+
+/** A full new sibling order for one parent group (`parentRef: null` is the top-level group). */
+export interface ReorderOperation {
+  parentRef: string | null;
+  orderedRefs: string[];
+}
+
+export interface SuggestedProjectEdit {
+  id: string;
+  runId: string;
+  status: SuggestedTaskStatus;
+  projectId: string;
+  projectChanges: ProjectFieldChanges | null;
+  taskOperations: TaskOperation[];
+  dependencyOperations: DependencyOperation[];
+  reorderOperations: ReorderOperation[];
+}
+
+export interface GenerateProjectEditBody {
+  projectId: string;
+  description: string;
+}
+
+export interface AcceptProjectEditBody {
+  excludedOperationKeys: string[];
 }
 
 // --- About (/actuator/info) --------------------------------------------------

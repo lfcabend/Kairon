@@ -15,6 +15,9 @@ public interface AnthropicClient {
     /** Added for M8.5's project-generation feature. */
     ProjectPlanResult generateProjectPlan(ProjectPlanRequest request);
 
+    /** Added for M9.5's AI project-editing feature. */
+    ProjectEditResult generateProjectEdit(ProjectEditRequest request);
+
     /**
      * Added for M9's execution summaries — plain markdown narration, not a
      * structured-output call (docs/milestones/M9-execution-summaries.md D6).
@@ -55,6 +58,12 @@ public interface AnthropicClient {
     }
 
     record ProjectPlanResult(ProjectPlanPayload plan, String model, long inputTokens, long outputTokens) {
+    }
+
+    record ProjectEditRequest(String systemPrompt, String userContent, String model) {
+    }
+
+    record ProjectEditResult(ProjectEditPayload diff, String model, long inputTokens, long outputTokens) {
     }
 
     record SummaryRequest(String systemPrompt, String userContent, String model, String effort) {

@@ -41,19 +41,19 @@ class ProjectPlanImportService {
     private final ProjectService projectService;
     private final ProjectTaskService taskService;
     private final TaskDependencyService dependencyService;
-    private final ProjectCategoryService categoryService;
+    private final CategoryResolver categoryResolver;
 
     ProjectPlanImportService(ProjectService projectService, ProjectTaskService taskService,
-            TaskDependencyService dependencyService, ProjectCategoryService categoryService) {
+            TaskDependencyService dependencyService, CategoryResolver categoryResolver) {
         this.projectService = projectService;
         this.taskService = taskService;
         this.dependencyService = dependencyService;
-        this.categoryService = categoryService;
+        this.categoryResolver = categoryResolver;
     }
 
     @Transactional
     ProjectView createFromPlan(UserId userId, ProjectPlanCommand command) {
-        UUID categoryId = resolveCategory(userId, command.categoryId(), command.newCategoryName());
+        UUID categoryId = categoryResolver.resolve(userId, command.categoryId(), command.newCategoryName());
         ProjectView project = projectService.create(userId, new ProjectService.CreateCommand(
                 categoryId, command.name(), command.description(), command.size(), null,
                 command.startDate(), command.endDate()));
@@ -117,34 +117,6 @@ class ProjectPlanImportService {
             }
         }
         return result;
-    }
-
-    /**
-     * {@code categoryId} (an existing category matched earlier, in the
-     * assistant module) wins outright. Otherwise, a non-blank
-     * {@code newCategoryName} is created fresh; on a name conflict — someone
-     * created a same-named category in the time between plan generation and
-     * accept — the existing one is reused instead of failing the whole import.
-     */
-    private UUID resolveCategory(UserId userId, UUID categoryId, String newCategoryName) {
-        if (categoryId != null) {
-            return categoryId;
-        }
-        if (newCategoryName == null || newCategoryName.isBlank()) {
-            return null;
-        }
-        try {
-            UUID created = categoryService.create(userId,
-                    new ProjectCategoryService.CreateCommand(newCategoryName, null)).id();
-            log.info("Created category '{}' for plan import userId={}", newCategoryName, userId.value());
-            return created;
-        } catch (ApiException e) {
-            return categoryService.list(userId).stream()
-                    .filter(c -> c.name().equalsIgnoreCase(newCategoryName))
-                    .map(ProjectCategoryView::id)
-                    .findFirst()
-                    .orElseThrow(() -> e);
-        }
     }
 
     /** Stable partition — roots then children — sufficient since depth is capped at 2 levels. */

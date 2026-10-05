@@ -44,7 +44,7 @@ class JournalReflectionContextBuilderTest {
     @BeforeEach
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null, null,
-                new AssistantProperties.JournalReflection(30, 5, null));
+                new AssistantProperties.JournalReflection(30, 5, null), null);
         builder = new JournalReflectionContextBuilder(journal, todos, projects, properties);
         org.mockito.Mockito.lenient().when(todos.periodStats(any(), any(), any()))
                 .thenReturn(new TodoApi.PeriodStats(0, 0, 0));
@@ -110,7 +110,7 @@ class JournalReflectionContextBuilderTest {
     @Test
     void build_truncatesEntriesAtMaxEntriesOldestFirst() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null, null,
-                new AssistantProperties.JournalReflection(2, 5, null));
+                new AssistantProperties.JournalReflection(2, 5, null), null);
         builder = new JournalReflectionContextBuilder(journal, todos, projects, properties);
         when(journal.range(any(), any(), any())).thenReturn(List.of(
                 entry(START, null, "First", null),

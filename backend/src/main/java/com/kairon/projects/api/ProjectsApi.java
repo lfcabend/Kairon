@@ -69,6 +69,38 @@ public interface ProjectsApi {
      */
     List<ProjectCategorySummary> categories(UserId userId);
 
+    /**
+     * Resolves a project the caller owns; 404 if missing, foreign, or
+     * soft-deleted. Added for M9.5's AI project-editing feature, so the
+     * assistant module can read "the project as it stands today" without
+     * depending on {@code projects.app}/{@code projects.domain}.
+     */
+    ProjectView requireProject(UserId userId, UUID projectId);
+
+    /**
+     * All non-deleted tasks of a project the caller owns, unpaginated; 404 if
+     * the project itself isn't visible. Added for M9.5's edit-context
+     * building — the same reasoning as {@link #requireProject}.
+     */
+    List<ProjectTaskView> tasksForProject(UserId userId, UUID projectId);
+
+    /**
+     * All dependency edges of a project the caller owns; 404 if the project
+     * itself isn't visible. Added for M9.5's edit-context building.
+     */
+    List<DependencyEdge> dependenciesForProject(UserId userId, UUID projectId);
+
+    /**
+     * Applies an accepted edit diff to an existing project in one
+     * transaction — project field changes, task add/update/remove, sibling
+     * reordering, and dependency add/remove. A reference that no longer
+     * resolves (a stale task/dependency id, an unknown same-diff key) is
+     * dropped and logged, never failing the whole apply. Added for M9.5's
+     * AI project-editing feature (docs/milestones/M9.5-ai-project-editing.md
+     * D1/D8).
+     */
+    ProjectView applyProjectEdit(UserId userId, UUID projectId, ProjectEditCommand command);
+
     record ProjectPeriodStats(
             UUID projectId, String projectName, UUID categoryId, String categoryName,
             long tasksCompleted, BigDecimal estimateHoursCompleted, BigDecimal actualHoursCompleted) {
@@ -98,5 +130,50 @@ public interface ProjectsApi {
 
     record PlannedDependency(
             String predecessorKey, String successorKey, String type, Integer lagDays) {
+    }
+
+    /** A dependency edge, for cross-module reads (M9.5) — {@code projects.app}'s own {@code TaskDependencyView}
+     * stays internal; this is the thin equivalent exposed on the port. */
+    record DependencyEdge(UUID id, UUID predecessorTaskId, UUID successorTaskId, String type, int lagDays) {
+    }
+
+    /**
+     * An edit diff to apply to an existing project (M9.5). {@code projectChanges}
+     * is {@code null} when the project's own fields aren't changing;
+     * operations reference a task/dependency either by its real existing id
+     * (as a string) or, for a task being added in this same command, by a
+     * caller-chosen {@code key} — resolved existing-id-first, same convention
+     * as {@link ProjectPlanCommand}'s string keys.
+     */
+    record ProjectEditCommand(
+            ProjectFieldChanges projectChanges,
+            List<TaskOperation> taskOperations,
+            List<DependencyOperation> dependencyOperations,
+            List<ReorderOperation> reorderOperations) {
+    }
+
+    /** Present only when the project's own fields are changing; {@code categoryId}/{@code newCategoryName}
+     * are mutually exclusive, same convention as {@link ProjectPlanCommand}. */
+    record ProjectFieldChanges(
+            String name, String description, String size, LocalDate startDate, LocalDate endDate,
+            UUID categoryId, String newCategoryName) {
+    }
+
+    /** {@code op} is {@code ADD}, {@code UPDATE}, or {@code REMOVE}. An {@code UPDATE} carries the task's
+     * complete new field set, not a partial patch. */
+    record TaskOperation(
+            String op, UUID existingTaskId, String key, String parentRef,
+            String name, String description, boolean isMilestone,
+            LocalDate plannedStart, LocalDate plannedEnd, BigDecimal estimateHours) {
+    }
+
+    /** {@code op} is {@code ADD} or {@code REMOVE} — there's no dependency update (M9.5 D4). */
+    record DependencyOperation(
+            String op, UUID existingDependencyId, String predecessorRef, String successorRef,
+            String type, Integer lagDays) {
+    }
+
+    /** A full new sibling order for one parent group ({@code parentRef == null} is the top-level group). */
+    record ReorderOperation(String parentRef, List<String> orderedRefs) {
     }
 }

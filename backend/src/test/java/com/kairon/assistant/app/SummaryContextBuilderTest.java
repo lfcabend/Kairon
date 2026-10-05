@@ -41,7 +41,7 @@ class SummaryContextBuilderTest {
     @BeforeEach
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null,
-                new AssistantProperties.Summary(null, null, null, 2, null), null);
+                new AssistantProperties.Summary(null, null, null, 2, null), null, null);
         builder = new SummaryContextBuilder(todos, projects, properties);
         when(todos.periodStats(any(), any(), any())).thenReturn(new TodoApi.PeriodStats(9, 11, 3));
         when(projects.openTasksInActiveProjects(any())).thenReturn(List.of());

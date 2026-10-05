@@ -14,12 +14,18 @@ import com.kairon.assistant.domain.AssistantRun;
 import com.kairon.assistant.domain.AssistantRunKind;
 import com.kairon.assistant.domain.AssistantRunStatus;
 import com.kairon.assistant.domain.AssistantSuggestedProject;
+import com.kairon.assistant.domain.AssistantSuggestedProjectEdit;
 import com.kairon.assistant.domain.AssistantSuggestedTask;
 import com.kairon.assistant.llm.AnthropicClient;
+import com.kairon.assistant.llm.DependencyOperationPayload;
 import com.kairon.assistant.llm.PlannedTaskPayload;
+import com.kairon.assistant.llm.ProjectEditPayload;
 import com.kairon.assistant.llm.ProjectPlanPayload;
+import com.kairon.assistant.llm.ReorderOperationPayload;
 import com.kairon.assistant.llm.SuggestedTaskPayload;
+import com.kairon.assistant.llm.TaskOperationPayload;
 import com.kairon.assistant.repo.AssistantRunRepository;
+import com.kairon.assistant.repo.AssistantSuggestedProjectEditRepository;
 import com.kairon.assistant.repo.AssistantSuggestedProjectRepository;
 import com.kairon.assistant.repo.AssistantSuggestedTaskRepository;
 import com.kairon.common.error.ApiException;
@@ -27,6 +33,7 @@ import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
 import com.kairon.journal.api.JournalApi;
+import com.kairon.projects.api.ProjectsApi;
 import com.kairon.projects.api.ProjectsApi.ProjectCategorySummary;
 
 import tools.jackson.databind.ObjectMapper;
@@ -58,27 +65,34 @@ public class AssistantRunService {
     private final AssistantRunRepository runs;
     private final AssistantSuggestedTaskRepository suggestedTasks;
     private final AssistantSuggestedProjectRepository suggestedProjects;
+    private final AssistantSuggestedProjectEditRepository suggestedProjectEdits;
     private final AssistantProperties properties;
     private final UserAccountApi accounts;
+    private final ProjectsApi projectsApi;
     private final TodoSuggestionContextBuilder contextBuilder;
     private final ProjectPlanContextBuilder projectPlanContextBuilder;
+    private final ProjectEditContextBuilder projectEditContextBuilder;
     private final JournalApi journal;
     private final AnthropicClient anthropicClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
     public AssistantRunService(AssistantRunRepository runs, AssistantSuggestedTaskRepository suggestedTasks,
-            AssistantSuggestedProjectRepository suggestedProjects, AssistantProperties properties,
-            UserAccountApi accounts, TodoSuggestionContextBuilder contextBuilder,
-            ProjectPlanContextBuilder projectPlanContextBuilder, JournalApi journal,
-            AnthropicClient anthropicClient, ObjectMapper objectMapper, Clock clock) {
+            AssistantSuggestedProjectRepository suggestedProjects,
+            AssistantSuggestedProjectEditRepository suggestedProjectEdits, AssistantProperties properties,
+            UserAccountApi accounts, ProjectsApi projectsApi, TodoSuggestionContextBuilder contextBuilder,
+            ProjectPlanContextBuilder projectPlanContextBuilder, ProjectEditContextBuilder projectEditContextBuilder,
+            JournalApi journal, AnthropicClient anthropicClient, ObjectMapper objectMapper, Clock clock) {
         this.runs = runs;
         this.suggestedTasks = suggestedTasks;
         this.suggestedProjects = suggestedProjects;
+        this.suggestedProjectEdits = suggestedProjectEdits;
         this.properties = properties;
         this.accounts = accounts;
+        this.projectsApi = projectsApi;
         this.contextBuilder = contextBuilder;
         this.projectPlanContextBuilder = projectPlanContextBuilder;
+        this.projectEditContextBuilder = projectEditContextBuilder;
         this.journal = journal;
         this.anthropicClient = anthropicClient;
         this.objectMapper = objectMapper;
@@ -152,6 +166,43 @@ public class AssistantRunService {
             run.fail(e.sanitizedDetail());
             runs.save(run);
             log.warn("Project-plan run {} failed userId={} retryable={}",
+                    run.getId(), userId.value(), e.retryable());
+            throw e.toApiException();
+        }
+    }
+
+    @Transactional
+    public AssistantRunView requestProjectEdit(UserId userId, UUID projectId, String description) {
+        AssistantPreferencesView prefs = requireProjectEditingAvailable(userId);
+        projectsApi.requireProject(userId, projectId); // 404 fast, before any run row (D10)
+        requireWithinBudget(userId);
+
+        String model = resolveModel(prefs);
+        AssistantRun run = AssistantRun.pending(userId.value(), AssistantRunKind.PROJECT_EDIT, null, null, model);
+        runs.save(run);
+
+        ProjectEditContextBuilder.Context context = projectEditContextBuilder.build(userId, projectId, description);
+        run.start(context.inputSnapshot());
+        runs.save(run);
+
+        try {
+            AnthropicClient.ProjectEditResult result = anthropicClient.generateProjectEdit(
+                    new AnthropicClient.ProjectEditRequest(context.systemPrompt(), context.userContent(), model));
+
+            AssistantSuggestedProjectEdit saved = saveSuggestedEdit(run, projectId, result.diff(),
+                    context.categories());
+            run.succeed(result.inputTokens(), result.outputTokens());
+            runs.save(run);
+            PersistedProjectEdit persisted = objectMapper.convertValue(saved.getDiff(), PersistedProjectEdit.class);
+            log.info("Project-edit run {} succeeded userId={} projectId={} taskOps={} tokens={}+{}",
+                    run.getId(), userId.value(), projectId, persisted.taskOperations().size(),
+                    result.inputTokens(), result.outputTokens());
+            return AssistantMapper.toRunView(run, List.of(), null,
+                    AssistantMapper.toSuggestedProjectEditView(saved, persisted));
+        } catch (AssistantUpstreamException e) {
+            run.fail(e.sanitizedDetail());
+            runs.save(run);
+            log.warn("Project-edit run {} failed userId={} retryable={}",
                     run.getId(), userId.value(), e.retryable());
             throw e.toApiException();
         }
@@ -235,6 +286,13 @@ public class AssistantRunService {
                     .orElse(null);
             return AssistantMapper.toRunView(run, List.of(), suggestedProject);
         }
+        if (run.getKind() == AssistantRunKind.PROJECT_EDIT) {
+            AssistantSuggestedProjectEditView suggestedProjectEdit = suggestedProjectEdits.findByRunId(run.getId())
+                    .map(row -> AssistantMapper.toSuggestedProjectEditView(row,
+                            objectMapper.convertValue(row.getDiff(), PersistedProjectEdit.class)))
+                    .orElse(null);
+            return AssistantMapper.toRunView(run, List.of(), null, suggestedProjectEdit);
+        }
         List<AssistantSuggestedTask> tasks = run.getKind() == AssistantRunKind.TODO_SUGGESTION
                 ? suggestedTasks.findByRunIdOrderByPositionAsc(run.getId())
                 : List.of();
@@ -285,6 +343,59 @@ public class AssistantRunService {
         AssistantSuggestedProject saved = AssistantSuggestedProject.propose(run.getId(), run.getUserId(), planMap);
         suggestedProjects.save(saved);
         return saved;
+    }
+
+    private AssistantSuggestedProjectEdit saveSuggestedEdit(AssistantRun run, UUID projectId,
+            ProjectEditPayload payload, List<ProjectCategorySummary> categories) {
+        ProjectEditPayload capped = capProjectEditOperations(run.getId(), payload);
+        PersistedProjectEdit.PersistedProjectFieldChanges projectChanges = null;
+        if (capped.projectChanges() != null) {
+            CategoryResolution category = resolveCategory(capped.projectChanges().categoryName(), categories);
+            projectChanges = new PersistedProjectEdit.PersistedProjectFieldChanges(
+                    capped.projectChanges().name(), capped.projectChanges().description(),
+                    capped.projectChanges().size(), capped.projectChanges().startDate(),
+                    capped.projectChanges().endDate(), category.categoryId(), category.categoryName());
+        }
+        PersistedProjectEdit persisted = new PersistedProjectEdit(projectChanges, capped.taskOperations(),
+                capped.dependencyOperations(), capped.reorderOperations());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> diffMap = objectMapper.convertValue(persisted, Map.class);
+        AssistantSuggestedProjectEdit saved = AssistantSuggestedProjectEdit.propose(run.getId(), run.getUserId(),
+                projectId, diffMap);
+        suggestedProjectEdits.save(saved);
+        return saved;
+    }
+
+    /**
+     * Caps the *total* operation count (D9) — simpler than apportioning the
+     * budget evenly across three different kinds of operation: task
+     * operations are truncated first (the usual bulk of a diff), then
+     * dependency operations against whatever budget remains, and reorder
+     * operations are dropped entirely if nothing is left.
+     */
+    private ProjectEditPayload capProjectEditOperations(UUID runId, ProjectEditPayload payload) {
+        int max = properties.projectEdit().maxOperations();
+        List<TaskOperationPayload> tasks = payload.taskOperations();
+        List<DependencyOperationPayload> dependencies = payload.dependencyOperations();
+        List<ReorderOperationPayload> reorders = payload.reorderOperations();
+        int total = tasks.size() + dependencies.size() + reorders.size();
+        if (total <= max) {
+            return payload;
+        }
+        log.warn("Run {} edit diff returned {} operation(s), capping to {}", runId, total, max);
+        int budget = max;
+        if (tasks.size() > budget) {
+            tasks = tasks.subList(0, Math.max(budget, 0));
+        }
+        budget -= tasks.size();
+        if (dependencies.size() > Math.max(budget, 0)) {
+            dependencies = dependencies.subList(0, Math.max(budget, 0));
+        }
+        budget -= dependencies.size();
+        if (budget <= 0) {
+            reorders = List.of();
+        }
+        return new ProjectEditPayload(payload.projectChanges(), tasks, dependencies, reorders);
     }
 
     private record CategoryResolution(UUID categoryId, String categoryName) {
@@ -362,6 +473,19 @@ public class AssistantRunService {
         if (!prefs.projectGenerationEnabled()) {
             log.warn("Project generation not opted into userId={}", userId.value());
             throw ApiException.forbidden("You haven't enabled project generation in Settings.");
+        }
+        return prefs;
+    }
+
+    private AssistantPreferencesView requireProjectEditingAvailable(UserId userId) {
+        if (!properties.available()) {
+            log.warn("Assistant unavailable (master switch off or no API key) userId={}", userId.value());
+            throw ApiException.forbidden("Assistant features are not enabled on this instance.");
+        }
+        AssistantPreferencesView prefs = accounts.assistantPreferences(userId);
+        if (!prefs.projectEditingEnabled()) {
+            log.warn("Project editing not opted into userId={}", userId.value());
+            throw ApiException.forbidden("You haven't enabled project editing in Settings.");
         }
         return prefs;
     }
