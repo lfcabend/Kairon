@@ -12,6 +12,7 @@ import com.kairon.projects.web.ProjectDtos.CreateProjectRequest;
 import com.kairon.projects.web.ProjectDtos.PatchProjectRequest;
 import com.kairon.projects.web.ProjectDtos.ProjectPageResponse;
 import com.kairon.projects.web.ProjectDtos.ProjectResponse;
+import com.kairon.projects.web.ProjectDtos.ReorderInCategoryRequest;
 import com.kairon.projects.web.ProjectDtos.ReorderRequest;
 
 import jakarta.validation.Valid;
@@ -33,8 +34,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * {@code /api/v1/projects} — project CRUD, the filtered/paginated list, the
- * flattened priority view, and {@code :reorder} (D18-D20). The class mapping
- * is {@code /api/v1} rather than {@code /api/v1/projects} so
+ * flattened priority view, {@code :reorder} (D18-D20), and
+ * {@code :reorder-in-category} (a second, per-category-bucket-scoped manual
+ * rank — never touches the global {@code priorityRank} D19 protects). The
+ * class mapping is {@code /api/v1} rather than {@code /api/v1/projects} so
  * {@code /projects:reorder} resolves — Spring's path combiner would otherwise
  * insert a slash before the colon.
  *
@@ -113,5 +116,13 @@ public class ProjectController {
     public List<ProjectResponse> reorder(@CurrentUser UserId userId, @Valid @RequestBody ReorderRequest request) {
         log.debug("POST /projects:reorder userId={} count={}", userId.value(), request.orderedIds().size());
         return ProjectResponse.from(projects.reorder(userId, request.orderedIds()));
+    }
+
+    @PostMapping("/projects:reorder-in-category")
+    public List<ProjectResponse> reorderInCategory(@CurrentUser UserId userId,
+            @Valid @RequestBody ReorderInCategoryRequest request) {
+        log.debug("POST /projects:reorder-in-category userId={} categoryId={} count={}",
+                userId.value(), request.categoryId(), request.orderedIds().size());
+        return ProjectResponse.from(projects.reorderInCategory(userId, request.categoryId(), request.orderedIds()));
     }
 }

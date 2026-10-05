@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { projectsApi } from "@/lib/api/projects";
-import type { CreateProjectBody, PatchProjectBody, Project } from "@/lib/api/types";
+import type { CreateProjectBody, PatchProjectBody, Project, ProjectsPage } from "@/lib/api/types";
 import { randomId } from "@/lib/id";
 
 import { projectKeys } from "./projectKeys";
@@ -47,6 +47,10 @@ export function useCreateProject() {
         status: "PLANNING",
         size: body.size ?? null,
         priorityRank: maxRank + 100,
+        // Corrected by the server response moments later (onSuccess) — this view
+        // (the flat priority list) doesn't group by category, so the real bucket
+        // position doesn't matter here the way it would in "Sort by: Custom order".
+        categoryRank: 0,
         color: body.color ?? "#6366f1",
         startDate: body.startDate ?? null,
         endDate: body.endDate ?? null,
@@ -80,6 +84,92 @@ export function usePatchProject() {
       qc.setQueryData(projectKeys.detail(updated.id), updated);
       qc.invalidateQueries({ queryKey: ["projects", "list"] });
       qc.invalidateQueries({ queryKey: projectKeys.priorityOrdered() });
+    },
+  });
+}
+
+/**
+ * Drag-and-drop category reassignment from the list page: sends the same whole-form
+ * `PATCH` as `usePatchProject` (D15) but optimistically moves the card between the
+ * cached list's category sections first, since waiting on invalidation would make the
+ * drop feel laggy.
+ */
+export function useMoveProjectCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ project, categoryId }: { project: Project; categoryId: string | null }) =>
+      projectsApi.patch(project.id, {
+        categoryId,
+        name: project.name,
+        description: project.description,
+        status: project.status,
+        size: project.size,
+        color: project.color,
+        startDate: project.startDate,
+        endDate: project.endDate,
+        actualStart: project.actualStart,
+        actualEnd: project.actualEnd,
+        expectedVersion: project.version,
+      }),
+    onMutate: async ({ project, categoryId }) => {
+      await qc.cancelQueries({ queryKey: ["projects", "list"] });
+      const previous = qc.getQueriesData<ProjectsPage>({ queryKey: ["projects", "list"] });
+      for (const [key, data] of previous) {
+        if (!data) continue;
+        qc.setQueryData<ProjectsPage>(key, {
+          ...data,
+          content: data.content.map((p) => (p.id === project.id ? { ...p, categoryId } : p)),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previous.forEach(([key, data]) => qc.setQueryData<ProjectsPage>(key, data));
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData(projectKeys.detail(updated.id), updated);
+      qc.invalidateQueries({ queryKey: ["projects", "list"] });
+    },
+  });
+}
+
+/** Reassigns the slots that held `orderedIds` members, in `orderedIds`' order; every other slot is untouched. */
+function applyLocalOrder(content: Project[], orderedIds: string[]): Project[] {
+  const included = new Set(orderedIds);
+  const slots = content.map((_, i) => i).filter((i) => included.has(content[i].id));
+  const byId = new Map(content.map((p) => [p.id, p]));
+  const result = [...content];
+  slots.forEach((slotIndex, k) => {
+    result[slotIndex] = byId.get(orderedIds[k])!;
+  });
+  return result;
+}
+
+/**
+ * "Sort by: Custom order" drag-reorder, scoped to one category bucket (D19's
+ * global `priorityRank` is untouched by this — see `ProjectService.reorderInCategory`).
+ * Optimistic against every cached `["projects","list"]` query, reordering only the
+ * slots that belong to this category so other categories' relative order is undisturbed.
+ */
+export function useReorderProjectsInCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ categoryId, orderedIds }: { categoryId: string | null; orderedIds: string[] }) =>
+      projectsApi.reorderInCategory(categoryId, orderedIds),
+    onMutate: async ({ orderedIds }) => {
+      await qc.cancelQueries({ queryKey: ["projects", "list"] });
+      const previous = qc.getQueriesData<ProjectsPage>({ queryKey: ["projects", "list"] });
+      for (const [key, data] of previous) {
+        if (!data) continue;
+        qc.setQueryData<ProjectsPage>(key, { ...data, content: applyLocalOrder(data.content, orderedIds) });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previous.forEach(([key, data]) => qc.setQueryData<ProjectsPage>(key, data));
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["projects", "list"] });
     },
   });
 }

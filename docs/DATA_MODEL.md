@@ -115,6 +115,7 @@ erDiagram
         varchar status
         varchar size
         int priority_rank
+        int category_rank
         varchar color
         date start_date
         date end_date
@@ -312,14 +313,15 @@ project that referenced it, via `project.category_id`'s `ON DELETE SET NULL`.
 | `description` | text null | markdown |
 | `status` | varchar | `PLANNING` \| `ACTIVE` \| `ON_HOLD` \| `DONE` \| `ARCHIVED` |
 | `size` | varchar null | t-shirt sizing: `XS` \| `S` \| `M` \| `L` \| `XL`; optional, no default — a rough at-a-glance sense of scope, not a time estimate |
-| `priority_rank` | int | order within `user_id` (excluding `ARCHIVED` projects); sparse (100, 200, …), user-managed by dragging — lower sorts first (most important). **Not** a severity scale like `todo_item.priority`; a purely manual, relative ranking |
+| `priority_rank` | int | order within `user_id` (excluding `ARCHIVED` projects); sparse (100, 200, …), user-managed by dragging — lower sorts first (most important). **Not** a severity scale like `todo_item.priority`; a purely manual, relative ranking, deliberately global and cross-category (M4 D19) |
+| `category_rank` | int | a second, independent manual rank, scoped to the project's `category_id` bucket (including the "no category" bucket) instead of global; sparse (100, 200, …), user-managed by dragging within one category's section ("Sort by: Custom order"). Reset to the max + 100 of the new bucket whenever `category_id` changes, same convention as a freshly created project |
 | `color` | varchar(7) | hex, for Gantt/badges |
 | `start_date`,`end_date` | date null | planned window |
 | `actual_start`,`actual_end` | date null | filled as work happens |
 | `deleted_at` | timestamptz null | |
 | `created_at`,`updated_at`,`version` | | |
 
-Indexes: `index(user_id, status)`, `index(category_id)`.
+Indexes: `index(user_id, status)`, `index(category_id)`, `index(user_id, category_id, category_rank)`.
 
 ### `project_task`  (module: projects)
 

@@ -46,4 +46,12 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     // set (D20): every non-deleted, non-ARCHIVED project for the user, rank-ordered.
     List<Project> findByUserIdAndDeletedAtIsNullAndStatusNotOrderByPriorityRankAsc(
             UUID userId, ProjectStatus excludedStatus);
+
+    // Backs "Sort by: Custom order" and ProjectService.reorderInCategory's target set:
+    // every non-deleted, non-ARCHIVED project the user holds in one category bucket
+    // (categoryId null means the "Uncategorized" bucket), rank-ordered. Spring Data
+    // translates a null categoryId argument to "IS NULL" automatically, the same way
+    // ProjectTaskRepository's parentTaskId-scoped sibling-group query already does.
+    List<Project> findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+            UUID userId, UUID categoryId, ProjectStatus excludedStatus);
 }

@@ -107,6 +107,35 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    void categoryRankedSetIsScopedToOneCategoryBucketIncludingTheNullUncategorizedBucket() {
+        UUID category = categories.save(ProjectCategory.create(user, "Home", "#111111", 100)).getId();
+        Project inCategory300 = project(user, category, ProjectStatus.ACTIVE, null, 1);
+        inCategory300.moveWithinCategory(300);
+        repo.save(inCategory300);
+        Project inCategory100 = project(user, category, ProjectStatus.ACTIVE, null, 2);
+        inCategory100.moveWithinCategory(100);
+        repo.save(inCategory100);
+        Project archivedInCategory = project(user, category, ProjectStatus.ARCHIVED, null, 3);
+        archivedInCategory.moveWithinCategory(50);
+        repo.save(archivedInCategory);
+        Project uncategorized = project(user, null, ProjectStatus.ACTIVE, null, 4);
+        uncategorized.moveWithinCategory(200);
+        repo.save(uncategorized);
+        Project otherUsersInCategory = project(other, category, ProjectStatus.ACTIVE, null, 5);
+        otherUsersInCategory.moveWithinCategory(100);
+        repo.save(otherUsersInCategory);
+
+        List<Project> inHome = repo.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                user, category, ProjectStatus.ARCHIVED);
+        List<Project> uncategorizedBucket =
+                repo.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                        user, null, ProjectStatus.ARCHIVED);
+
+        assertThat(inHome).extracting(Project::getCategoryRank).containsExactly(100, 300);
+        assertThat(uncategorizedBucket).extracting(Project::getId).containsExactly(uncategorized.getId());
+    }
+
+    @Test
     void findByIdScopedToUserHonoursOwnershipAndSoftDelete() {
         Project mine = repo.save(project(user, null, ProjectStatus.PLANNING, null, 100));
 

@@ -68,11 +68,21 @@ class ProjectServiceTest {
         return p;
     }
 
+    private Project categoryRankedProject(UUID categoryId, int categoryRank) {
+        Project p = Project.create(USER.value(), categoryId, "p@" + categoryRank, null, "#6366f1", null,
+                100, null, null);
+        p.moveWithinCategory(categoryRank);
+        return p;
+    }
+
     @Test
     void createDefaultsUnsizedAndAppendsAtMaxPriorityRankPlus100() {
         when(projects.findByUserIdAndDeletedAtIsNullAndStatusNotOrderByPriorityRankAsc(
                 USER.value(), ProjectStatus.ARCHIVED))
                 .thenReturn(List.of(rankedProject(100), rankedProject(250)));
+        when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                USER.value(), null, ProjectStatus.ARCHIVED))
+                .thenReturn(List.of());
         when(projects.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectView created = service.create(USER, new CreateCommand(null, "New project", null, null, null, null, null));
@@ -81,6 +91,25 @@ class ProjectServiceTest {
         assertThat(created.size()).isNull();
         assertThat(created.status()).isEqualTo("PLANNING");
         assertThat(created.color()).isEqualTo("#6366f1");
+    }
+
+    @Test
+    void createAppendsAtMaxCategoryRankPlus100WithinTheTargetCategoryBucketOnly() {
+        UUID categoryId = UUID.randomUUID();
+        when(categories.findByIdAndUserId(categoryId, USER.value()))
+                .thenReturn(Optional.of(com.kairon.projects.domain.ProjectCategory.create(
+                        USER.value(), "Home", "#6366f1", 100)));
+        when(projects.findByUserIdAndDeletedAtIsNullAndStatusNotOrderByPriorityRankAsc(
+                USER.value(), ProjectStatus.ARCHIVED)).thenReturn(List.of());
+        when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                USER.value(), categoryId, ProjectStatus.ARCHIVED))
+                .thenReturn(List.of(categoryRankedProject(categoryId, 100)));
+        when(projects.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        ProjectView created = service.create(USER,
+                new CreateCommand(categoryId, "New project", null, null, null, null, null));
+
+        assertThat(created.categoryRank()).isEqualTo(200);
     }
 
     @Test
@@ -161,6 +190,91 @@ class ProjectServiceTest {
 
         assertThat(patched.categoryId()).isNull();
         assertThat(patched.size()).isNull();
+    }
+
+    @Test
+    void patchWithinTheSameCategoryLeavesCategoryRankUntouched() {
+        UUID categoryId = UUID.randomUUID();
+        Project project = Project.create(USER.value(), categoryId, "p", null, "#111111", null, 100, null, null);
+        project.moveWithinCategory(500);
+        when(projects.findByIdAndUserIdAndDeletedAtIsNull(project.getId(), USER.value()))
+                .thenReturn(Optional.of(project));
+        when(categories.findByIdAndUserId(categoryId, USER.value()))
+                .thenReturn(Optional.of(com.kairon.projects.domain.ProjectCategory.create(
+                        USER.value(), "Home", "#6366f1", 100)));
+
+        ProjectView patched = service.patch(USER, project.getId(), new PatchCommand(
+                categoryId, "Renamed", null, "ACTIVE", null, null, null, null, null, null, null));
+
+        assertThat(patched.categoryRank()).isEqualTo(500);
+    }
+
+    @Test
+    void patchMovingToADifferentCategoryAppendsAtMaxCategoryRankPlus100InTheNewBucket() {
+        UUID oldCategory = UUID.randomUUID();
+        UUID newCategory = UUID.randomUUID();
+        Project project = Project.create(USER.value(), oldCategory, "p", null, "#111111", null, 100, null, null);
+        project.moveWithinCategory(500);
+        when(projects.findByIdAndUserIdAndDeletedAtIsNull(project.getId(), USER.value()))
+                .thenReturn(Optional.of(project));
+        when(categories.findByIdAndUserId(newCategory, USER.value()))
+                .thenReturn(Optional.of(com.kairon.projects.domain.ProjectCategory.create(
+                        USER.value(), "Work", "#6366f1", 100)));
+        when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                USER.value(), newCategory, ProjectStatus.ARCHIVED))
+                .thenReturn(List.of(categoryRankedProject(newCategory, 300)));
+
+        ProjectView patched = service.patch(USER, project.getId(), new PatchCommand(
+                newCategory, "p", null, "ACTIVE", null, null, null, null, null, null, null));
+
+        assertThat(patched.categoryId()).isEqualTo(newCategory);
+        assertThat(patched.categoryRank()).isEqualTo(400);
+    }
+
+    @Test
+    void reorderInCategoryRewritesCategoryRankTo100200300InTheGivenOrder() {
+        UUID categoryId = UUID.randomUUID();
+        Project a = categoryRankedProject(categoryId, 100);
+        Project b = categoryRankedProject(categoryId, 200);
+        Project c = categoryRankedProject(categoryId, 300);
+        when(categories.findByIdAndUserId(categoryId, USER.value()))
+                .thenReturn(Optional.of(com.kairon.projects.domain.ProjectCategory.create(
+                        USER.value(), "Home", "#6366f1", 100)));
+        when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                USER.value(), categoryId, ProjectStatus.ARCHIVED))
+                .thenReturn(List.of(a, b, c));
+
+        List<ProjectView> result = service.reorderInCategory(USER, categoryId,
+                List.of(c.getId(), a.getId(), b.getId()));
+
+        assertThat(result).extracting(ProjectView::id).containsExactly(c.getId(), a.getId(), b.getId());
+        assertThat(result).extracting(ProjectView::categoryRank).containsExactly(100, 200, 300);
+    }
+
+    @Test
+    void reorderInCategoryRejectsAMismatchedIdSetWith400() {
+        UUID categoryId = UUID.randomUUID();
+        when(categories.findByIdAndUserId(categoryId, USER.value()))
+                .thenReturn(Optional.of(com.kairon.projects.domain.ProjectCategory.create(
+                        USER.value(), "Home", "#6366f1", 100)));
+        when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                USER.value(), categoryId, ProjectStatus.ARCHIVED))
+                .thenReturn(List.of(categoryRankedProject(categoryId, 100)));
+
+        assertThatThrownBy(() -> service.reorderInCategory(USER, categoryId, List.of(UUID.randomUUID())))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(400));
+    }
+
+    @Test
+    void reorderInCategoryWithAForeignCategoryIs404() {
+        UUID categoryId = UUID.randomUUID();
+        when(categories.findByIdAndUserId(categoryId, USER.value())).thenReturn(Optional.empty());
+
+        ApiException ex = catchThrowableOfType(ApiException.class,
+                () -> service.reorderInCategory(USER, categoryId, List.of(UUID.randomUUID())));
+
+        assertThat(ex.getStatus().value()).isEqualTo(404);
     }
 
     @Test

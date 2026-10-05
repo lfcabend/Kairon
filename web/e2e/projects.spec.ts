@@ -130,3 +130,51 @@ test("M5: add a dependency between two tasks and see it on the Gantt tab", async
   await expect(page.getByText("Build").first()).toBeVisible();
   await expect(page.getByText("Unscheduled")).not.toBeVisible();
 });
+
+test("reorder two projects within one category via Sort by: Custom order, and it persists", async ({ page }) => {
+  await login(page);
+  await page.goto("/kairon/projects");
+
+  await page.getByRole("button", { name: "Manage categories" }).click();
+  await page.getByLabel("New category name").fill("Errands");
+  await page.getByRole("button", { name: "Add" }).click();
+  await page.keyboard.press("Escape");
+
+  async function createProject(name: string, category: string) {
+    await page.getByRole("button", { name: "+ New project" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("Name").fill(name);
+    await dialog.getByLabel("Category", { exact: true }).click();
+    await page.getByRole("option", { name: category }).click();
+    await dialog.getByRole("button", { name: "Create project" }).click();
+    await expect(page.getByText(name)).toBeVisible();
+  }
+  await createProject("Pay taxes", "Errands");
+  await createProject("Return library books", "Errands");
+
+  await page.getByLabel("Sort by").click();
+  await page.getByRole("option", { name: "Sort by: Custom order" }).click();
+
+  // New projects append at the bottom of their category bucket, so "Pay taxes"
+  // (created first) starts above "Return library books" — drag it below to flip them.
+  const handles = page.getByLabel("Drag to reorder within this category");
+  const fromBox = await handles.first().boundingBox();
+  const toBox = await handles.nth(1).boundingBox();
+  if (!fromBox || !toBox) throw new Error("drag handles not visible");
+  await page.mouse.move(fromBox.x + fromBox.width / 2, fromBox.y + fromBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(toBox.x + toBox.width / 2, toBox.y + toBox.height + 5, { steps: 10 });
+  await page.mouse.up();
+
+  async function nameOrder() {
+    const names = await page.locator(".font-medium").allTextContents();
+    return names.filter((n) => n === "Pay taxes" || n === "Return library books");
+  }
+  await expect.poll(nameOrder).toEqual(["Return library books", "Pay taxes"]);
+
+  // Persisted server-side, not just an optimistic local reorder.
+  await page.reload();
+  await page.getByLabel("Sort by").click();
+  await page.getByRole("option", { name: "Sort by: Custom order" }).click();
+  await expect.poll(nameOrder).toEqual(["Return library books", "Pay taxes"]);
+});

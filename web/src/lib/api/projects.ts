@@ -68,6 +68,10 @@ export const projectsApi = {
   reorder: (orderedIds: string[]) =>
     apiFetch<Project[]>("/projects:reorder", { method: "POST", body: { orderedIds } }),
 
+  /** categoryId null targets the "Uncategorized" bucket. */
+  reorderInCategory: (categoryId: string | null, orderedIds: string[]) =>
+    apiFetch<Project[]>("/projects:reorder-in-category", { method: "POST", body: { categoryId, orderedIds } }),
+
   listTasks: (projectId: string) =>
     apiFetch<ProjectTasksPage>(`/projects/${projectId}/tasks?page=0&size=200`),
 

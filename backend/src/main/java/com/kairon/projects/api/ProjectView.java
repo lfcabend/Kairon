@@ -18,6 +18,7 @@ public record ProjectView(
         String status,
         String size,
         int priorityRank,
+        int categoryRank,
         String color,
         LocalDate startDate,
         LocalDate endDate,

@@ -181,6 +181,8 @@ export interface Project {
   status: ProjectStatus;
   size: ProjectSize | null;
   priorityRank: number;
+  /** Manual order within this project's category bucket — "Sort by: Custom order" only. */
+  categoryRank: number;
   color: string;
   startDate: string | null;
   endDate: string | null;

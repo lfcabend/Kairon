@@ -231,6 +231,7 @@ function makeProject(partial: Partial<Project>): ProjectRow {
     status: partial.status ?? "PLANNING",
     size: partial.size ?? null,
     priorityRank: partial.priorityRank ?? projectSeq * 100,
+    categoryRank: partial.categoryRank ?? projectSeq * 100,
     color: partial.color ?? "#6366f1",
     startDate: partial.startDate ?? null,
     endDate: partial.endDate ?? null,
@@ -359,14 +360,32 @@ const projectHandlers = [
     return HttpResponse.json(byRank(rankable));
   }),
 
+  http.post(/\/api\/v1\/projects:reorder-in-category$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { categoryId: string | null; orderedIds: string[] };
+    const bucket = liveProjects().filter(
+      (p) => p.status !== "ARCHIVED" && p.categoryId === body.categoryId,
+    );
+    const ids = new Set(bucket.map((p) => p.id));
+    if (body.orderedIds.length !== ids.size || !body.orderedIds.every((id) => ids.has(id))) {
+      return problem(400, "`orderedIds` must list exactly that category's current non-archived projects.");
+    }
+    body.orderedIds.forEach((id, i) => {
+      projects.find((p) => p.id === id)!.categoryRank = (i + 1) * 100;
+    });
+    return HttpResponse.json([...bucket].sort((a, b) => a.categoryRank - b.categoryRank));
+  }),
+
   http.post("/kairon/api/v1/projects", async ({ request }) => {
     if (!authed(request)) return problem(401, "Authentication required.");
     const body = (await request.json()) as Partial<Project> & { name: string };
     if (!body.name?.trim()) return problem(400, "Name must not be blank.");
-    const maxRank = liveProjects()
-      .filter((p) => p.status !== "ARCHIVED")
-      .reduce((m, p) => Math.max(m, p.priorityRank), 0);
-    const created = makeProject({ ...body, priorityRank: maxRank + 100 });
+    const rankable = liveProjects().filter((p) => p.status !== "ARCHIVED");
+    const maxRank = rankable.reduce((m, p) => Math.max(m, p.priorityRank), 0);
+    const maxCategoryRank = rankable
+      .filter((p) => p.categoryId === (body.categoryId ?? null))
+      .reduce((m, p) => Math.max(m, p.categoryRank), 0);
+    const created = makeProject({ ...body, priorityRank: maxRank + 100, categoryRank: maxCategoryRank + 100 });
     projects.push(created);
     return HttpResponse.json(created, { status: 201 });
   }),
@@ -383,8 +402,17 @@ const projectHandlers = [
     const row = projects.find((p) => p.id === params.id);
     if (!row) return problem(404, "Project not found.");
     const body = (await request.json()) as Partial<Project>;
-    const { priorityRank: _ignored, ...rest } = body;
+    const { priorityRank: _ignored, categoryRank: _ignoredToo, ...rest } = body;
+    const previousCategoryId = row.categoryId;
     Object.assign(row, rest, { updatedAt: new Date().toISOString() });
+    // A category move appends at the end of the new bucket, same as the real backend —
+    // the old categoryRank was only ever meaningful relative to the old bucket's siblings.
+    if (rest.categoryId !== undefined && rest.categoryId !== previousCategoryId) {
+      const maxCategoryRank = liveProjects()
+        .filter((p) => p.status !== "ARCHIVED" && p.categoryId === row.categoryId && p.id !== row.id)
+        .reduce((m, p) => Math.max(m, p.categoryRank), 0);
+      row.categoryRank = maxCategoryRank + 100;
+    }
     return HttpResponse.json(row);
   }),
 
