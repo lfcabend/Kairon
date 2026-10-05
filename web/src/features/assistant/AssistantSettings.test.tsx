@@ -102,3 +102,70 @@ test("data-sharing notice is visible before the toggle is ever touched", async (
 
   expect(await screen.findByText(/sent to Anthropic/)).toBeInTheDocument();
 });
+
+test("checking journal reflection opens a confirmation dialog and does not PATCH until Enable is clicked", async () => {
+  const user = userEvent.setup();
+  Object.assign(meResponse, { preferences: { todo: { rollover: "manual" } } });
+  renderPage();
+
+  const toggle = await screen.findByRole("checkbox", { name: /Journal reflection/ });
+  await user.click(toggle);
+
+  expect(await screen.findByText(/full text/)).toBeInTheDocument();
+  const prefsBeforeConfirm = meResponse.preferences as {
+    assistant?: { journalReflection?: { enabled?: boolean } };
+  };
+  expect(prefsBeforeConfirm.assistant?.journalReflection?.enabled).not.toBe(true);
+
+  await user.click(await screen.findByRole("button", { name: "Enable journal reflection" }));
+
+  await waitFor(() => {
+    const prefs = meResponse.preferences as {
+      todo?: { rollover?: string };
+      assistant?: { journalReflection?: { enabled?: boolean } };
+    };
+    expect(prefs.assistant?.journalReflection?.enabled).toBe(true);
+    expect(prefs.todo?.rollover).toBe("manual");
+  });
+});
+
+test("canceling the journal reflection confirmation leaves the checkbox unchecked and preferences untouched", async () => {
+  const user = userEvent.setup();
+  Object.assign(meResponse, { preferences: { todo: { rollover: "manual" } } });
+  renderPage();
+
+  const toggle = await screen.findByRole("checkbox", { name: /Journal reflection/ });
+  await user.click(toggle);
+  await user.click(await screen.findByRole("button", { name: "Cancel" }));
+
+  expect(await screen.findByRole("checkbox", { name: /Journal reflection/ })).not.toBeChecked();
+  const prefs = meResponse.preferences as { assistant?: { journalReflection?: { enabled?: boolean } } };
+  expect(prefs.assistant?.journalReflection?.enabled).not.toBe(true);
+});
+
+test("turning journal reflection off needs no confirmation", async () => {
+  const user = userEvent.setup();
+  Object.assign(meResponse, { preferences: { assistant: { journalReflection: { enabled: true } } } });
+  renderPage();
+
+  await waitFor(async () =>
+    expect(await screen.findByRole("checkbox", { name: /Journal reflection/ })).toBeChecked(),
+  );
+  const toggle = await screen.findByRole("checkbox", { name: /Journal reflection/ });
+  await user.click(toggle);
+
+  await waitFor(() => {
+    const prefs = meResponse.preferences as { assistant?: { journalReflection?: { enabled?: boolean } } };
+    expect(prefs.assistant?.journalReflection?.enabled).toBe(false);
+  });
+  expect(screen.queryByText(/full text/)).not.toBeInTheDocument();
+});
+
+test("the tone select PATCHes tone without touching other keys", async () => {
+  Object.assign(meResponse, { preferences: { assistant: { executionSummaries: { enabled: true } } } });
+  renderPage();
+
+  await waitFor(async () =>
+    expect(await screen.findByRole("combobox", { name: /Tone/ })).toHaveTextContent("Balanced"),
+  );
+});

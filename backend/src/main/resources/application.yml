@@ -150,6 +150,17 @@ kairon:
       # A synthesis/narrative task, given more room than todo-suggestions'
       # bounded extraction (MEDIUM).
       effort: HIGH
+      # M10 — how often SummaryBatchPollingScheduler checks in-flight Anthropic
+      # Message Batches submitted by the scheduled weekly/monthly sweep. A first
+      # guess, not tuned against real batch completion times (M10 §9 Q5).
+      batch-poll-interval: PT15M
+    journal-reflection:
+      # Pathological-case guard (M10 D16), not an expected-case limit — M3 allows
+      # multiple entries per day, so an unusually journal-heavy week is possible.
+      max-entries: 30
+      max-projects: 5
+      # A reflective-synthesis task, same rationale as summary's own HIGH.
+      effort: HIGH
     rate-limit:
       enabled: true
       capacity: 5
@@ -158,3 +169,4 @@ kairon:
         - /api/v1/assistant/todo-suggestions
         - /api/v1/assistant/project-plan
         - /api/v1/assistant/summaries
+        - /api/v1/assistant/journal-reflection

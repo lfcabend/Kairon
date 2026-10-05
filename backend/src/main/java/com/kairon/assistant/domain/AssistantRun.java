@@ -71,6 +71,15 @@ public class AssistantRun {
     @Column
     private String error;
 
+    /**
+     * Null for every synchronously/{@code @Async}-dispatched run (every kind
+     * except a scheduled-sweep {@code WEEKLY_SUMMARY}/{@code MONTHLY_SUMMARY}
+     * run) — set once {@link com.kairon.assistant.app.SummaryBatchDispatcher}
+     * stages this run into one {@code assistant_batch} (M10 D21).
+     */
+    @Column(name = "batch_id")
+    private UUID batchId;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -177,6 +186,14 @@ public class AssistantRun {
 
     public String getError() {
         return error;
+    }
+
+    public UUID getBatchId() {
+        return batchId;
+    }
+
+    public void setBatchId(UUID batchId) {
+        this.batchId = batchId;
     }
 
     public Instant getCreatedAt() {

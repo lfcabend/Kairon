@@ -40,6 +40,7 @@ interface Props {
 const KIND_LABEL: Record<string, string> = {
   WEEKLY_SUMMARY: "Weekly summary",
   MONTHLY_SUMMARY: "Monthly summary",
+  JOURNAL_REFLECTION: "Weekly reflection",
 };
 
 function periodLabel(run: { periodStart?: string; periodEnd?: string }): string {

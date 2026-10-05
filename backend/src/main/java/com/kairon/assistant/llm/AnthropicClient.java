@@ -21,6 +21,26 @@ public interface AnthropicClient {
      */
     SummaryResult generateSummary(SummaryRequest request);
 
+    /**
+     * Added for M10's journal reflection — plain markdown narration, identical
+     * shape to {@link #generateSummary}, no appended stats table on the caller
+     * side (docs/milestones/M10-journal-reflection.md D11).
+     */
+    ReflectionResult generateReflection(ReflectionRequest request);
+
+    /**
+     * Submits one Anthropic Message Batch covering every given request — used
+     * only by M9's scheduled summary sweep, one call per scheduler firing
+     * (docs/milestones/M10-journal-reflection.md D19/D20).
+     */
+    BatchHandle submitBatch(List<BatchRequestItem> requests);
+
+    /** Checks a submitted batch's current status (D22). */
+    BatchPollResult pollBatch(String anthropicBatchId);
+
+    /** Reads back every per-request result of an {@code ENDED} batch (D22/D24). */
+    List<BatchResultItem> retrieveBatchResults(String anthropicBatchId);
+
     record TodoSuggestionRequest(String systemPrompt, String userContent, String model, String effort) {
     }
 
@@ -41,5 +61,26 @@ public interface AnthropicClient {
     }
 
     record SummaryResult(String markdown, String model, long inputTokens, long outputTokens) {
+    }
+
+    record ReflectionRequest(String systemPrompt, String userContent, String model, String effort) {
+    }
+
+    record ReflectionResult(String markdown, String model, long inputTokens, long outputTokens) {
+    }
+
+    record BatchRequestItem(String customId, String systemPrompt, String userContent, String model) {
+    }
+
+    record BatchHandle(String anthropicBatchId) {
+    }
+
+    /** {@code status}: {@code IN_PROGRESS} | {@code CANCELING} | {@code ENDED}. */
+    record BatchPollResult(boolean ended, String status) {
+    }
+
+    record BatchResultItem(
+            String customId, boolean succeeded,
+            String markdown, long inputTokens, long outputTokens, String errorDetail) {
     }
 }

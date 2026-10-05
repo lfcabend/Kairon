@@ -243,15 +243,41 @@ are `@Async` and always polled via `GET /assistant/runs/{id}` (`DESIGN.md`
 
 ## M10 — Weekly journal reflection
 
-Last, by design: this is the feature that sends full journal text off the
-instance, so it ships after the mechanical features have proven the plumbing.
+See [`milestones/M10-journal-reflection.md`](milestones/M10-journal-reflection.md)
+for the full plan and rationale (Status: Accepted — implemented). Last, by
+design: this is the journal-reflection feature that sends full journal text
+off the instance, so it ships after the mechanical features have proven the
+plumbing. The reflection feature itself needs no new migration and no new
+cross-module port methods — `JournalApi.range` (M8), `TodoApi.periodStats`
+(M9), and `ProjectsApi.projectPeriodStats` (M9) already cover everything it
+reads. This milestone also carries a second, mostly-independent piece of
+backend work folded in alongside it: migrating M9's `@Scheduled` summary
+sweep onto the Anthropic Batch API (below), which does need one small
+migration (`V010` — `V009` had already been taken by an unrelated
+project-category-ranking change merged to `main` while this plan was drafted).
 
-- [ ] `JOURNAL_REFLECTION` run over a week's `journal_entry` content, with light
-      todo/project grounding; configurable tone (`assistant.tone`).
-- [ ] `POST /assistant/journal-reflection` (`{weekOf}`).
-- [ ] Its own opt-in, separate from the planning/summary opt-ins, with a
-      prominent confirmation that journal text is sent to Anthropic.
-- [ ] Web: a weekly reflection view.
+- [x] `JOURNAL_REFLECTION` run over a week's `journal_entry` content, with light
+      todo/project grounding; configurable tone (`assistant.tone`, read by a
+      feature for the first time — three options: encouraging/balanced/direct).
+- [x] `POST /assistant/journal-reflection` (`{weekOf}`) — async and always
+      polled like M9's summaries, but on-demand only, with no `@Scheduled`
+      auto-trigger (D4) and an upfront `422` refusal for a week with no
+      journal entries (D8).
+- [x] Its own opt-in, separate from the planning/summary opt-ins, with a
+      prominent confirmation (a `Dialog`-based consent step, stronger than
+      the other features' plain checkboxes) that full journal text — not a
+      summary of it — is sent to Anthropic.
+- [x] Web: `JOURNAL_REFLECTION` added as a third kind on the existing
+      Summaries screen (D14) rather than a new nav entry — a "Generate weekly
+      reflection" button shown only when opted in.
+- [x] M9's scheduled weekly/monthly summary sweep migrated onto the
+      **Anthropic Message Batches API** (`sdk.messages().batches()`, confirmed
+      present — non-beta — in the already-pinned `anthropic-java` 2.34.0) —
+      every opted-in user's request for one sweep firing submitted as a
+      single batch, polled by a new fixed-delay job until ended, then written
+      back per run (D17–D24). On-demand summary/reflection calls are
+      unaffected. New migration `V010` (`assistant_batch` +
+      `assistant_run.batch_id`).
 
 ## M11+ — Mobile & beyond
 
@@ -463,8 +489,8 @@ add-on).
 
 ### Backlog (unscheduled)
 
-Bring-your-own Anthropic key per user · Batch API for scheduled summaries (50 %
-cost) · local / self-hosted model option · embeddings / semantic search over
+Bring-your-own Anthropic key per user ·
+local / self-hosted model option · embeddings / semantic search over
 journal history if Postgres FTS is outgrown · tags · attachments · recurring
 todos · reminders/push notifications · journal revision history · project
 templates · CSV/Markdown export · calendar (ICS) feed · dark/light theming

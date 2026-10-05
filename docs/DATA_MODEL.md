@@ -11,9 +11,12 @@ Conventions:
 - Soft delete: `deleted_at timestamptz null` on entities that mobile will sync
   (todo items, journal entries, projects, project tasks). Queries filter it out.
 - The `assistant` module's tables (`assistant_run`, `assistant_suggested_task`,
-  `assistant_suggested_project`) are **not** mobile-synced and carry **no soft
-  delete**: a run is regenerable and is hard-deleted when the user removes it
-  (which is also how stored prompt/journal excerpts are purged).
+  `assistant_suggested_project`, `assistant_batch`) are **not** mobile-synced
+  and carry **no soft delete**: a run is regenerable and is hard-deleted when
+  the user removes it (which is also how stored prompt/journal excerpts are
+  purged). `assistant_batch` carries no user-identifying content of its own
+  (bookkeeping only for M10's scheduled-sweep batch dispatch), so it is never
+  deleted alongside a single user's run.
 - Enums are stored as `varchar` with a `check` constraint, mapped in JPA with
   `@Enumerated(EnumType.STRING)`.
 - `day` columns are `date` (no time); interpreted in the owning user's timezone.
@@ -41,6 +44,7 @@ erDiagram
     todo_item ||--o| assistant_suggested_task     : "accepted as"
     assistant_run ||--o| assistant_suggested_project : produces
     project ||--o| assistant_suggested_project    : "accepted as"
+    assistant_batch ||--o{ assistant_run           : "batches (scheduled sweep only)"
 
     app_user {
         uuid id PK
@@ -166,6 +170,18 @@ erDiagram
         int input_tokens
         int output_tokens
         text error
+        uuid batch_id FK
+        timestamptz created_at
+        timestamptz updated_at
+        bigint version
+    }
+    assistant_batch {
+        uuid id PK
+        varchar anthropic_batch_id
+        varchar kind
+        varchar status
+        timestamptz submitted_at
+        timestamptz ended_at
         timestamptz created_at
         timestamptz updated_at
         bigint version
@@ -375,14 +391,21 @@ dependency graph).
 | `output_markdown` | text null | the assistant's narrative result |
 | `input_tokens`,`output_tokens` | int null | from the API response, for cost visibility |
 | `error` | text null | RFC 7807 detail when `status = FAILED` |
+| `batch_id` | uuid FK → assistant_batch, null | set only for a `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` run dispatched by the `@Scheduled` sweep via the Anthropic Batch API (M10); null for every synchronously/`@Async`-dispatched run |
 | `created_at`,`updated_at`,`version` | | |
 
-Indexes: `index(user_id, kind, created_at)`.
+Indexes: `index(user_id, kind, created_at)`, `index(batch_id) where batch_id is
+not null`.
 No soft delete: a `DELETE` is a hard delete and purges the stored snapshot.
-Summaries and reflection are produced by a background job (`@Async`, plus a
-`@Scheduled` auto-trigger for summaries); todo-suggestion runs usually complete
-within the request. A **per-user monthly token budget** is enforced by summing
-`input_tokens + output_tokens` over the calendar month before a new run starts.
+Summaries and reflection are produced by a background job (`@Async`); todo-
+suggestion and project-generation runs complete within the request. Summaries'
+own `@Scheduled` sweep (weekly/monthly) submits every opted-in user's request
+for one firing as a single Anthropic Message Batch (`assistant_batch`, M10)
+rather than dispatching one `@Async` call per user — on-demand
+`POST /assistant/summaries` and `POST /assistant/journal-reflection` are
+unaffected and keep per-run dispatch. A **per-user monthly token budget** is
+enforced by summing `input_tokens + output_tokens` over the calendar month
+before a new run starts.
 
 ### `assistant_suggested_task`  (module: assistant)
 
@@ -431,6 +454,29 @@ together, resolving the plan's string `key`s to real ids as it creates each
 row (parent tasks before children). The assistant never writes those rows
 itself — accept is always a user action, same discipline as
 `assistant_suggested_task`.
+
+### `assistant_batch`  (module: assistant)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `anthropic_batch_id` | varchar(100), unique | the Anthropic-side batch id (`MessageBatch.id()`) |
+| `kind` | varchar | `WEEKLY_SUMMARY` \| `MONTHLY_SUMMARY` — the only two kinds ever batched (M10) |
+| `status` | varchar | `IN_PROGRESS` \| `CANCELING` \| `ENDED` — mirrors `MessageBatch.ProcessingStatus` 1:1 |
+| `submitted_at` | timestamptz | when this batch was submitted to Anthropic |
+| `ended_at` | timestamptz null | set once every result has been written back onto its runs |
+| `created_at`,`updated_at`,`version` | | |
+
+One row per `SummaryScheduler` firing (not per user, not per run): every
+opted-in user's weekly — or monthly — request for that firing is submitted as
+a single Anthropic Message Batch, and every one of their queued
+`assistant_run` rows carries this row's id in `assistant_run.batch_id`. A
+fixed-delay job (`SummaryBatchPollingScheduler`) polls every row with
+`status <> ENDED`; once Anthropic reports the batch `ENDED`, it reads back
+each per-request result and writes `SUCCEEDED`/`FAILED` onto the matching
+run, then flips this row to `ENDED`. No soft delete — same hard-delete-only
+convention as every other `assistant_*` table, and this table carries no
+user-identifying content of its own to purge.
 
 ### Per-user assistant settings
 
@@ -485,6 +531,8 @@ tracking the roadmap:
 | `V006__planning_links.sql` | any indexes needed by the "Today" aggregation |
 | `V007__assistant.sql` | `assistant_run`, `assistant_suggested_task` |
 | `V008__project_plan.sql` | widens `assistant_run.kind` to add `PROJECT_GENERATION`; `assistant_suggested_project` (M8.5) |
+| `V009__project_category_rank.sql` | per-category manual project ordering (`project.category_rank`) |
+| `V010__assistant_batch.sql` | `assistant_batch` + `assistant_run.batch_id` (M10 — the Batch API migration for M9's scheduled sweep; M10's own `JOURNAL_REFLECTION` run needed no migration at all) |
 | `V0xx__…` | tags, attachments, recurrence, etc. as they land |
 
 Repeatable migrations (`R__…`) only for views/functions if introduced.

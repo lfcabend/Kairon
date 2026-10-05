@@ -1,7 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { assistantApi } from "@/lib/api/assistant";
-import type { AssistantRun, AssistantRunListFilter, RequestSummaryBody } from "@/lib/api/types";
+import type {
+  AssistantRun,
+  AssistantRunListFilter,
+  JournalReflectionRequestBody,
+  RequestSummaryBody,
+} from "@/lib/api/types";
 
 import { assistantKeys } from "./assistantKeys";
 
@@ -45,6 +50,15 @@ export function useRequestSummary() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: RequestSummaryBody) => assistantApi.requestSummary(body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["assistant", "runs", "list"] }),
+  });
+}
+
+/** Same shape as {@link useRequestSummary} — invalidates the history list on success (M10). */
+export function useRequestJournalReflection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: JournalReflectionRequestBody) => assistantApi.requestJournalReflection(body),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["assistant", "runs", "list"] }),
   });
 }

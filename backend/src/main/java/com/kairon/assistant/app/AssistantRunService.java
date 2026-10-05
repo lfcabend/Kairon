@@ -26,6 +26,7 @@ import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
+import com.kairon.journal.api.JournalApi;
 import com.kairon.projects.api.ProjectsApi.ProjectCategorySummary;
 
 import tools.jackson.databind.ObjectMapper;
@@ -61,6 +62,7 @@ public class AssistantRunService {
     private final UserAccountApi accounts;
     private final TodoSuggestionContextBuilder contextBuilder;
     private final ProjectPlanContextBuilder projectPlanContextBuilder;
+    private final JournalApi journal;
     private final AnthropicClient anthropicClient;
     private final ObjectMapper objectMapper;
     private final Clock clock;
@@ -68,8 +70,8 @@ public class AssistantRunService {
     public AssistantRunService(AssistantRunRepository runs, AssistantSuggestedTaskRepository suggestedTasks,
             AssistantSuggestedProjectRepository suggestedProjects, AssistantProperties properties,
             UserAccountApi accounts, TodoSuggestionContextBuilder contextBuilder,
-            ProjectPlanContextBuilder projectPlanContextBuilder, AnthropicClient anthropicClient,
-            ObjectMapper objectMapper, Clock clock) {
+            ProjectPlanContextBuilder projectPlanContextBuilder, JournalApi journal,
+            AnthropicClient anthropicClient, ObjectMapper objectMapper, Clock clock) {
         this.runs = runs;
         this.suggestedTasks = suggestedTasks;
         this.suggestedProjects = suggestedProjects;
@@ -77,6 +79,7 @@ public class AssistantRunService {
         this.accounts = accounts;
         this.contextBuilder = contextBuilder;
         this.projectPlanContextBuilder = projectPlanContextBuilder;
+        this.journal = journal;
         this.anthropicClient = anthropicClient;
         this.objectMapper = objectMapper;
         this.clock = clock;
@@ -164,7 +167,7 @@ public class AssistantRunService {
     public AssistantRunView requestSummary(UserId userId, SummaryPeriod period, LocalDate date) {
         requireExecutionSummariesAvailable(userId);
         requireWithinBudget(userId);
-        requireNoRunInFlight(userId);
+        requireNoRunInFlight(userId, Set.of(AssistantRunKind.WEEKLY_SUMMARY, AssistantRunKind.MONTHLY_SUMMARY));
 
         SummaryPeriod.Range range = period.resolve(date);
         String model = resolveModel(accounts.assistantPreferences(userId));
@@ -172,6 +175,34 @@ public class AssistantRunService {
         runs.save(run);
         log.info("Queued {} run {} userId={} period=[{},{}]",
                 period.kind(), run.getId(), userId.value(), range.start(), range.end());
+        return AssistantMapper.toRunView(run, List.of());
+    }
+
+    /**
+     * Queues a {@code JOURNAL_REFLECTION} run and returns immediately — same
+     * async/poll shape as {@link #requestSummary} (M10 D3). Refuses up front
+     * (D8) if the week has no journal entries at all, before any run row is
+     * created or any token spent.
+     */
+    @Transactional
+    public AssistantRunView requestJournalReflection(UserId userId, LocalDate weekOf) {
+        requireJournalReflectionAvailable(userId);
+        requireWithinBudget(userId);
+        requireNoRunInFlight(userId, Set.of(AssistantRunKind.JOURNAL_REFLECTION));
+
+        SummaryPeriod.Range week = SummaryPeriod.WEEK.resolve(weekOf); // D6 — date math only
+        if (journal.range(userId, week.start(), week.end()).isEmpty()) {
+            log.warn("Journal reflection refused: no entries userId={} week=[{},{}]",
+                    userId.value(), week.start(), week.end());
+            throw ApiException.unprocessable("No journal entries for that week — nothing to reflect on.");
+        }
+
+        String model = resolveModel(accounts.assistantPreferences(userId));
+        AssistantRun run = AssistantRun.pending(userId.value(), AssistantRunKind.JOURNAL_REFLECTION, week.start(),
+                week.end(), model);
+        runs.save(run);
+        log.info("Queued JOURNAL_REFLECTION run {} userId={} week=[{},{}]",
+                run.getId(), userId.value(), week.start(), week.end());
         return AssistantMapper.toRunView(run, List.of());
     }
 
@@ -348,14 +379,33 @@ public class AssistantRunService {
         return prefs;
     }
 
-    // D3 — at most one PENDING/RUNNING summary run per user at a time.
-    private void requireNoRunInFlight(UserId userId) {
-        boolean inFlight = runs.existsByUserIdAndKindInAndStatusIn(userId.value(),
-                List.of(AssistantRunKind.WEEKLY_SUMMARY, AssistantRunKind.MONTHLY_SUMMARY),
+    private AssistantPreferencesView requireJournalReflectionAvailable(UserId userId) {
+        if (!properties.available()) {
+            log.warn("Assistant unavailable (master switch off or no API key) userId={}", userId.value());
+            throw ApiException.forbidden("Assistant features are not enabled on this instance.");
+        }
+        AssistantPreferencesView prefs = accounts.assistantPreferences(userId);
+        if (!prefs.journalReflectionEnabled()) {
+            log.warn("Journal reflection not opted into userId={}", userId.value());
+            throw ApiException.forbidden("You haven't enabled journal reflection in Settings.");
+        }
+        return prefs;
+    }
+
+    /**
+     * At most one in-flight (PENDING/RUNNING) run per user across the given
+     * kinds (M10 D5, generalized from M9's hardcoded two-summary-kinds check).
+     * The summary call site passes {@code {WEEKLY_SUMMARY, MONTHLY_SUMMARY}}
+     * (unchanged behavior); {@code requestJournalReflection} passes its own
+     * single kind — a reflection run never blocks, or is blocked by, a summary
+     * run, since they're different reports a user may reasonably want at once.
+     */
+    private void requireNoRunInFlight(UserId userId, Set<AssistantRunKind> kinds) {
+        boolean inFlight = runs.existsByUserIdAndKindInAndStatusIn(userId.value(), List.copyOf(kinds),
                 List.of(AssistantRunStatus.PENDING, AssistantRunStatus.RUNNING));
         if (inFlight) {
-            log.warn("Summary run rejected: another summary run is already in flight userId={}", userId.value());
-            throw ApiException.conflict("A summary run is already in progress. Wait for it to finish.");
+            log.warn("Run rejected: a {} run is already in flight userId={}", kinds, userId.value());
+            throw ApiException.conflict("A run of this kind is already in progress. Wait for it to finish.");
         }
     }
 

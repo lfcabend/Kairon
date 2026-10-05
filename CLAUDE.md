@@ -7,8 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **M0 (walking skeleton), M1 (authentication), M2 (daily todo), M3 (daily
 journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
 (hardening & prod), M8 (assistant foundations & todo suggestions), M8.5
-(AI project generation from a description), and M9 (weekly & monthly
-execution summaries) are implemented.**
+(AI project generation from a description), M9 (weekly & monthly
+execution summaries), and M10 (weekly journal reflection, plus a Batch API
+migration for M9's scheduled summary sweep) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -76,34 +77,71 @@ updated when decisions change.
   `assistant` (M8 — the only module allowed to import the Anthropic SDK. `domain`
   `AssistantRun`/`AssistantRunKind`/`AssistantRunStatus`/`AssistantSuggestedTask`/
   `AssistantSuggestedTaskStatus`/`AssistantSuggestedProject`/
-  `AssistantSuggestedProjectStatus` (M8.5), `repo` `AssistantRunRepository` (incl. the
-  monthly-token-budget `sumTokensSince` query)/`AssistantSuggestedTaskRepository`/
-  `AssistantSuggestedProjectRepository` (M8.5),
+  `AssistantSuggestedProjectStatus` (M8.5)/`AssistantBatch`/`AssistantBatchStatus`
+  (M10 — the latter mirrors `MessageBatch.ProcessingStatus.Known` 1:1), `repo`
+  `AssistantRunRepository` (incl. the
+  monthly-token-budget `sumTokensSince` query and, for M10, `findByBatchId`)/
+  `AssistantSuggestedTaskRepository`/
+  `AssistantSuggestedProjectRepository` (M8.5)/`AssistantBatchRepository`
+  (M10 — `findByStatusNot`, backing `SummaryBatchPollingScheduler`'s sweep),
   `llm` `AnthropicClient` (the SDK wrapper interface, now
   `suggestTodos`/`generateProjectPlan`/`generateSummary` (M9 — plain markdown,
-  not structured output))/`AnthropicClientImpl`
+  not structured output)/`generateReflection` (M10, identical shape to
+  `generateSummary`)/`submitBatch`/`pollBatch`/`retrieveBatchResults` (M10 —
+  the Batch API trio used only by `SummaryBatchDispatcher`/
+  `SummaryBatchPollingScheduler`))/`AnthropicClientImpl`
   (Resilience4j `@CircuitBreaker`, structured outputs via
   `StructuredMessageCreateParams`)/`FakeAnthropicClient` (`local` profile +
   `kairon.assistant.fake-client=true` — stands in for Playwright e2e, never a
-  real network call)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`/
+  real network call; M10 adds a same-tick-"ended" fake for its three batch
+  methods)/`TodoSuggestionsPayload`/`SuggestedTaskPayload`/
   `ProjectPlanPayload`/`PlannedTaskPayload`/`PlannedDependencyPayload` (M8.5,
   the structured-output shape for a `PROJECT_GENERATION` run), `app`
   `AssistantRunService` (run lifecycle, budget/availability gating, suggestion
   capping/clamping; M8.5's `requestProjectPlan` follows the same shape; M9's
   `requestSummary` queues a `PENDING` run and returns — the actual generation
-  is dispatched by the caller only after that transaction commits)/
+  is dispatched by the caller only after that transaction commits; M10's
+  `requestJournalReflection` follows the same queue-and-return shape, refusing
+  up front with a 422 if the target week has no journal entries, and the
+  formerly-summary-only in-flight guard is now `requireNoRunInFlight(userId,
+  Set<AssistantRunKind>)` — the summary call site passes
+  `{WEEKLY_SUMMARY, MONTHLY_SUMMARY}` unchanged, reflection passes its own
+  single kind so a reflection run never blocks, or is blocked by, a summary
+  run)/
   `SuggestedTaskService` (accept/dismiss)/`SuggestedProjectService` (M8.5 —
   accept/dismiss for a whole plan; accept cascades caller-excluded task keys
   to their children, then calls `ProjectsApi.createFromPlan`)/
   `SummaryGenerationService` (M9 — a separate `@Async`/`@Transactional` bean,
   deliberately not a self-call on `AssistantRunService`, since Spring's
   proxy-based AOP can't intercept one; builds the context, calls
-  `AnthropicClient.generateSummary`, and persists `SUCCEEDED`/`FAILED`)/
+  `AnthropicClient.generateSummary`, and persists `SUCCEEDED`/`FAILED`; still
+  used for on-demand `POST /assistant/summaries` after M10's batch migration —
+  only the `@Scheduled` sweep moved off this path)/
+  `ReflectionGenerationService` (M10 — identical control flow to
+  `SummaryGenerationService`, for `JOURNAL_REFLECTION` runs; no appended
+  stats table, unlike a summary's output)/
   `SummaryScheduler` (M9 — two `@Scheduled` cron triggers, weekly
   Monday AM/monthly on the 1st, both UTC by default; resolves "yesterday" via
   the shared `Clock` bean so a Monday firing summarizes the week that just
   ended; every per-user failure is caught and logged so the sweep always
-  reaches the next user)/
+  reaches the next user; since M10, queues every opted-in user's `PENDING`
+  run as before but then hands the whole firing's run ids to
+  `SummaryBatchDispatcher` as one Anthropic Message Batch instead of
+  dispatching each via `SummaryGenerationService` individually)/
+  `SummaryBatchDispatcher` (M10, package-private — used only by
+  `SummaryScheduler`; builds each queued run's `SummaryContextBuilder.Context`
+  exactly like `SummaryGenerationService` does, stores the rendered stats
+  table under `input_snapshot["statsTable"]` before submitting so it's never
+  recomputed hours later at poll time, then submits one
+  `AnthropicClient.submitBatch` call and tags every staged run with the new
+  `assistant_batch` row's id)/
+  `SummaryBatchPollingScheduler` (M10, package-private — a fixed-delay
+  `@Scheduled` job, `kairon.assistant.summary.batch-poll-interval` default
+  `PT15M`, separate from `SummaryScheduler` since it's a different trigger
+  shape and responsibility: it checks every non-`ENDED` `assistant_batch`,
+  and once Anthropic reports a batch `ENDED`, reads back every per-request
+  result and writes `SUCCEEDED`/`FAILED` onto the matching run — one bad
+  result fails only that run, never the rest of the batch)/
   `TodoSuggestionContextBuilder` (the system prompt + per-request context)/
   `ProjectPlanContextBuilder` (M8.5, lighter than the todo-suggestion builder
   — the only cross-module aggregation is `ProjectsApi.categories`, fetched so
@@ -117,13 +155,28 @@ updated when decisions change.
   table, appended to the model's narrative after the call returns — never
   model-authored)/`SummaryPeriod` (`WEEK`/`MONTH`, `.resolve(LocalDate)` ->
   the Mon–Sun week or calendar month containing that date, `.kind()` -> the
-  matching `AssistantRunKind`)/
+  matching `AssistantRunKind`; M10's `requestJournalReflection` reuses only
+  `WEEK.resolve(LocalDate)` for the date math, never `.kind()`, since that
+  always maps to `WEEKLY_SUMMARY`)/
+  `JournalReflectionContextBuilder` (M10 — three sources, deliberately
+  narrower than `SummaryContextBuilder`: the week's `JournalApi.range` entries
+  rendered in full (day, title, mood, content, capped at
+  `journal-reflection.max-entries`), one sentence of `TodoApi.periodStats`,
+  and the top `journal-reflection.max-projects` projects by
+  `ProjectsApi.projectPeriodStats`, named only; three fixed system-prompt tone
+  variants selected by the user's `assistant.tone` preference — no stats
+  table, the model's narrative is the entire output)/
   `AssistantProperties` (gained a `Summary` nested config record — cron
-  schedules, `zone`, `maxHighlightItems`, `effort`)/`Horizon`/`AssistantMapper`/
+  schedules, `zone`, `maxHighlightItems`, `effort` — and, for M10, a
+  `JournalReflection` nested record — `maxEntries`/`maxProjects`/`effort`, no
+  cron/zone fields since this kind has no scheduled trigger)/`Horizon`/
+  `AssistantMapper`/
   `AssistantRunView`
   (M8.5: gained a `suggestedProject` field alongside `suggestions`, one run
   view for both kinds; M9: gained `outputMarkdown`, populated only for
-  `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` runs)/`AssistantRunPage` (M9 — the
+  `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` runs; M10: the same field is now also
+  populated for `JOURNAL_REFLECTION` runs, no shape change needed)/
+  `AssistantRunPage` (M9 — the
   `content`/`page`/`totalElements` shape backing `GET /assistant/runs`, same
   convention as `ProjectPage`)/`AssistantSuggestedTaskView`/
   `AssistantUpstreamException`/
@@ -136,10 +189,14 @@ updated when decisions change.
   exact name match; a null `categoryId` with a non-null `categoryName` means
   no match, to be created as a new category on accept), `config`
   `AssistantConfig`, `web` `AssistantRunController` (M9: gained
-  `POST /assistant/summaries` and `GET /assistant/runs`)/`SuggestedTaskController`/
-  `AssistantDtos`/`ProjectPlanController`/`SuggestedProjectController`/
+  `POST /assistant/summaries` and `GET /assistant/runs`; M10: gained
+  `POST /assistant/journal-reflection`)/`SuggestedTaskController`/
+  `AssistantDtos` (M10: gained `JournalReflectionRequest`)/`ProjectPlanController`/
+  `SuggestedProjectController`/
   `ProjectPlanDtos` (M8.5)). Extends `TodoApi` with `range` and, for M9,
-  `periodStats`; `JournalApi` with `range`;
+  `periodStats`; `JournalApi` with `range`, now also read directly by
+  `AssistantRunService.requestJournalReflection` (M10, the empty-week check)
+  and by `JournalReflectionContextBuilder`;
   `ProjectsApi` with `openTasksInActiveProjects`, for M8.5 `createFromPlan`
   and (added for this same feature, post-launch) `categories`, and for M9
   `projectPeriodStats`;
@@ -160,10 +217,17 @@ updated when decisions change.
   hard-deletes the edges touching it), `V007__assistant.sql` (`assistant_run` +
   `assistant_suggested_task`, both hard-delete-only — see docs/DATA_MODEL.md),
   `V008__project_plan.sql` (widens `assistant_run.kind` to add
-  `PROJECT_GENERATION`; adds `assistant_suggested_project`, M8.5).
-  M6 and M9 add no migration; there is no `V006` or `V009` — M8's `V007`
-  deliberately over-specified `assistant_run.kind`/`output_markdown`/
-  `period_start`/`period_end` for exactly M9's use.
+  `PROJECT_GENERATION`; adds `assistant_suggested_project`, M8.5),
+  `V009__project_category_rank.sql` (`project.category_rank` — unrelated to
+  the assistant module; a projects-feature change merged to `main` while this
+  milestone was being planned, which is why M10's own migration below is
+  `V010`, not the `V009` its own plan document assumed), `V010__assistant_batch.sql`
+  (`assistant_batch` + `assistant_run.batch_id`, M10's Batch API migration for
+  M9's scheduled summary sweep — see docs/DATA_MODEL.md).
+  M6 adds no migration; there is no `V006`. M9 and M10's own `JOURNAL_REFLECTION`
+  feature likewise add no migration — M8's `V007` deliberately over-specified
+  `assistant_run.kind`/`output_markdown`/`period_start`/`period_end` for
+  exactly M9's and M10's use.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -199,9 +263,15 @@ updated when decisions change.
   `SuggestTodosButton` (a two-step dialog: horizon choice, then
   `SuggestedTaskList` review-and-accept, used on both `TodayPage` and
   `DayView`)/`SuggestedTaskList`/`AssistantSettings` (embedded in
-  `AccountPage`, now three real toggles — todo suggestions, project
-  generation, execution summaries — and the still-inert journal-reflection
-  placeholder remains absent — + model override); M8.5 adds
+  `AccountPage`; M10 brings it to four real toggles — todo suggestions,
+  project generation, execution summaries, and journal reflection — plus a
+  tone `Select` (encouraging/balanced/direct) and model override. The
+  journal-reflection checkbox is the one exception to this page's own
+  "checkbox PATCHes immediately" pattern: turning it **on** opens a
+  `Dialog`-based confirmation (reusing the existing component, not a new
+  `alert-dialog` package) naming that full journal text is sent to Anthropic,
+  and only commits the `PATCH` once confirmed there; turning it off needs no
+  confirmation, same as the other three); M8.5 adds
   `GenerateProjectDialog` (a two-step
   dialog on `ProjectListPage`: description+dates form, then
   `ProjectPlanReview` in the same dialog once a plan comes back — no field
@@ -217,9 +287,15 @@ updated when decisions change.
   `outputMarkdown` — narrative + the deterministic stats table — via
   `react-markdown`/`remark-gfm`, this app's first read-only markdown/GFM-table
   render; while the run is `PENDING`/`RUNNING`, polls instead and shows a
-  spinner), hooks in `useAssistant.ts`/`useAssistantRuns.ts` (M9 — the first
-  `refetchInterval`-based polling hook in this app) + `assistantKeys`
-  (gained `runs.list(filter)`).
+  spinner); M10 adds `JOURNAL_REFLECTION` as a third kind on both
+  `SummariesPage` (a "Generate weekly reflection" button, shown only when
+  `me.preferences.assistant.journalReflection.enabled`, targeting "this week"
+  with no date picker — same simplicity as M9's own summary buttons) and
+  `SummaryDetail` (a `KIND_LABEL` entry; rendering itself needed no change,
+  already kind-agnostic), hooks in `useAssistant.ts`/`useAssistantRuns.ts` (M9
+  — the first `refetchInterval`-based polling hook in this app; M10 adds
+  `useRequestJournalReflection`, same shape as `useRequestSummary`) +
+  `assistantKeys` (gained `runs.list(filter)`).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
   and the app's default landing route (M6); M9 adds a "Summaries" top-level
@@ -261,8 +337,8 @@ updated when decisions change.
   ConfigMap entries, and a `deploy/RUNBOOK.md` section on enabling/rotating
   the key.
 
-Next milestone is **M10 — Weekly journal reflection** (see
-`docs/ROADMAP.md`).
+Next milestone is **M11+ — Mobile & beyond** (see `docs/ROADMAP.md`) — no
+milestone plan has been drafted for it yet.
 
 ## What Kairon is
 

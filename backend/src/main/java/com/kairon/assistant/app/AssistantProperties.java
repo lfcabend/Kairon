@@ -19,7 +19,8 @@ public record AssistantProperties(
         long monthlyTokenBudgetPerUser,
         TodoSuggestions todoSuggestions,
         ProjectPlan projectPlan,
-        Summary summary) {
+        Summary summary,
+        JournalReflection journalReflection) {
 
     public AssistantProperties {
         if (model == null || model.isBlank()) {
@@ -39,6 +40,9 @@ public record AssistantProperties(
         }
         if (summary == null) {
             summary = new Summary(null, null, null, 0, null);
+        }
+        if (journalReflection == null) {
+            journalReflection = new JournalReflection(0, 0, null);
         }
     }
 
@@ -108,6 +112,26 @@ public record AssistantProperties(
             }
             if (effort == null || effort.isBlank()) {
                 effort = "HIGH";
+            }
+        }
+    }
+
+    /**
+     * Context sizing for {@code JOURNAL_REFLECTION} runs (M10 D10/D16). No
+     * cron/zone fields — unlike {@link Summary}, this kind has no
+     * {@code @Scheduled} auto-trigger (M10 D4), on-demand only.
+     */
+    public record JournalReflection(int maxEntries, int maxProjects, String effort) {
+
+        public JournalReflection {
+            if (maxEntries <= 0) {
+                maxEntries = 30; // M10 D16 — pathological-case guard, not an expected-case limit
+            }
+            if (maxProjects <= 0) {
+                maxProjects = 5;
+            }
+            if (effort == null || effort.isBlank()) {
+                effort = "HIGH"; // a reflective-synthesis task, same rationale as M9's summary.effort
             }
         }
     }

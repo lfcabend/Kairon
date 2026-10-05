@@ -58,6 +58,10 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.FORBIDDEN, "forbidden", detail);
     }
 
+    public static ApiException unprocessable(String detail) {
+        return new ApiException(HttpStatus.UNPROCESSABLE_ENTITY, "unprocessable", detail);
+    }
+
     public static ApiException serviceUnavailable(String detail) {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "assistant-unavailable", detail);
     }

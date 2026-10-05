@@ -1,18 +1,26 @@
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { authApi } from "@/lib/api/auth";
 import { todayInZone } from "@/lib/date";
+import type { Me } from "@/lib/api/types";
 
 import { SummaryDetail } from "./SummaryDetail";
-import { useAssistantRunsList, useRequestSummary } from "./useAssistantRuns";
-
-const SUMMARY_KINDS = ["WEEKLY_SUMMARY", "MONTHLY_SUMMARY"];
+import { useAssistantRunsList, useRequestJournalReflection, useRequestSummary } from "./useAssistantRuns";
 
 const KIND_LABEL: Record<string, string> = {
   WEEKLY_SUMMARY: "Weekly",
   MONTHLY_SUMMARY: "Monthly",
+  JOURNAL_REFLECTION: "Weekly reflection",
 };
+
+function isJournalReflectionEnabled(me: Me | undefined): boolean {
+  const assistant = (me?.preferences as { assistant?: { journalReflection?: { enabled?: boolean } } } | undefined)
+    ?.assistant;
+  return assistant?.journalReflection?.enabled === true;
+}
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "outline"> = {
   PENDING: "outline",
@@ -35,14 +43,27 @@ function periodLabel(periodStart?: string, periodEnd?: string): string {
  */
 export function SummariesPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const { data: page, isLoading } = useAssistantRunsList({ kind: SUMMARY_KINDS });
+  const { data: me } = useQuery<Me>({ queryKey: ["me"], queryFn: authApi.me });
+  const journalReflectionEnabled = isJournalReflectionEnabled(me);
+  const summaryKinds = journalReflectionEnabled
+    ? ["WEEKLY_SUMMARY", "MONTHLY_SUMMARY", "JOURNAL_REFLECTION"]
+    : ["WEEKLY_SUMMARY", "MONTHLY_SUMMARY"];
+  const { data: page, isLoading } = useAssistantRunsList({ kind: summaryKinds });
   const requestSummary = useRequestSummary();
+  const requestReflection = useRequestJournalReflection();
 
   const runs = page?.content ?? [];
 
   const generate = (period: "WEEK" | "MONTH") => {
     requestSummary.mutate(
       { period, date: todayInZone("UTC") },
+      { onSuccess: (run) => setSelectedRunId(run.id) },
+    );
+  };
+
+  const generateReflection = () => {
+    requestReflection.mutate(
+      { weekOf: todayInZone("UTC") },
       { onSuccess: (run) => setSelectedRunId(run.id) },
     );
   };
@@ -58,12 +79,23 @@ export function SummariesPage() {
           <Button variant="outline" disabled={requestSummary.isPending} onClick={() => generate("MONTH")}>
             Generate monthly summary
           </Button>
+          {journalReflectionEnabled && (
+            <Button variant="outline" disabled={requestReflection.isPending} onClick={generateReflection}>
+              Generate weekly reflection
+            </Button>
+          )}
         </div>
       </div>
 
       {requestSummary.isError && (
         <p className="text-sm text-destructive" role="alert">
           {requestSummary.error.message || "Could not start a summary run."}
+        </p>
+      )}
+
+      {requestReflection.isError && (
+        <p className="text-sm text-destructive" role="alert">
+          {requestReflection.error.message || "Could not start a reflection run."}
         </p>
       )}
 

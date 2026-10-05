@@ -667,6 +667,17 @@ function isExecutionSummariesEnabled(): boolean {
   return assistant?.executionSummaries?.enabled === true;
 }
 
+function isJournalReflectionEnabled(): boolean {
+  const assistant = (meResponse.preferences as { assistant?: { journalReflection?: { enabled?: boolean } } })
+    .assistant;
+  return assistant?.journalReflection?.enabled === true;
+}
+
+const CANNED_REFLECTION_MARKDOWN =
+  "### Patterns\n\nA canned test reflection — no real Anthropic call was made.\n\n" +
+  "### Worth noticing\n\nNothing in particular; this is a stub.\n\n" +
+  "### A question to sit with\n\nWhat would make next week feel different?\n";
+
 const CANNED_SUMMARY_MARKDOWN =
   "## This week: steady progress\n\nA canned test narrative — no real Anthropic call was made.\n\n" +
   "## Stats\n\n| Metric | Value |\n| --- | --- |\n| Todos completed | 3 |\n\n" +
@@ -774,6 +785,16 @@ const assistantHandlers = [
         run.outputMarkdown = CANNED_SUMMARY_MARKDOWN;
       }
     }
+    if (run.kind === "JOURNAL_REFLECTION") {
+      const count = (summaryPollCounts.get(run.id) ?? 0) + 1;
+      summaryPollCounts.set(run.id, count);
+      if (count >= 2 && (run.status === "PENDING" || run.status === "RUNNING")) {
+        run.status = "SUCCEEDED";
+        run.inputTokens = 700;
+        run.outputTokens = 240;
+        run.outputMarkdown = CANNED_REFLECTION_MARKDOWN;
+      }
+    }
     return HttpResponse.json({
       ...run,
       suggestions: assistantSuggestedTasks.filter((t) => t.runId === run.id),
@@ -811,6 +832,36 @@ const assistantHandlers = [
     const run: AssistantRun = {
       id: `assistant-run-${assistantRunSeq}`,
       kind: body.period === "WEEK" ? "WEEKLY_SUMMARY" : "MONTHLY_SUMMARY",
+      status: "PENDING",
+      model: "claude-sonnet-5",
+      periodStart: range.start,
+      periodEnd: range.end,
+      createdAt: new Date().toISOString(),
+      suggestions: [],
+    };
+    assistantRuns.push(run);
+    return HttpResponse.json(run, { status: 201 });
+  }),
+
+  http.post(/\/api\/v1\/assistant\/journal-reflection$/, async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    if (!isJournalReflectionEnabled()) {
+      return problem(403, "You haven't enabled journal reflection in Settings.");
+    }
+    const inFlight = assistantRuns.some(
+      (r) => r.kind === "JOURNAL_REFLECTION" && (r.status === "PENDING" || r.status === "RUNNING"),
+    );
+    if (inFlight) return problem(409, "A run of this kind is already in progress. Wait for it to finish.");
+    const body = (await request.json()) as { weekOf: string };
+    const range = resolveSummaryPeriod("WEEK", body.weekOf);
+    const hasEntries = liveJournal().some((e) => e.day >= range.start && e.day <= range.end);
+    if (!hasEntries) {
+      return problem(422, "No journal entries for that week — nothing to reflect on.");
+    }
+    assistantRunSeq += 1;
+    const run: AssistantRun = {
+      id: `assistant-run-${assistantRunSeq}`,
+      kind: "JOURNAL_REFLECTION",
       status: "PENDING",
       model: "claude-sonnet-5",
       periodStart: range.start,

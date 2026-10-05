@@ -6,8 +6,9 @@ import { beforeEach, expect, test } from "vitest";
 
 import App from "@/App";
 import { useAuthStore } from "@/features/auth/authStore";
+import { todayInZone } from "@/lib/date";
 
-import { meResponse, seedAssistantRun } from "@/test/msw/handlers";
+import { meResponse, seedAssistantRun, seedJournalEntries } from "@/test/msw/handlers";
 
 function renderApp(route: string) {
   const queryClient = new QueryClient({
@@ -34,6 +35,10 @@ beforeEach(() => {
 
 function optIn() {
   Object.assign(meResponse, { preferences: { assistant: { executionSummaries: { enabled: true } } } });
+}
+
+function optIntoReflection() {
+  Object.assign(meResponse, { preferences: { assistant: { journalReflection: { enabled: true } } } });
 }
 
 test("renders history and clicking a row opens its detail", async () => {
@@ -71,4 +76,39 @@ test("generating without opting in shows the backend's 403 message", async () =>
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "You haven't enabled execution summaries in Settings.",
   );
+});
+
+test("the reflection button is absent when journal reflection is not opted into", async () => {
+  renderApp("/summaries");
+
+  await screen.findByRole("button", { name: "Generate weekly summary" });
+  expect(screen.queryByRole("button", { name: "Generate weekly reflection" })).not.toBeInTheDocument();
+});
+
+test("the reflection button is present and generates a reflection run when opted in", async () => {
+  const user = userEvent.setup();
+  optIntoReflection();
+  seedJournalEntries([{ day: todayInZone("UTC"), content: "Felt good about the week." }]);
+  renderApp("/summaries");
+
+  await user.click(await screen.findByRole("button", { name: "Generate weekly reflection" }));
+
+  expect(await screen.findByText("Generating your summary…")).toBeInTheDocument();
+});
+
+test("a JOURNAL_REFLECTION row renders with the right kind label", async () => {
+  const user = userEvent.setup();
+  optIntoReflection();
+  seedAssistantRun({
+    kind: "JOURNAL_REFLECTION",
+    status: "SUCCEEDED",
+    periodStart: "2026-09-21",
+    periodEnd: "2026-09-27",
+    outputMarkdown: "### Patterns\n\nA finished reflection.",
+  });
+  renderApp("/summaries");
+
+  expect(await screen.findByText("Weekly reflection")).toBeInTheDocument();
+  await user.click(await screen.findByText("2026-09-21 – 2026-09-27"));
+  expect(await screen.findByText("A finished reflection.")).toBeInTheDocument();
 });

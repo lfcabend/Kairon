@@ -5,6 +5,7 @@ import type {
   AssistantRunPage,
   AssistantSuggestedTask,
   GenerateProjectPlanBody,
+  JournalReflectionRequestBody,
   Project,
   RequestSummaryBody,
   SuggestedProjectPlan,
@@ -43,6 +44,9 @@ export const assistantApi = {
 
   requestSummary: (body: RequestSummaryBody) =>
     apiFetch<AssistantRun>("/assistant/summaries", { method: "POST", body }),
+
+  requestJournalReflection: (body: JournalReflectionRequestBody) =>
+    apiFetch<AssistantRun>("/assistant/journal-reflection", { method: "POST", body }),
 
   listRuns: (filter: AssistantRunListFilter = {}) => {
     const params = new URLSearchParams();

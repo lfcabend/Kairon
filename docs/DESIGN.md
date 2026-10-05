@@ -608,7 +608,7 @@ deploy/helm/kairon/
 
 ## 13. AI assistant (later phase)
 
-**Status: M8, M8.5, and M9 implemented; M10 planned.** Everything here is optional, opt-in per feature,
+**Status: M8, M8.5, M9, and M10 implemented.** Everything here is optional, opt-in per feature,
 and off by default. Kairon runs fully with the assistant disabled, and the
 feature is dark entirely unless the operator has configured an Anthropic API key.
 

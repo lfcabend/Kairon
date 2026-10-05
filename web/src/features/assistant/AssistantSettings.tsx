@@ -1,10 +1,26 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { authApi } from "@/lib/api/auth";
 import type { AssistantPreferences, Me } from "@/lib/api/types";
+
+const TONE_OPTIONS = [
+  { value: "encouraging", label: "Encouraging" },
+  { value: "balanced", label: "Balanced" },
+  { value: "direct", label: "Direct" },
+];
 
 // Radix's Select.Item can't take value="" (it's reserved for "no selection"
 // internally), so the "use the instance default" choice gets its own sentinel.
@@ -30,15 +46,19 @@ function currentAssistantPrefs(me: Me | undefined): AssistantPreferences {
 }
 
 /**
- * Todo suggestions (M8), project generation (M8.5), and execution summaries
- * (M9) are implemented — journal reflection (M10) doesn't exist yet, so this
- * panel deliberately doesn't offer a toggle for it (a control for a feature
- * that does nothing would just be misleading). Same read-modify-write
+ * Todo suggestions (M8), project generation (M8.5), execution summaries (M9),
+ * and journal reflection (M10) are implemented. Same read-modify-write
  * `PATCH /me` pattern the existing rollover setting on this page already uses.
+ * Journal reflection's checkbox is the one exception: turning it **on** opens
+ * a confirmation dialog first (M10 D13) — it's the one feature that sends full
+ * journal entry text, not a summary, off the instance — and only commits the
+ * `PATCH` once the user explicitly confirms there. Turning it off, like every
+ * other toggle here, needs no confirmation.
  */
 export function AssistantSettings({ me }: { me: Me | undefined }) {
   const queryClient = useQueryClient();
   const prefs = currentAssistantPrefs(me);
+  const [confirmingJournalReflection, setConfirmingJournalReflection] = useState(false);
 
   const mutation = useMutation({
     mutationFn: (patch: Partial<AssistantPreferences>) =>
@@ -113,6 +133,48 @@ export function AssistantSettings({ me }: { me: Me | undefined }) {
         </span>
       </label>
 
+      <label className="mt-4 flex items-start gap-3 text-sm">
+        <Checkbox
+          className="mt-0.5"
+          checked={prefs.journalReflection.enabled}
+          disabled={mutation.isPending}
+          onCheckedChange={(checked) => {
+            if (checked === true) {
+              setConfirmingJournalReflection(true);
+            } else {
+              mutation.mutate({ journalReflection: { enabled: false } });
+            }
+          }}
+        />
+        <span>
+          <span className="font-medium">Journal reflection</span>
+          <span className="block text-xs text-muted-foreground">
+            Show a "Generate weekly reflection" option on the Summaries page. Sends your
+            full journal entry text for the selected week to Anthropic.
+          </span>
+        </span>
+      </label>
+
+      <div className="mt-4 space-y-1.5">
+        <Label>Tone</Label>
+        <Select
+          value={prefs.tone}
+          onValueChange={(value) => mutation.mutate({ tone: value })}
+        >
+          <SelectTrigger aria-label="Tone" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {TONE_OPTIONS.map((opt) => (
+              <SelectItem key={opt.value} value={opt.value}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">Used by journal reflection's narrative voice.</p>
+      </div>
+
       <div className="mt-4 space-y-1.5">
         <Label>Model</Label>
         <Select
@@ -139,6 +201,32 @@ export function AssistantSettings({ me }: { me: Me | undefined }) {
           Could not save. Try again.
         </p>
       )}
+
+      <Dialog open={confirmingJournalReflection} onOpenChange={setConfirmingJournalReflection}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enable journal reflection?</DialogTitle>
+            <DialogDescription>
+              Journal reflection sends your journal entries' <strong>full text</strong> for
+              the selected week to Anthropic, not just a summary. This is different from
+              Kairon's other assistant features, which only send task and project details.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmingJournalReflection(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                mutation.mutate({ journalReflection: { enabled: true } });
+                setConfirmingJournalReflection(false);
+              }}
+            >
+              Enable journal reflection
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

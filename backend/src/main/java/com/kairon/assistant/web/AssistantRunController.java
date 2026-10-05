@@ -7,7 +7,9 @@ import java.util.UUID;
 import com.kairon.assistant.app.AssistantRunPage;
 import com.kairon.assistant.app.AssistantRunService;
 import com.kairon.assistant.app.AssistantRunView;
+import com.kairon.assistant.app.ReflectionGenerationService;
 import com.kairon.assistant.app.SummaryGenerationService;
+import com.kairon.assistant.web.AssistantDtos.JournalReflectionRequest;
 import com.kairon.assistant.web.AssistantDtos.SummaryRequest;
 import com.kairon.assistant.web.AssistantDtos.TodoSuggestionRequest;
 import com.kairon.common.security.CurrentUser;
@@ -36,10 +38,13 @@ public class AssistantRunController {
 
     private final AssistantRunService assistantRuns;
     private final SummaryGenerationService summaryDispatcher;
+    private final ReflectionGenerationService reflectionDispatcher;
 
-    public AssistantRunController(AssistantRunService assistantRuns, SummaryGenerationService summaryDispatcher) {
+    public AssistantRunController(AssistantRunService assistantRuns, SummaryGenerationService summaryDispatcher,
+            ReflectionGenerationService reflectionDispatcher) {
         this.assistantRuns = assistantRuns;
         this.summaryDispatcher = summaryDispatcher;
+        this.reflectionDispatcher = reflectionDispatcher;
     }
 
     @PostMapping("/assistant/todo-suggestions")
@@ -57,6 +62,17 @@ public class AssistantRunController {
         AssistantRunView view = assistantRuns.requestSummary(userId, req.period(), req.date());
         // Dispatched only now — after requestSummary's own transaction committed (D2).
         summaryDispatcher.generate(view.id());
+        return view;
+    }
+
+    @PostMapping("/assistant/journal-reflection")
+    @ResponseStatus(HttpStatus.CREATED)
+    public AssistantRunView requestJournalReflection(@CurrentUser UserId userId,
+            @Valid @RequestBody JournalReflectionRequest req) {
+        log.debug("POST /assistant/journal-reflection userId={} weekOf={}", userId.value(), req.weekOf());
+        AssistantRunView view = assistantRuns.requestJournalReflection(userId, req.weekOf());
+        // Dispatched only now — after requestJournalReflection's own transaction committed (D3).
+        reflectionDispatcher.generate(view.id());
         return view;
     }
 

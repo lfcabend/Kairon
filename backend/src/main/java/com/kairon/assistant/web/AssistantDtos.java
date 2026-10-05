@@ -17,4 +17,7 @@ final class AssistantDtos {
 
     record SummaryRequest(@NotNull SummaryPeriod period, @NotNull LocalDate date) {
     }
+
+    record JournalReflectionRequest(@NotNull LocalDate weekOf) {
+    }
 }

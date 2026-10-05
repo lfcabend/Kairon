@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.kairon.assistant.domain.AssistantRunKind;
 import com.kairon.assistant.domain.AssistantSuggestedProject;
 import com.kairon.assistant.llm.AnthropicClient;
 import com.kairon.assistant.llm.AnthropicClient.ProjectPlanRequest;
@@ -25,6 +26,8 @@ import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.identity.api.UserAccountApi;
+import com.kairon.journal.api.JournalApi;
+import com.kairon.journal.api.JournalEntryView;
 
 import tools.jackson.databind.ObjectMapper;
 
@@ -70,6 +73,9 @@ class AssistantRunServiceTest {
     ProjectPlanContextBuilder projectPlanContextBuilder;
 
     @Mock
+    JournalApi journal;
+
+    @Mock
     AnthropicClient anthropicClient;
 
     @Mock
@@ -82,14 +88,14 @@ class AssistantRunServiceTest {
     void setUp() {
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
                 500_000, new AssistantProperties.TodoSuggestions(7, 21, 5, 5, "MEDIUM"),
-                new AssistantProperties.ProjectPlan(40), null);
+                new AssistantProperties.ProjectPlan(40), null, null);
         service = newService();
         stubPlanRoundTrip();
     }
 
     private AssistantRunService newService() {
         return new AssistantRunService(runs, suggestedTasks, suggestedProjects, properties, accounts, contextBuilder,
-                projectPlanContextBuilder, anthropicClient, objectMapper, CLOCK);
+                projectPlanContextBuilder, journal, anthropicClient, objectMapper, CLOCK);
     }
 
     @SuppressWarnings("unchecked")
@@ -121,6 +127,14 @@ class AssistantRunServiceTest {
         return new AssistantPreferencesView(false, true, false, false, null, "balanced");
     }
 
+    private static AssistantPreferencesView optedInToJournalReflection() {
+        return new AssistantPreferencesView(false, false, true, false, null, "balanced");
+    }
+
+    private static JournalEntryView anEntry() {
+        return new JournalEntryView(UUID.randomUUID(), DAY, 0, null, "Content", 3, Instant.now(), Instant.now(), 0);
+    }
+
     private static TodoSuggestionContextBuilder.Context context() {
         return new TodoSuggestionContextBuilder.Context("system", "user content", Map.of("systemPrompt", "system"));
     }
@@ -132,7 +146,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -144,7 +158,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestTodoSuggestions_whenNoApiKey_throwsForbidden() {
-        properties = new AssistantProperties(true, "  ", null, null, 0, null, null, null);
+        properties = new AssistantProperties(true, "  ", null, null, 0, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestTodoSuggestions(USER, DAY, Horizon.DAY))
@@ -265,7 +279,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestProjectPlan_whenInstanceDisabled_throwsForbiddenAndNeverBuildsContext() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestProjectPlan(USER, "Kitchen remodel", DAY, null))
@@ -359,7 +373,7 @@ class AssistantRunServiceTest {
         when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
         when(projectPlanContextBuilder.build(any(), any(), any(), any())).thenReturn(planContext());
         properties = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", Duration.ofSeconds(30),
-                500_000, null, new AssistantProperties.ProjectPlan(2), null);
+                500_000, null, new AssistantProperties.ProjectPlan(2), null, null);
         service = newService();
         List<PlannedTaskPayload> fiveTasks = java.util.stream.IntStream.range(0, 5)
                 .mapToObj(i -> new PlannedTaskPayload("t" + i, null, "Task " + i, null, false, DAY, DAY, null))
@@ -394,7 +408,7 @@ class AssistantRunServiceTest {
 
     @Test
     void requestSummary_whenInstanceDisabled_throwsForbidden() {
-        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
         service = newService();
 
         assertThatThrownBy(() -> service.requestSummary(USER, SummaryPeriod.WEEK, DAY))
@@ -446,6 +460,102 @@ class AssistantRunServiceTest {
         AssistantRunView view = service.requestSummary(USER, SummaryPeriod.WEEK, DAY);
 
         assertThat(view.kind()).isEqualTo("WEEKLY_SUMMARY");
+        assertThat(view.status()).isEqualTo("PENDING");
+        assertThat(view.outputMarkdown()).isNull();
+        SummaryPeriod.Range expected = SummaryPeriod.WEEK.resolve(DAY);
+        assertThat(view.periodStart()).isEqualTo(expected.start());
+        assertThat(view.periodEnd()).isEqualTo(expected.end());
+        verify(runs, times(1)).save(any());
+    }
+
+    // --- requestJournalReflection (M10) ------------------------------------------
+
+    @Test
+    void requestJournalReflection_whenInstanceDisabled_throwsForbidden() {
+        properties = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null, null);
+        service = newService();
+
+        assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(accounts, never()).assistantPreferences(any());
+        verify(journal, never()).range(any(), any(), any());
+    }
+
+    @Test
+    void requestJournalReflection_whenNotOptedIn_throwsForbidden() {
+        when(accounts.assistantPreferences(USER))
+                .thenReturn(new AssistantPreferencesView(false, false, false, false, null, "balanced"));
+
+        assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestJournalReflection_whenBudgetExceeded_throwsForbidden() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToJournalReflection());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(600_000L);
+
+        assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestJournalReflection_whenAnotherReflectionRunIsInFlight_throwsConflict() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToJournalReflection());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()),
+                eq(List.of(AssistantRunKind.JOURNAL_REFLECTION)), any())).thenReturn(true);
+
+        assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(409));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestJournalReflection_doesNotConflictWithAnInFlightSummaryRun() {
+        // M10 D5 — a reflection run is guarded independently of WEEKLY_SUMMARY/
+        // MONTHLY_SUMMARY; an in-flight summary run must not block a reflection.
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToJournalReflection());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()),
+                eq(List.of(AssistantRunKind.JOURNAL_REFLECTION)), any())).thenReturn(false);
+        when(journal.range(eq(USER), any(), any())).thenReturn(List.of(anEntry()));
+
+        AssistantRunView view = service.requestJournalReflection(USER, DAY);
+
+        assertThat(view.kind()).isEqualTo("JOURNAL_REFLECTION");
+        assertThat(view.status()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void requestJournalReflection_whenWeekHasNoJournalEntries_throwsUnprocessableAndCreatesNoRun() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToJournalReflection());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()), any(), any())).thenReturn(false);
+        when(journal.range(eq(USER), any(), any())).thenReturn(List.of());
+
+        assertThatThrownBy(() -> service.requestJournalReflection(USER, DAY))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(422));
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void requestJournalReflection_whenAvailable_queuesAPendingRunForTheResolvedWeek() {
+        when(accounts.assistantPreferences(USER)).thenReturn(optedInToJournalReflection());
+        when(runs.sumTokensSince(eq(USER.value()), any())).thenReturn(0L);
+        when(runs.existsByUserIdAndKindInAndStatusIn(eq(USER.value()), any(), any())).thenReturn(false);
+        when(journal.range(eq(USER), any(), any())).thenReturn(List.of(anEntry()));
+
+        AssistantRunView view = service.requestJournalReflection(USER, DAY);
+
+        assertThat(view.kind()).isEqualTo("JOURNAL_REFLECTION");
         assertThat(view.status()).isEqualTo("PENDING");
         assertThat(view.outputMarkdown()).isNull();
         SummaryPeriod.Range expected = SummaryPeriod.WEEK.resolve(DAY);

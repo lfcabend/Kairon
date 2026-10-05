@@ -2,6 +2,9 @@ package com.kairon.assistant.llm;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -25,6 +28,11 @@ import org.springframework.stereotype.Component;
 class FakeAnthropicClient implements AnthropicClient {
 
     private static final Logger log = LoggerFactory.getLogger(FakeAnthropicClient.class);
+
+    // Keyed by the fake batch id this stub hands back from submitBatch — just
+    // enough state so pollBatch/retrieveBatchResults can answer for the same
+    // batch later, entirely in-memory (never a real Anthropic batch).
+    private final Map<String, List<String>> fakeBatches = new ConcurrentHashMap<>();
 
     @Override
     public TodoSuggestionsResult suggestTodos(TodoSuggestionRequest request) {
@@ -67,6 +75,50 @@ class FakeAnthropicClient implements AnthropicClient {
                 - This is a canned suggestion from FakeAnthropicClient.
                 """;
         return new SummaryResult(markdown, request.model(), 120, 60);
+    }
+
+    @Override
+    public ReflectionResult generateReflection(ReflectionRequest request) {
+        log.info("FakeAnthropicClient.generateReflection (local e2e stub) model={}", request.model());
+        String markdown = """
+                This week reads steady, with a couple of specific threads worth naming.
+
+                ### Patterns
+                This is a canned e2e reflection stub for Playwright — no real Anthropic call
+                was made.
+
+                ### Worth noticing
+                Same canned note — nothing computed here.
+
+                ### A question to sit with
+                What would make next week feel different?
+                """;
+        return new ReflectionResult(markdown, request.model(), 140, 90);
+    }
+
+    // M10 D17/§4.10 — resolves "ended" on first poll, so `task e2e` doesn't
+    // need real wall-clock delay to exercise the scheduled-sweep batch path.
+    @Override
+    public BatchHandle submitBatch(List<BatchRequestItem> requests) {
+        String fakeBatchId = "fake-batch-" + UUID.randomUUID();
+        fakeBatches.put(fakeBatchId, requests.stream().map(BatchRequestItem::customId).toList());
+        log.info("FakeAnthropicClient.submitBatch (local e2e stub) id={} requests={}", fakeBatchId, requests.size());
+        return new BatchHandle(fakeBatchId);
+    }
+
+    @Override
+    public BatchPollResult pollBatch(String anthropicBatchId) {
+        return new BatchPollResult(true, "ENDED");
+    }
+
+    @Override
+    public List<BatchResultItem> retrieveBatchResults(String anthropicBatchId) {
+        List<String> customIds = fakeBatches.getOrDefault(anthropicBatchId, List.of());
+        return customIds.stream()
+                .map(customId -> new BatchResultItem(customId, true,
+                        "## This period: a canned e2e batch summary\n\nNo real Anthropic call was made.",
+                        150, 70, null))
+                .toList();
     }
 
     private static final Pattern ISO_DATE = Pattern.compile("\\d{4}-\\d{2}-\\d{2}");

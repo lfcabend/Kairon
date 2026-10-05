@@ -6,6 +6,7 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import com.kairon.assistant.domain.AssistantRunKind;
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.UserAccountApi;
@@ -33,7 +34,7 @@ class SummarySchedulerTest {
     AssistantRunService assistantRuns;
 
     @Mock
-    SummaryGenerationService dispatcher;
+    SummaryBatchDispatcher batchDispatcher;
 
     @Mock
     UserAccountApi accounts;
@@ -42,31 +43,33 @@ class SummarySchedulerTest {
 
     @BeforeEach
     void setUp() {
-        available = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null, null);
+        available = new AssistantProperties(true, "sk-test-key", "claude-sonnet-5", null, 0, null, null, null, null);
     }
 
     private SummaryScheduler scheduler(AssistantProperties properties) {
-        return new SummaryScheduler(assistantRuns, dispatcher, accounts, properties, CLOCK);
+        return new SummaryScheduler(assistantRuns, batchDispatcher, accounts, properties, CLOCK);
     }
 
     @Test
     void weekly_whenInstanceUnavailable_neverQueriesUsers() {
-        AssistantProperties disabled = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null);
+        AssistantProperties disabled = new AssistantProperties(false, "sk-test-key", null, null, 0, null, null, null,
+                null);
 
         scheduler(disabled).weekly();
 
         verify(accounts, never()).usersOptedIntoExecutionSummaries();
         verify(assistantRuns, never()).requestSummary(any(), any(), any());
+        verify(batchDispatcher, never()).submitBatch(any(), any());
     }
 
     @Test
-    void weekly_withNoOptedInUsers_isANoOp() {
+    void weekly_withNoOptedInUsers_submitsAnEmptyBatch() {
         when(accounts.usersOptedIntoExecutionSummaries()).thenReturn(List.of());
 
         scheduler(available).weekly();
 
         verify(assistantRuns, never()).requestSummary(any(), any(), any());
-        verify(dispatcher, never()).generate(any());
+        verify(batchDispatcher).submitBatch(AssistantRunKind.WEEKLY_SUMMARY, List.of());
     }
 
     @Test
@@ -81,7 +84,9 @@ class SummarySchedulerTest {
 
         scheduler(available).weekly();
 
-        verify(dispatcher).generate(runIdB);
+        // The forbidden user is excluded from the batch without aborting the rest (D24's
+        // per-user tolerance, preserved from M9 D10).
+        verify(batchDispatcher).submitBatch(AssistantRunKind.WEEKLY_SUMMARY, List.of(runIdB));
     }
 
     @Test
@@ -96,7 +101,7 @@ class SummarySchedulerTest {
 
         scheduler(available).weekly();
 
-        verify(dispatcher).generate(runIdB);
+        verify(batchDispatcher).submitBatch(AssistantRunKind.WEEKLY_SUMMARY, List.of(runIdB));
     }
 
     @Test
@@ -110,6 +115,25 @@ class SummarySchedulerTest {
 
         scheduler(available).monthly();
 
-        verify(dispatcher).generate(runId);
+        verify(batchDispatcher).submitBatch(AssistantRunKind.MONTHLY_SUMMARY, List.of(runId));
+    }
+
+    @Test
+    void weekly_submitsOneBatchForAllQueuedUsersInASingleCall() {
+        when(accounts.usersOptedIntoExecutionSummaries()).thenReturn(List.of(USER_A, USER_B));
+        UUID runIdA = UUID.randomUUID();
+        UUID runIdB = UUID.randomUUID();
+        when(assistantRuns.requestSummary(eq(USER_A), eq(SummaryPeriod.WEEK), any()))
+                .thenReturn(new AssistantRunView(runIdA, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
+                        null, null, null, null, null, Instant.now(), List.of(), null, null));
+        when(assistantRuns.requestSummary(eq(USER_B), eq(SummaryPeriod.WEEK), any()))
+                .thenReturn(new AssistantRunView(runIdB, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
+                        null, null, null, null, null, Instant.now(), List.of(), null, null));
+
+        scheduler(available).weekly();
+
+        // Exactly one submitBatch call per firing (D20), not one per user.
+        verify(batchDispatcher, org.mockito.Mockito.times(1))
+                .submitBatch(AssistantRunKind.WEEKLY_SUMMARY, List.of(runIdA, runIdB));
     }
 }

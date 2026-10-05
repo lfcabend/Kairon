@@ -368,6 +368,12 @@ export interface RequestSummaryBody {
   date: string;
 }
 
+// --- Journal reflection (M10) --------------------------------------------------
+
+export interface JournalReflectionRequestBody {
+  weekOf: string;
+}
+
 export interface AssistantRunListFilter {
   kind?: string[];
   from?: string;

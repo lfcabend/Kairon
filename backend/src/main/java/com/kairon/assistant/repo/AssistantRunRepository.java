@@ -19,6 +19,9 @@ public interface AssistantRunRepository extends JpaRepository<AssistantRun, UUID
 
     Optional<AssistantRun> findByIdAndUserId(UUID id, UUID userId);
 
+    // Backs SummaryBatchPollingScheduler's result write-back (M10 D21).
+    List<AssistantRun> findByBatchId(UUID batchId);
+
     // D3 — the in-flight guard requestSummary (and the scheduled sweep) checks
     // before queuing a new WEEKLY_SUMMARY/MONTHLY_SUMMARY run.
     boolean existsByUserIdAndKindInAndStatusIn(UUID userId, List<AssistantRunKind> kinds,

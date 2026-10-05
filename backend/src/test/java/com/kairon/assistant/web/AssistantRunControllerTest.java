@@ -10,6 +10,7 @@ import com.kairon.assistant.app.AssistantRunService;
 import com.kairon.assistant.app.AssistantRunView;
 import com.kairon.assistant.app.AssistantSuggestedTaskView;
 import com.kairon.assistant.app.Horizon;
+import com.kairon.assistant.app.ReflectionGenerationService;
 import com.kairon.assistant.app.SummaryGenerationService;
 import com.kairon.assistant.app.SummaryPeriod;
 import com.kairon.common.error.ApiException;
@@ -54,6 +55,9 @@ class AssistantRunControllerTest {
 
     @MockitoBean
     SummaryGenerationService summaryDispatcher;
+
+    @MockitoBean
+    ReflectionGenerationService reflectionDispatcher;
 
     @MockitoBean
     JwtDecoder jwtDecoder;
@@ -128,6 +132,55 @@ class AssistantRunControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"period\":\"WEEK\",\"date\":\"" + DAY + "\"}"))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void requestJournalReflectionReturns201WithAPendingRun() throws Exception {
+        UUID runId = UUID.randomUUID();
+        when(assistantRuns.requestJournalReflection(any(), eq(DAY)))
+                .thenReturn(new AssistantRunView(runId, "JOURNAL_REFLECTION", "PENDING", "claude-sonnet-5",
+                        DAY, DAY.plusDays(6), null, null, null, Instant.parse("2026-09-21T08:00:00Z"),
+                        List.of(), null, null));
+
+        mvc.perform(post("/api/v1/assistant/journal-reflection").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"weekOf\":\"" + DAY + "\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(runId.toString()))
+                .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void requestJournalReflectionWhenAlreadyInFlightIs409() throws Exception {
+        when(assistantRuns.requestJournalReflection(any(), eq(DAY)))
+                .thenThrow(ApiException.conflict("A run of this kind is already in progress. Wait for it to finish."));
+
+        mvc.perform(post("/api/v1/assistant/journal-reflection").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"weekOf\":\"" + DAY + "\"}"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void requestJournalReflectionWhenEmptyWeekIs422() throws Exception {
+        when(assistantRuns.requestJournalReflection(any(), eq(DAY)))
+                .thenThrow(ApiException.unprocessable("No journal entries for that week — nothing to reflect on."));
+
+        mvc.perform(post("/api/v1/assistant/journal-reflection").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"weekOf\":\"" + DAY + "\"}"))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void requestJournalReflectionWhenDisabledSurfacesThe403FromTheService() throws Exception {
+        when(assistantRuns.requestJournalReflection(any(), eq(DAY)))
+                .thenThrow(ApiException.forbidden("You haven't enabled journal reflection in Settings."));
+
+        mvc.perform(post("/api/v1/assistant/journal-reflection").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"weekOf\":\"" + DAY + "\"}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
