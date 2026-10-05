@@ -26,6 +26,11 @@ import org.hibernate.annotations.UpdateTimestamp;
  *
  * <p>{@link #priorityRank} is a manual, drag-ordered rank (D18) — it only
  * changes via {@code ProjectService.reorder}, never through {@link #edit}.
+ * {@link #categoryRank} is a second, independent manual rank, scoped to the
+ * project's current category bucket (including the "no category" bucket) —
+ * it only changes via {@code ProjectService.reorderInCategory} or, when a
+ * project moves to a different category, {@code ProjectService}'s own
+ * append-at-the-end-of-the-new-bucket logic. Never through {@link #edit}.
  */
 @Entity
 @Table(name = "project")
@@ -56,6 +61,9 @@ public class Project {
 
     @Column(name = "priority_rank", nullable = false)
     private int priorityRank;
+
+    @Column(name = "category_rank", nullable = false)
+    private int categoryRank;
 
     @Column(nullable = false, length = 7)
     private String color;
@@ -136,6 +144,15 @@ public class Project {
         this.priorityRank = priorityRank;
     }
 
+    /**
+     * Set by {@code ProjectService.reorderInCategory}, and by {@code ProjectService}
+     * itself whenever this project is created in, or moved into, a category bucket
+     * (appended at the end) — a plain sparse position scoped to {@link #categoryId}.
+     */
+    public void moveWithinCategory(int categoryRank) {
+        this.categoryRank = categoryRank;
+    }
+
     public void reschedule(LocalDate startDate, LocalDate endDate) {
         this.startDate = startDate;
         this.endDate = endDate;
@@ -208,6 +225,10 @@ public class Project {
 
     public int getPriorityRank() {
         return priorityRank;
+    }
+
+    public int getCategoryRank() {
+        return categoryRank;
     }
 
     public String getColor() {

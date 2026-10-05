@@ -18,6 +18,7 @@ final class ProjectMapper {
                 project.getStatus().name(),
                 project.getSize() == null ? null : project.getSize().name(),
                 project.getPriorityRank(),
+                project.getCategoryRank(),
                 project.getColor(),
                 project.getStartDate(),
                 project.getEndDate(),

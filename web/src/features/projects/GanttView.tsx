@@ -38,6 +38,77 @@ function toIsoDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/** `dd/mm/yy` — the library's default list columns spell out "Wed, October 21, 2026", which crowded out the chart itself. */
+function formatShortDate(date: Date): string {
+  const d = String(date.getDate()).padStart(2, "0");
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const y = String(date.getFullYear()).slice(-2);
+  return `${d}/${m}/${y}`;
+}
+
+/** Fixed pixel widths for the left-hand task list, shared by the header and table below so columns line up. Much narrower than the library's default (155px per column, x3) so the chart gets most of the horizontal space. */
+const LIST_COLUMN_WIDTH = { name: 180, start: 62, end: 62 };
+
+function GanttListHeader({ headerHeight, fontFamily, fontSize }: { headerHeight: number; rowWidth: string; fontFamily: string; fontSize: string }) {
+  return (
+    <div
+      className="flex items-center border-b bg-muted/40 text-xs font-medium text-muted-foreground"
+      style={{ height: headerHeight - 2, fontFamily, fontSize }}
+    >
+      <div className="shrink-0 truncate px-2" style={{ width: LIST_COLUMN_WIDTH.name }}>
+        Task
+      </div>
+      <div className="shrink-0 border-l px-1.5 text-right" style={{ width: LIST_COLUMN_WIDTH.start }}>
+        Start
+      </div>
+      <div className="shrink-0 border-l px-1.5 text-right" style={{ width: LIST_COLUMN_WIDTH.end }}>
+        End
+      </div>
+    </div>
+  );
+}
+
+function GanttListTable({
+  rowHeight,
+  fontFamily,
+  fontSize,
+  tasks,
+}: {
+  rowHeight: number;
+  rowWidth: string;
+  fontFamily: string;
+  fontSize: string;
+  locale: string;
+  tasks: GanttTask[];
+  selectedTaskId: string;
+  setSelectedTask: (taskId: string) => void;
+  onExpanderClick: (task: GanttTask) => void;
+}) {
+  return (
+    <div style={{ fontFamily, fontSize }}>
+      {tasks.map((t) => (
+        <div key={`${t.id}row`} className="flex items-center border-b" style={{ height: rowHeight }}>
+          <div className="shrink-0 truncate px-2" style={{ width: LIST_COLUMN_WIDTH.name }} title={t.name}>
+            {t.name}
+          </div>
+          <div
+            className="shrink-0 border-l px-1.5 text-right text-xs text-muted-foreground"
+            style={{ width: LIST_COLUMN_WIDTH.start }}
+          >
+            {formatShortDate(t.start)}
+          </div>
+          <div
+            className="shrink-0 border-l px-1.5 text-right text-xs text-muted-foreground"
+            style={{ width: LIST_COLUMN_WIDTH.end }}
+          >
+            {formatShortDate(t.end)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function patchBodyFor(task: ProjectTask, start: string, end: string) {
   return {
     name: task.name,
@@ -151,6 +222,8 @@ export function GanttView({ projectId }: Props) {
             viewMode={ViewMode.Week}
             viewDate={meQuery.data ? toLocalDate(todayInZone(meQuery.data.timezone)) : undefined}
             TooltipContent={TooltipContent}
+            TaskListHeader={GanttListHeader}
+            TaskListTable={GanttListTable}
             onDoubleClick={(task) => {
               const real = byId.get(task.id);
               if (real) setEditing(real);

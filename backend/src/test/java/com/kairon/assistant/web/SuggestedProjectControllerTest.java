@@ -57,7 +57,7 @@ class SuggestedProjectControllerTest {
     void acceptReturns201WithTheCreatedProject() throws Exception {
         UUID id = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
-        ProjectView created = new ProjectView(projectId, null, "Kitchen remodel", null, "PLANNING", null, 100,
+        ProjectView created = new ProjectView(projectId, null, "Kitchen remodel", null, "PLANNING", null, 100, 100,
                 "#6366f1", DAY, DAY.plusDays(30), null, null, Instant.now(), Instant.now(), 0);
         when(suggestedProjects.accept(any(), eq(id), eq(List.of("t2")))).thenReturn(created);
 
@@ -72,7 +72,7 @@ class SuggestedProjectControllerTest {
     void acceptWithNoBodyDefaultsToNoExclusions() throws Exception {
         UUID id = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
-        ProjectView created = new ProjectView(projectId, null, "Kitchen remodel", null, "PLANNING", null, 100,
+        ProjectView created = new ProjectView(projectId, null, "Kitchen remodel", null, "PLANNING", null, 100, 100,
                 "#6366f1", DAY, DAY.plusDays(30), null, null, Instant.now(), Instant.now(), 0);
         when(suggestedProjects.accept(any(), eq(id), eq(List.of()))).thenReturn(created);
 

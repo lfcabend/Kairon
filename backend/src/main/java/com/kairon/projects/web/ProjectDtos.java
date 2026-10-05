@@ -54,6 +54,10 @@ final class ProjectDtos {
     record ReorderRequest(@NotEmpty List<UUID> orderedIds) {
     }
 
+    /** {@code categoryId} is nullable — {@code null} targets the "Uncategorized" bucket. */
+    record ReorderInCategoryRequest(UUID categoryId, @NotEmpty List<UUID> orderedIds) {
+    }
+
     record ProjectResponse(
             UUID id,
             UUID categoryId,
@@ -62,6 +66,7 @@ final class ProjectDtos {
             String status,
             String size,
             int priorityRank,
+            int categoryRank,
             String color,
             LocalDate startDate,
             LocalDate endDate,
@@ -73,8 +78,8 @@ final class ProjectDtos {
 
         static ProjectResponse from(ProjectView v) {
             return new ProjectResponse(v.id(), v.categoryId(), v.name(), v.description(), v.status(),
-                    v.size(), v.priorityRank(), v.color(), v.startDate(), v.endDate(), v.actualStart(),
-                    v.actualEnd(), v.createdAt(), v.updatedAt(), v.version());
+                    v.size(), v.priorityRank(), v.categoryRank(), v.color(), v.startDate(), v.endDate(),
+                    v.actualStart(), v.actualEnd(), v.createdAt(), v.updatedAt(), v.version());
         }
 
         static List<ProjectResponse> from(List<ProjectView> views) {

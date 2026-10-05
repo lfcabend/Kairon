@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
@@ -30,9 +31,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * The project module's application service: filtered/paginated list, the
- * flattened priority view, CRUD, {@code :reorder}, and delete-with-cascade.
- * Every method takes a {@link UserId} and 404s (never 403) on someone else's
- * row via {@link ApiException#notFound}, per docs/DESIGN.md §3.2.
+ * flattened priority view, CRUD, {@code :reorder}/{@code :reorder-in-category},
+ * and delete-with-cascade. Every method takes a {@link UserId} and 404s
+ * (never 403) on someone else's row via {@link ApiException#notFound}, per
+ * docs/DESIGN.md §3.2.
  */
 @Service
 @Transactional(readOnly = true)
@@ -103,10 +105,14 @@ public class ProjectService {
         ProjectSize size = command.size() != null ? parseSize(command.size()) : null;
         String color = command.color() != null ? command.color() : DEFAULT_COLOR;
         int priorityRank = nextPriorityRank(userId.value());
-        Project saved = projects.save(Project.create(userId.value(), command.categoryId(), name,
+        Project toSave = Project.create(userId.value(), command.categoryId(), name,
                 trimToNull(command.description()), color, size, priorityRank,
-                command.startDate(), command.endDate()));
-        log.info("Created project {} userId={} priorityRank={}", saved.getId(), userId.value(), priorityRank);
+                command.startDate(), command.endDate());
+        int categoryRank = nextCategoryRank(userId.value(), command.categoryId());
+        toSave.moveWithinCategory(categoryRank);
+        Project saved = projects.save(toSave);
+        log.info("Created project {} userId={} priorityRank={} categoryRank={}",
+                saved.getId(), userId.value(), priorityRank, categoryRank);
         return ProjectMapper.toView(saved);
     }
 
@@ -126,9 +132,20 @@ public class ProjectService {
         ProjectStatus status = parseStatus(command.status());
         ProjectSize size = command.size() != null ? parseSize(command.size()) : null;
         String color = command.color() != null ? command.color() : project.getColor();
+        UUID previousCategoryId = project.getCategoryId();
         project.edit(command.categoryId(), name, trimToNull(command.description()), status, size, color,
                 command.startDate(), command.endDate(), command.actualStart(), command.actualEnd());
-        log.info("Patched project {} userId={}", id, userId.value());
+        // A category move invalidates the project's old categoryRank — it was only ever
+        // meaningful relative to its old bucket's siblings. Append it at the end of the
+        // new bucket, same convention as a freshly created project (D20's analogue).
+        if (!Objects.equals(previousCategoryId, command.categoryId())) {
+            int categoryRank = nextCategoryRank(userId.value(), command.categoryId());
+            project.moveWithinCategory(categoryRank);
+            log.info("Patched project {} userId={} moved category {} -> {}, categoryRank={}",
+                    id, userId.value(), previousCategoryId, command.categoryId(), categoryRank);
+        } else {
+            log.info("Patched project {} userId={}", id, userId.value());
+        }
         return ProjectMapper.toView(project);
     }
 
@@ -154,6 +171,41 @@ public class ProjectService {
             rank += POSITION_GAP;
         }
         log.info("Reordered {} project(s) userId={}", result.size(), userId.value());
+        return result;
+    }
+
+    /**
+     * Rewrites {@code categoryRank} within one category bucket (D19's sibling-group
+     * precedent, mirroring {@code ProjectTaskService.reorder}'s scoped sibling-group
+     * reorder) — never touches {@code priorityRank}, which stays global (D19).
+     * {@code categoryId} is nullable: {@code null} reorders the "Uncategorized" bucket.
+     */
+    @Transactional
+    public List<ProjectView> reorderInCategory(UserId userId, UUID categoryId, List<UUID> orderedIds) {
+        if (categoryId != null) {
+            requireCategory(userId, categoryId);
+        }
+        List<Project> current = categoryRankedSet(userId.value(), categoryId);
+        Map<UUID, Project> byId = new HashMap<>();
+        for (Project project : current) {
+            byId.put(project.getId(), project);
+        }
+        if (orderedIds.size() != byId.size() || !byId.keySet().equals(new HashSet<>(orderedIds))) {
+            log.warn("Reorder-in-category rejected: userId={} categoryId={} sent {} id(s), category holds {}",
+                    userId.value(), categoryId, orderedIds.size(), byId.size());
+            throw ApiException.badRequest(
+                    "`orderedIds` must list exactly that category's current non-archived projects.");
+        }
+        int rank = POSITION_GAP;
+        List<ProjectView> result = new java.util.ArrayList<>(orderedIds.size());
+        for (UUID id : orderedIds) {
+            Project project = byId.get(id);
+            project.moveWithinCategory(rank);
+            result.add(ProjectMapper.toView(project));
+            rank += POSITION_GAP;
+        }
+        log.info("Reordered {} project(s) within category userId={} categoryId={}",
+                result.size(), userId.value(), categoryId);
         return result;
     }
 
@@ -194,6 +246,18 @@ public class ProjectService {
     private int nextPriorityRank(UUID userId) {
         return rankedSet(userId).stream()
                 .mapToInt(Project::getPriorityRank)
+                .max()
+                .orElse(0) + POSITION_GAP;
+    }
+
+    private List<Project> categoryRankedSet(UUID userId, UUID categoryId) {
+        return projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
+                userId, categoryId, ProjectStatus.ARCHIVED);
+    }
+
+    private int nextCategoryRank(UUID userId, UUID categoryId) {
+        return categoryRankedSet(userId, categoryId).stream()
+                .mapToInt(Project::getCategoryRank)
                 .max()
                 .orElse(0) + POSITION_GAP;
     }

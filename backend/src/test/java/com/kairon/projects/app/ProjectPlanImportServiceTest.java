@@ -57,7 +57,7 @@ class ProjectPlanImportServiceTest {
     }
 
     private static ProjectView project() {
-        return new ProjectView(PROJECT_ID, null, "Kitchen remodel", null, "PLANNING", null, 100, "#6366f1",
+        return new ProjectView(PROJECT_ID, null, "Kitchen remodel", null, "PLANNING", null, 100, 100, "#6366f1",
                 DAY, DAY.plusDays(30), null, null, Instant.now(), Instant.now(), 0);
     }
 

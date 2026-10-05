@@ -51,8 +51,8 @@ class ProjectControllerTest {
     JwtDecoder jwtDecoder;
 
     private static ProjectView view(String name, int priorityRank) {
-        return new ProjectView(UUID.randomUUID(), null, name, null, "PLANNING", null, priorityRank, "#6366f1",
-                null, null, null, null, Instant.parse("2026-09-09T08:00:00Z"),
+        return new ProjectView(UUID.randomUUID(), null, name, null, "PLANNING", null, priorityRank, priorityRank,
+                "#6366f1", null, null, null, null, Instant.parse("2026-09-09T08:00:00Z"),
                 Instant.parse("2026-09-09T08:00:00Z"), 0);
     }
 
@@ -153,6 +153,31 @@ class ProjectControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"orderedIds\":[\"" + UUID.randomUUID() + "\"]}"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void reorderInCategoryMismatchSurfacesThe400FromTheService() throws Exception {
+        when(projects.reorderInCategory(any(), any(), any())).thenThrow(
+                ApiException.badRequest("`orderedIds` must list exactly that category's current non-archived projects."));
+
+        mvc.perform(post("/api/v1/projects:reorder-in-category").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryId\":null,\"orderedIds\":[\"" + UUID.randomUUID() + "\"]}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void reorderInCategoryReturnsTheReorderedProjects() throws Exception {
+        when(projects.reorderInCategory(any(), any(), any()))
+                .thenReturn(List.of(view("Beta", 100), view("Alpha", 200)));
+
+        mvc.perform(post("/api/v1/projects:reorder-in-category").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"categoryId\":null,\"orderedIds\":[\"" + UUID.randomUUID() + "\",\""
+                                + UUID.randomUUID() + "\"]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].name").value("Beta"))
+                .andExpect(jsonPath("$[1].name").value("Alpha"));
     }
 
     @Test

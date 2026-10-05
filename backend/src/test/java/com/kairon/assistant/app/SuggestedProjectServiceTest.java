@@ -172,7 +172,7 @@ class SuggestedProjectServiceTest {
 
     private static ProjectView projectView() {
         UUID id = UUID.randomUUID();
-        return new ProjectView(id, null, "Kitchen remodel", null, "PLANNING", null, 100, "#6366f1",
+        return new ProjectView(id, null, "Kitchen remodel", null, "PLANNING", null, 100, 100, "#6366f1",
                 DAY, DAY.plusDays(30), null, null, Instant.now(), Instant.now(), 0);
     }
 }
