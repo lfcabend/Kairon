@@ -29,6 +29,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -42,6 +43,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -429,7 +431,7 @@ private fun TodoRow(
     // The margin has to wrap the whole swipe box, background included — padding
     // only the foreground Surface left the backgroundContent's full-bleed color
     // showing through around every card at rest.
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 1.dp)) {
         SwipeToDismissBox(
             state = dismissState,
             modifier = rowModifier,
@@ -452,8 +454,7 @@ private fun TodoRow(
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-                // Matches the web TodoRow's own "px-2 py-1.5" (8px/6px).
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         if (draggable) {
                             Text("⠿", modifier = dragHandleModifier.padding(end = 4.dp))
@@ -461,7 +462,9 @@ private fun TodoRow(
                             Spacer(modifier = Modifier.width(20.dp))
                         }
 
-                        Checkbox(checked = done, onCheckedChange = { onToggleComplete() })
+                        CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                            Checkbox(checked = done, onCheckedChange = { onToggleComplete() })
+                        }
 
                         if (editingTitle) {
                             OutlinedTextField(
