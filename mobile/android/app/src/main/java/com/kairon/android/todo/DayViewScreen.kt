@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -28,6 +30,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -61,11 +64,14 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -303,6 +309,7 @@ private fun OpenItemsSection(
     val rowHeights = remember { mutableStateMapOf<UUID, Int>() }
     var draggedId by remember { mutableStateOf<UUID?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
+    val haptic = LocalHapticFeedback.current
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Keyed explicitly by id (unlike LazyColumn, a plain Column has no
@@ -317,6 +324,7 @@ private fun OpenItemsSection(
                 TodoRow(
                     item = item,
                     draggable = true,
+                    isDragging = isDragging,
                     rowModifier = Modifier
                         .onGloballyPositioned { rowHeights[item.id] = it.size.height }
                         .zIndex(if (isDragging) 1f else 0f)
@@ -324,6 +332,7 @@ private fun OpenItemsSection(
                     dragHandleModifier = Modifier.pointerInput(item.id) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 draggedId = item.id
                                 dragOffset = 0f
                             },
@@ -338,28 +347,33 @@ private fun OpenItemsSection(
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-                                val currentIndex = localOrder.indexOfFirst { it.id == item.id }
-                                if (currentIndex == -1) return@detectDragGesturesAfterLongPress
+                                var index = localOrder.indexOfFirst { it.id == item.id }
+                                if (index == -1) return@detectDragGesturesAfterLongPress
                                 dragOffset += dragAmount.y
 
-                                if (dragOffset > 0 && currentIndex < localOrder.lastIndex) {
-                                    val below = localOrder[currentIndex + 1]
-                                    val belowHeight = rowHeights[below.id] ?: Int.MAX_VALUE
-                                    if (dragOffset > belowHeight / 2f) {
-                                        localOrder = localOrder.toMutableList().apply {
-                                            add(currentIndex, removeAt(currentIndex + 1))
-                                        }
-                                        dragOffset -= belowHeight
+                                // A single pointer-move delta can exceed one row's height (short
+                                // rows, a fast swipe) — loop so one onDrag call can cascade through
+                                // every swap the delta actually warrants, instead of lagging behind
+                                // the finger until enough smaller deltas trickle in to catch up.
+                                while (dragOffset > 0 && index < localOrder.lastIndex) {
+                                    val below = localOrder[index + 1]
+                                    val belowHeight = rowHeights[below.id] ?: break
+                                    if (dragOffset <= belowHeight / 2f) break
+                                    localOrder = localOrder.toMutableList().apply {
+                                        add(index, removeAt(index + 1))
                                     }
-                                } else if (dragOffset < 0 && currentIndex > 0) {
-                                    val above = localOrder[currentIndex - 1]
-                                    val aboveHeight = rowHeights[above.id] ?: Int.MAX_VALUE
-                                    if (-dragOffset > aboveHeight / 2f) {
-                                        localOrder = localOrder.toMutableList().apply {
-                                            add(currentIndex, removeAt(currentIndex - 1))
-                                        }
-                                        dragOffset += aboveHeight
+                                    dragOffset -= belowHeight
+                                    index++
+                                }
+                                while (dragOffset < 0 && index > 0) {
+                                    val above = localOrder[index - 1]
+                                    val aboveHeight = rowHeights[above.id] ?: break
+                                    if (-dragOffset <= aboveHeight / 2f) break
+                                    localOrder = localOrder.toMutableList().apply {
+                                        add(index, removeAt(index - 1))
                                     }
+                                    dragOffset += aboveHeight
+                                    index--
                                 }
                             },
                         )
@@ -380,6 +394,7 @@ private fun OpenItemsSection(
 private fun TodoRow(
     item: TodoItemEntity,
     draggable: Boolean,
+    isDragging: Boolean = false,
     rowModifier: Modifier = Modifier,
     dragHandleModifier: Modifier = Modifier,
     onToggleComplete: () -> Unit,
@@ -452,14 +467,28 @@ private fun TodoRow(
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(8.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                border = BorderStroke(if (isDragging) 2.dp else 1.dp, if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                shadowElevation = if (isDragging) 6.dp else 0.dp,
+                tonalElevation = if (isDragging) 4.dp else 0.dp,
             ) {
                 Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         if (draggable) {
-                            Text("⠿", modifier = dragHandleModifier.padding(end = 4.dp))
+                            CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
+                                Box(
+                                    modifier = dragHandleModifier.size(28.dp),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Menu,
+                                        contentDescription = "Drag to reorder",
+                                        modifier = Modifier.size(18.dp),
+                                        tint = if (isDragging) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
                         } else {
-                            Spacer(modifier = Modifier.width(20.dp))
+                            Spacer(modifier = Modifier.width(28.dp))
                         }
 
                         CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
@@ -492,6 +521,8 @@ private fun TodoRow(
                                 modifier = Modifier.weight(1f).clickable { editingTitle = true },
                                 textDecoration = if (done || cancelled) TextDecoration.LineThrough else null,
                                 color = if (done || cancelled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
 
@@ -500,17 +531,23 @@ private fun TodoRow(
                             Spacer(modifier = Modifier.width(6.dp))
                         }
 
-                        if (item.rolledOverFromId != null) {
-                            Text("↩", modifier = Modifier.padding(horizontal = 2.dp))
-                        }
-
-                        TextButton(onClick = { notesOpen = !notesOpen }) {
-                            Text(if (notesOpen) "–" else "+")
-                        }
-
                         Box {
                             IconButton(onClick = { menuOpen = true }) { Text("⋮") }
                             DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                if (item.rolledOverFromId != null) {
+                                    DropdownMenuItem(
+                                        text = { Text("↩ Rolled over") },
+                                        onClick = {},
+                                        enabled = false,
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text(if (notesOpen) "Hide notes" else "Show notes") },
+                                    onClick = {
+                                        menuOpen = false
+                                        notesOpen = !notesOpen
+                                    },
+                                )
                                 if (!cancelled) {
                                     DropdownMenuItem(
                                         text = { Text("Cancel task") },
