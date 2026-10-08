@@ -1,11 +1,13 @@
 package com.kairon.projects.api;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import com.kairon.common.security.UserId;
+import com.kairon.common.sync.ChangeSet;
 
 /**
  * The projects module's public port. Other modules depend only on this
@@ -100,6 +102,24 @@ public interface ProjectsApi {
      * D1/D8).
      */
     ProjectView applyProjectEdit(UserId userId, UUID projectId, ProjectEditCommand command);
+
+    /**
+     * Project rows (including soft-deleted ones, as tombstone ids) with
+     * {@code updatedAt >= since}, oldest first, capped at {@code limit}. Added
+     * for M11's Android sync mechanism
+     * (docs/milestones/M11-android-foundation.md D3/D4/D5).
+     */
+    ChangeSet<ProjectView> changedSince(UserId userId, Instant since, int limit);
+
+    /**
+     * Project-task rows across every one of the user's projects (including
+     * soft-deleted ones, as tombstone ids) with {@code updatedAt >= since},
+     * oldest first, capped at {@code limit}. Added for M11's Android sync
+     * mechanism — same reasoning as {@link #changedSince}, scoped via the
+     * owning project since {@code project_task} carries no {@code user_id} of
+     * its own.
+     */
+    ChangeSet<ProjectTaskView> tasksChangedSince(UserId userId, Instant since, int limit);
 
     record ProjectPeriodStats(
             UUID projectId, String projectName, UUID categoryId, String categoryName,

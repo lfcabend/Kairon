@@ -76,4 +76,16 @@ public interface ProjectTaskRepository extends JpaRepository<ProjectTask, UUID> 
             """)
     List<ProjectsApi.ProjectPeriodStats> projectPeriodStats(@Param("userId") UUID userId,
             @Param("fromInstant") Instant fromInstant, @Param("toInstantExclusive") Instant toInstantExclusive);
+
+    // Backs ProjectsApi.tasksChangedSince (M11 D3/D4) — scoped via the owning project
+    // since project_task carries no user_id of its own; deliberately filters neither
+    // side's deletedAt so a soft-deleted task (its own, or cascaded from its project's
+    // own delete) still surfaces as a tombstone.
+    @Query("""
+            SELECT t FROM ProjectTask t JOIN Project p ON t.projectId = p.id
+            WHERE p.userId = :userId AND t.updatedAt >= :since
+            ORDER BY t.updatedAt ASC, t.id ASC
+            """)
+    List<ProjectTask> findChangedSince(@Param("userId") UUID userId, @Param("since") Instant since,
+            Pageable pageable);
 }

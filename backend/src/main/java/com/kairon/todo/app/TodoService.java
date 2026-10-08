@@ -1,9 +1,11 @@
 package com.kairon.todo.app;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -11,6 +13,7 @@ import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
+import com.kairon.common.sync.ChangeSet;
 import com.kairon.projects.api.ProjectsApi;
 import com.kairon.todo.api.TodoApi;
 import com.kairon.todo.api.TodoItemView;
@@ -20,6 +23,7 @@ import com.kairon.todo.repo.TodoItemRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -255,6 +259,30 @@ public class TodoService implements TodoApi {
         return items.periodStats(userId.value(), from, to,
                 from.atStartOfDay(ZoneOffset.UTC).toInstant(),
                 to.plusDays(1).atStartOfDay(ZoneOffset.UTC).toInstant());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public ChangeSet<TodoItemView> changedSince(UserId userId, Instant since, int limit) {
+        List<TodoItem> rows = items.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                userId.value(), since, PageRequest.of(0, limit + 1));
+        boolean truncated = rows.size() > limit;
+        List<TodoItem> page = truncated ? rows.subList(0, limit) : rows;
+        List<TodoItemView> upserted = new ArrayList<>();
+        List<UUID> deletedIds = new ArrayList<>();
+        for (TodoItem row : page) {
+            if (row.isDeleted()) {
+                deletedIds.add(row.getId());
+            } else {
+                upserted.add(TodoMapper.toView(row));
+            }
+        }
+        if (truncated) {
+            log.warn("changedSince truncated userId={} since={} limit={}", userId.value(), since, limit);
+        }
+        log.debug("changedSince userId={} since={} -> {} upsert(s), {} tombstone(s), truncated={}",
+                userId.value(), since, upserted.size(), deletedIds.size(), truncated);
+        return new ChangeSet<>(upserted, deletedIds, truncated);
     }
 
     // --- internals -----------------------------------------------------------

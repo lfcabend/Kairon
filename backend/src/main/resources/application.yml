@@ -103,6 +103,12 @@ kairon:
   journal:
     # Span cap on GET /journal?from=&to= and /journal/entry-days?from=&to=.
     range-max-days: 92
+  sync:
+    # Per-type cap on one GET /sync call (M11 D5) — more than this many changed
+    # rows since the caller's cursor sets that type's `truncated` flag instead
+    # of failing the call or paginating. Unmeasured guess, same posture as other
+    # milestones' own unmeasured caps.
+    max-rows-per-type: 500
   assistant:
     # Master switch (docs/adr/0002) — off everywhere by default (M8 D16); an
     # operator must also create the ANTHROPIC_API_KEY secret for the feature to

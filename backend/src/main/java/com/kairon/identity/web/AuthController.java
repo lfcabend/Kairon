@@ -104,6 +104,7 @@ public class AuthController {
                 result.accessToken(),
                 "Bearer",
                 result.accessTokenTtl().toSeconds(),
+                result.rawRefreshToken(),
                 UserSummary.from(result.user()));
         return ResponseEntity.status(status)
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())

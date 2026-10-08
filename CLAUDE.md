@@ -8,25 +8,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
 (hardening & prod), M8 (assistant foundations & todo suggestions), M8.5
 (AI project generation from a description), M9 (weekly & monthly
-execution summaries), M9.5 (AI project editing from a description), and
-M10 (weekly journal reflection, plus a Batch API migration for M9's
-scheduled summary sweep) are implemented.**
+execution summaries), M9.5 (AI project editing from a description), M10
+(weekly journal reflection, plus a Batch API migration for M9's
+scheduled summary sweep), and M11 (Android foundation: auth, the generic
+`/sync` mechanism, Today, and Daily Todo) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
 
 - `backend/` — Spring Boot app. Modules under `com.kairon`: `common` (shared kernel:
   `security` — the `SecurityFilterChain`, HS256 `JwtEncoder`/`JwtDecoder`, Argon2id
-  `PasswordEncoder`, `@CurrentUser`/`UserId`; `error` — the RFC 7807
+  `PasswordEncoder`, `@CurrentUser`/`UserId` (M11 — `WebMvcConfig` now also statically
+  registers `@CurrentUser` with springdoc's `SpringDocUtils.addAnnotationsToIgnore`, so
+  the JWT-resolved `userId` no longer leaks into the OpenAPI spec as a spurious required
+  query param — a real, previously-unnoticed defect that only mattered once M11 started
+  generating a real client from that spec); `error` — the RFC 7807
   `@RestControllerAdvice` + `ApiException`; `ratelimit` — the Bucket4j auth filter;
   `id` — `Uuidv7`; `logging` — `CorrelationIdFilter`, per-request id in the MDC +
-  `X-Request-Id`), `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
-  `repo`, `app` services, `web` controllers, `dev` — the `local`-profile
+  `X-Request-Id`; `sync` — `ChangeSet<T>` (M11, `{upserted, deletedIds, truncated}`,
+  generic shared-kernel infrastructure for every module's `changedSince` port method),
+  `identity` (`api` port, `domain` entities `AppUser`/`RefreshToken`,
+  `repo`, `app` services, `web` controllers — `AuthDtos.AuthResponse` gained a
+  `refreshToken` field (M11 D6), returned in the body in addition to the existing
+  web-only `Set-Cookie`, so a native client without a cookie jar can complete login;
+  `dev` — the `local`-profile
   `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView` (gained
-  `periodStats`/`PeriodStats` for M9's execution-summary aggregation), `domain`
-  `TodoItem`/`TodoStatus`, `repo`, `app` `TodoService`/`RolloverService`/
+  `periodStats`/`PeriodStats` for M9's execution-summary aggregation, and
+  `changedSince` for M11's Android sync mechanism), `domain`
+  `TodoItem`/`TodoStatus`, `repo` (M11's `changedSince` backing query is the one place
+  here that deliberately does not filter `deletedAt IS NULL`), `app` `TodoService`/`RolloverService`/
   `TodoProperties`, `config`, `web` `TodoController`), `journal` (`api` port
-  `JournalApi`/`JournalEntryView`/`JournalSearchHitView`/`JournalSearchPage`,
+  `JournalApi`/`JournalEntryView`/`JournalSearchHitView`/`JournalSearchPage`/
+  `changedSince` (M11, same shape as `TodoApi`'s own),
   `domain` `JournalEntry`, `repo` `JournalEntryRepository` (incl. the native
   full-text `search` query + `JournalSearchRow` projection), `app`
   `JournalService`/`JournalSearchService`/`JournalMapper`/`JournalProperties`,
@@ -44,7 +57,9 @@ updated when decisions change.
   `DependencyOperation`/`ReorderOperation` (M9.5 — the write-side port method
   and its command shape: operations reference a task either by its real
   existing id or, for one being added in the same command, a caller-chosen
-  string `key`, resolved existing-id-first), `domain`
+  string `key`, resolved existing-id-first)/`changedSince`/`tasksChangedSince`
+  (M11 — the latter joins across every one of the user's projects since
+  `project_task` carries no `user_id` of its own), `domain`
   `ProjectCategory`/`Project`/`ProjectStatus`/`ProjectSize`/`ProjectTask`/
   `ProjectTaskStatus`, `repo` `ProjectCategoryRepository`/`ProjectRepository`/
   `ProjectTaskRepository` (incl. the ad-hoc-join `findDueOrOverdue` query and,
@@ -65,7 +80,11 @@ updated when decisions change.
   `ProjectEditApplyService`, backing `applyProjectEdit` the same way
   `planImportService` backs `createFromPlan`; the private "resolve + own the
   project" helper was renamed `requireOwnedProject` to free up the `ProjectsApi`
-  method name `requireProject`)/`ProjectsProperties`/`SortParsing`/
+  method name `requireProject`; M11 adds `changedSince`/`tasksChangedSince`,
+  backed by new `ProjectRepository`/`ProjectTaskRepository` queries — the
+  latter a `JOIN Project` scoped by its `userId`, deliberately filtering
+  neither side's `deletedAt` so a soft-deleted task still surfaces as a
+  tombstone)/`ProjectsProperties`/`SortParsing`/
   `TaskResolution` (M5, the shared "resolve a task with no projectId in the
   URL" helper extracted out of `ProjectTaskService`)/`TaskDependencyService`/
   `TaskDependencyView`/`TaskDependencyMapper` (M5 — dependency CRUD incl. cycle
@@ -97,7 +116,17 @@ updated when decisions change.
   screen. `app` `PlanningService` (`today` composes `TodoApi.forDay`/
   `ProjectsApi.dueOrOverdue`/`JournalApi.hasEntryForDay`; `promote` calls
   `ProjectsApi.requireTask` then `TodoApi.create` to link a project task into
-  today's todo list), `web` `PlanningController`/`PlanningDtos`),
+  today's todo list), `web` `PlanningController`/`PlanningDtos`; M11 adds this
+  module's second application service, `SyncService` (`GET /sync`'s backend —
+  captures `Instant.now(clock)` *before* delegating to any of
+  `TodoApi`/`JournalApi`/`ProjectsApi`'s own `changedSince`/`tasksChangedSince`,
+  per-type, so a row touched mid-request is just included again on the
+  caller's next call rather than silently skipped), `SyncType` (the
+  `todo`/`journal`/`project`/`projectTask` enum backing the `types` query
+  param, defaulting to all four), `SyncProperties`
+  (`kairon.sync.max-rows-per-type`, default 500), `web` `SyncController`/
+  `SyncDtos` (same "embed the other modules' own `api` DTOs directly"
+  convention `PlanningDtos` already set)),
   `meta` (the M0 `PingController`; `DeployInfoContributor`, an `InfoContributor`
   adding the running image ref + deploy time to `/actuator/info` for the About
   page — the commit and build time are already there via `BuildProperties`), and
@@ -303,7 +332,9 @@ updated when decisions change.
   M6 adds no migration; there is no `V006`. M9 and M10's own `JOURNAL_REFLECTION`
   feature likewise add no migration — M8's `V007` deliberately over-specified
   `assistant_run.kind`/`output_markdown`/`period_start`/`period_end` for
-  exactly M9's and M10's use.
+  exactly M9's and M10's use. M11 adds no migration either — its whole
+  backend surface rides on `updated_at`/`deleted_at` columns every
+  mobile-synced table already had from day one.
 - `web/` — React SPA. Auth lives under `src/features/auth/`; the day view under
   `src/features/todo/` (`DayView` + `DateNav`/`DaySummary`/`QuickAdd`/`TodoList`/
   `TodoRow`, rollover in `RolloverPrompt`/`RolloverPickerDialog`/`useRollover`,
@@ -401,6 +432,39 @@ updated when decisions change.
   single-flight 401→refresh→retry fetch wrapper). Tests: Vitest + MSW
   (`src/test/msw/`); Playwright happy paths in `web/e2e/` (`npm run
   test:e2e`, needs a running full stack).
+- `mobile/android/` — (M11) the Android app, Kotlin + Jetpack Compose, its
+  **own Gradle root** (own `settings.gradle.kts`/AGP — not a subproject of
+  the repo's root `:backend`/`:web` build, D7), so `./gradlew build` at the
+  repo root is unaffected by anything here and this toolchain never touches
+  the backend/web contributor's own. AGP 9 (the only version compatible with
+  this repo's Gradle 9.x) defaults to a "built-in Kotlin" DSL incompatible
+  with Hilt/kapt/Room/the OpenAPI Generator Gradle plugin, so
+  `gradle.properties` opts out (`android.builtInKotlin=false`/
+  `android.newDsl=false`) and applies `org.jetbrains.kotlin.android` the
+  traditional way — removed in AGP 10 (mid-2026), revisit then. Two modules:
+  `openapi-client` (generated-only, never hand-edited — a plain Kotlin/JVM
+  module, `kotlin`/`jvm-retrofit2`/`kotlinx_serialization`, regenerated by
+  `task android-client` against a live backend's spec, never committed; its
+  own `build.gradle.kts` patches the one generated field the
+  kotlinx.serialization compiler plugin can't handle on its own — see
+  `docs/milestones/M11-android-foundation.md` §11) and `app`
+  (hand-written, package-by-feature under `com.kairon.android`: `core.network`
+  — `NetworkModule` (Hilt), `AuthInterceptor`, `AuthAuthenticator` (a
+  single-flight OkHttp `Authenticator`, same 401→refresh→retry shape as the
+  web app's own `client.ts`); `core.auth` — `TokenStore` (access token in
+  memory, refresh token in `EncryptedSharedPreferences`), `AuthRepository`;
+  `core.data` — Room (`KaironDatabase`/`TodoDao`/`TodoItemEntity`/
+  `RoomConverters`); `core.sync` — `SyncRepository`/`SyncCursorStore`
+  (the `/sync` cursor, a plain `DataStore` key) — the single generic
+  mechanism every later Android milestone (M11.5/M11.6) reuses by widening
+  its requested `types`; `core.ui` — `KaironApp`/`KaironNavHost`/
+  `SessionViewModel`; `auth`/`today`/`todo`/`account`/`about` — one
+  screen + `ViewModel` pair each, `today` and `about` calling their APIs
+  directly (no Room — the same "no natural offline need" reasoning the web
+  `TodayPage`/`AboutPage` already follow), `todo` backed by Room as the
+  single source of truth the UI renders from). Every write is
+  online-required this slice (M11 D2) — no offline write queue yet, a later
+  milestone.
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
@@ -432,8 +496,13 @@ updated when decisions change.
   ConfigMap entries, and a `deploy/RUNBOOK.md` section on enabling/rotating
   the key.
 
-Next milestone is **M11+ — Mobile & beyond** (see `docs/ROADMAP.md`) — no
-milestone plan has been drafted for it yet.
+**M10.5 — MCP server for assistant features (bring-your-own Claude
+subscription)** (see `docs/ROADMAP.md`) is still undrafted and outstanding —
+M11 was implemented ahead of it on direct request, not because M10.5 was
+dropped. Next for the Android track specifically is **M11.5 — Journal &
+Projects (Gantt & dependencies)**, reusing M11's auth/sync/nav foundation
+with no further plumbing work expected (see `docs/ROADMAP.md`); **M11.6 —
+assistant features & settings** follows after that.
 
 ## What Kairon is
 

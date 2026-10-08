@@ -1,5 +1,6 @@
 package com.kairon.projects.repo;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,4 +55,10 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     // ProjectTaskRepository's parentTaskId-scoped sibling-group query already does.
     List<Project> findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
             UUID userId, UUID categoryId, ProjectStatus excludedStatus);
+
+    // Backs ProjectsApi.changedSince (M11 D3/D4) — the one query here that deliberately
+    // does NOT filter deletedAt IS NULL: a soft-deleted row must still surface so the
+    // client can tombstone it locally.
+    List<Project> findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+            UUID userId, Instant since, Pageable pageable);
 }

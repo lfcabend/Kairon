@@ -1,5 +1,6 @@
 package com.kairon.journal.repo;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -52,4 +53,10 @@ public interface JournalEntryRepository extends JpaRepository<JournalEntry, UUID
             """,
             nativeQuery = true)
     Page<JournalSearchRow> search(@Param("userId") UUID userId, @Param("q") String q, Pageable pageable);
+
+    // Backs JournalApi.changedSince (M11 D3/D4) — the one query here that deliberately
+    // does NOT filter deletedAt IS NULL: a soft-deleted row must still surface so the
+    // client can tombstone it locally.
+    List<JournalEntry> findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+            UUID userId, Instant since, Pageable pageable);
 }

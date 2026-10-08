@@ -8,7 +8,7 @@
 
 Kairon is a personal productivity tool (daily todo, daily journal, small
 projects with a Gantt chart). It needs a backend that a web app uses now and
-native Android/iOS apps use later. It will be containerised and deployed to
+a native Android app uses later. It will be containerised and deployed to
 Kubernetes with Helm. It is built and maintained by one developer.
 
 Four decisions were taken up front (see the project brief):
@@ -46,12 +46,14 @@ SPA (with a client-side-routing fallback) alongside the REST API. One image, one
 deployment, one origin — no nginx, no CORS, no runtime API-URL config. The dev
 loop still uses the Vite dev server with a `/api` proxy.
 
-### Mobile — later, native
+### Mobile — later, native, Android only
 
-Native Android (Jetpack Compose) and iOS (SwiftUI), added at M11+ (was M8+
-before ADR 0002 inserted the AI-assistant milestones), consuming the same API
-via generated clients. Schema carries `updated_at` / soft-delete columns now so
-an offline sync endpoint can be added without migration pain.
+Native Android (Jetpack Compose), added at M11+ (was M8+ before ADR 0002
+inserted the AI-assistant milestones), consuming the same API via a generated
+client, with full feature parity with the web app. No iOS app is planned
+(originally scoped alongside Android; dropped to keep mobile to one platform
+maintained by one developer). Schema carries `updated_at` / soft-delete
+columns now so an offline sync endpoint can be added without migration pain.
 
 ### Deployment — Docker + Kubernetes + Helm
 

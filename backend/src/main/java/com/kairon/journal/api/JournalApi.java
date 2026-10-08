@@ -1,9 +1,11 @@
 package com.kairon.journal.api;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
 import com.kairon.common.security.UserId;
+import com.kairon.common.sync.ChangeSet;
 
 /**
  * The journal module's public port. Other modules depend only on this
@@ -25,4 +27,11 @@ public interface JournalApi {
      * journal notes — docs/milestones/M8-assistant-foundations.md D3).
      */
     List<JournalEntryView> range(UserId userId, LocalDate from, LocalDate to);
+
+    /**
+     * Rows (including soft-deleted ones, as tombstone ids) with {@code updatedAt
+     * >= since}, oldest first, capped at {@code limit}. Added for M11's Android
+     * sync mechanism (docs/milestones/M11-android-foundation.md D3/D4/D5).
+     */
+    ChangeSet<JournalEntryView> changedSince(UserId userId, Instant since, int limit);
 }

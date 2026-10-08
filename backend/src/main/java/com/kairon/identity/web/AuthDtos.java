@@ -43,10 +43,18 @@ final class AuthDtos {
         }
     }
 
+    /**
+     * {@code refreshToken} (M11 D6) is returned in the body in addition to the
+     * existing {@code Set-Cookie} — the web app ignores it (the cookie still
+     * does the job); a native client with no cookie jar stores it instead
+     * (e.g. via the platform Keystore) and sends it back in
+     * {@link RefreshRequest#refreshToken} / {@link LogoutRequest#refreshToken}.
+     */
     record AuthResponse(
             String accessToken,
             String tokenType,
             long expiresInSeconds,
+            String refreshToken,
             UserSummary user) {
     }
 }

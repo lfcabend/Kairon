@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -145,5 +146,37 @@ class JournalServiceTest {
         when(entries.existsByUserIdAndDayAndDeletedAtIsNull(USER.value(), DAY)).thenReturn(true);
 
         assertThat(service.hasEntryForDay(USER, DAY)).isTrue();
+    }
+
+    @Test
+    void changedSinceSplitsUpsertsAndTombstones() {
+        JournalEntry alive = entryOnDay(100);
+        JournalEntry deleted = entryOnDay(200);
+        deleted.softDelete(NOW);
+        Instant since = NOW.minusSeconds(60);
+        when(entries.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                USER.value(), since, PageRequest.of(0, 11)))
+                .thenReturn(List.of(alive, deleted));
+
+        var changes = service.changedSince(USER, since, 10);
+
+        assertThat(changes.upserted()).extracting(JournalEntryView::id).containsExactly(alive.getId());
+        assertThat(changes.deletedIds()).containsExactly(deleted.getId());
+        assertThat(changes.truncated()).isFalse();
+    }
+
+    @Test
+    void changedSinceSetsTruncatedWhenMoreThanLimitRowsMatch() {
+        JournalEntry a = entryOnDay(100);
+        JournalEntry b = entryOnDay(200);
+        Instant since = NOW.minusSeconds(60);
+        when(entries.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                USER.value(), since, PageRequest.of(0, 2)))
+                .thenReturn(List.of(a, b));
+
+        var changes = service.changedSince(USER, since, 1);
+
+        assertThat(changes.upserted()).hasSize(1);
+        assertThat(changes.truncated()).isTrue();
     }
 }

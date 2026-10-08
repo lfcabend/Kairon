@@ -75,6 +75,8 @@ vars:
   # go-task runs cmds through a built-in POSIX shell; on Windows a relative
   # ./gradlew(.bat) does not resolve, so call the wrapper by absolute path.
   GW: '{{if eq OS "windows"}}cmd /c "{{.TASKFILE_DIR}}\\gradlew.bat"{{else}}{{.TASKFILE_DIR}}/gradlew{{end}}'
+  # mobile/android is its own Gradle root (M11 D7) — same absolute-path reasoning as GW.
+  GW_ANDROID: '{{if eq OS "windows"}}cmd /c "{{.TASKFILE_DIR}}\\mobile\\android\\gradlew.bat"{{else}}{{.TASKFILE_DIR}}/mobile/android/gradlew{{end}}'
 
 tasks:
   default:
@@ -274,3 +276,26 @@ tasks:
       - helm dependency update {{.HELM_CHART}}
       - helm lint {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml
       - helm template {{.HELM_RELEASE}} {{.HELM_CHART}} -f {{.HELM_CHART}}/values-local.yaml | kubeconform -strict -summary -ignore-missing-schemas
+
+  android-client:
+    desc: >-
+      Regenerate the Android app's Kotlin/Retrofit client (M11 D8) from the
+      backend's live OpenAPI spec — needs a backend reachable at
+      localhost:8080 (`task be`, after `task db-forward`). Fetches
+      mobile/android/openapi.yaml fresh every time (never committed, same as
+      every other consumer of this spec — see .github/workflows/deploy.yml's
+      own "pull the spec springdoc-openapi serves live" step) and runs the
+      Gradle generator against it.
+    cmds:
+      - curl -sf http://localhost:8080/kairon/v3/api-docs.yaml -o mobile/android/openapi.yaml
+      - "{{.GW_ANDROID}} :openapi-client:openApiGenerate"
+
+  android-test:
+    desc: Run the Android app's unit tests + lint (mobile/android is its own Gradle root).
+    cmds:
+      - "{{.GW_ANDROID}} :app:testDebugUnitTest :app:lintDebug"
+
+  android-build:
+    desc: Assemble the Android app's debug APK.
+    cmds:
+      - "{{.GW_ANDROID}} :app:assembleDebug"

@@ -1,0 +1,80 @@
+name: android
+
+# Path-filtered to mobile/** (M11 §6.7) so backend/web-only PRs never pay for
+# this job. mobile/android is its own Gradle root (D7) — this workflow never
+# touches the root ./gradlew build.
+on:
+  push:
+    branches: [main]
+    paths: ["mobile/**"]
+  pull_request:
+    paths: ["mobile/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: android (client regen + unit tests + lint)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: kairon
+          POSTGRES_USER: kairon
+          POSTGRES_PASSWORD: kairon
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U kairon"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Boots the just-checked-out backend against the service Postgres above
+      # (self-migrating — spring.flyway.enabled defaults to true outside k8s)
+      # to pull the spec springdoc-openapi serves live, same technique
+      # .github/workflows/deploy.yml uses to publish it — never a committed
+      # file (mobile/android/openapi.yaml is gitignored).
+      - name: Fetch the live OpenAPI spec
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/kairon
+          SPRING_DATASOURCE_USERNAME: kairon
+          SPRING_DATASOURCE_PASSWORD: kairon
+          KAIRON_JWT_SECRET: ci-spec-fetch-only-not-a-real-secret-0000
+        run: |
+          ./gradlew :backend:bootRun --args='--spring.profiles.active=local' &
+          BOOT_PID=$!
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8080/kairon/actuator/health && break
+            sleep 2
+          done
+          curl -sf http://localhost:8080/kairon/v3/api-docs.yaml -o mobile/android/openapi.yaml
+          kill "$BOOT_PID"
+
+      - name: Regenerate the Kotlin client
+        working-directory: mobile/android
+        run: ./gradlew :openapi-client:openApiGenerate --no-daemon
+
+      - name: Unit tests + lint
+        working-directory: mobile/android
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
+
+      - name: Assemble debug APK
+        working-directory: mobile/android
+        run: ./gradlew :app:assembleDebug --no-daemon

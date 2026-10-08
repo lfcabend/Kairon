@@ -2,8 +2,10 @@ package com.kairon.projects.app;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -12,6 +14,7 @@ import java.util.UUID;
 
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
+import com.kairon.common.sync.ChangeSet;
 import com.kairon.projects.api.ProjectTaskPage;
 import com.kairon.projects.api.ProjectTaskView;
 import com.kairon.projects.api.ProjectView;
@@ -317,6 +320,55 @@ public class ProjectTaskService implements ProjectsApi {
     @Transactional
     public ProjectView applyProjectEdit(UserId userId, UUID projectId, ProjectEditCommand command) {
         return editApplyService.applyProjectEdit(userId, projectId, command);
+    }
+
+    @Override
+    public ChangeSet<ProjectView> changedSince(UserId userId, Instant since, int limit) {
+        List<Project> rows = projects.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                userId.value(), since, PageRequest.of(0, limit + 1));
+        boolean truncated = rows.size() > limit;
+        List<Project> page = truncated ? rows.subList(0, limit) : rows;
+        List<ProjectView> upserted = new ArrayList<>();
+        List<UUID> deletedIds = new ArrayList<>();
+        for (Project row : page) {
+            if (row.isDeleted()) {
+                deletedIds.add(row.getId());
+            } else {
+                upserted.add(ProjectMapper.toView(row));
+            }
+        }
+        if (truncated) {
+            log.warn("changedSince truncated userId={} since={} limit={}", userId.value(), since, limit);
+        }
+        log.debug("changedSince userId={} since={} -> {} upsert(s), {} tombstone(s), truncated={}",
+                userId.value(), since, upserted.size(), deletedIds.size(), truncated);
+        return new ChangeSet<>(upserted, deletedIds, truncated);
+    }
+
+    @Override
+    public ChangeSet<ProjectTaskView> tasksChangedSince(UserId userId, Instant since, int limit) {
+        List<ProjectTask> rows = tasks.findChangedSince(userId.value(), since, PageRequest.of(0, limit + 1));
+        boolean truncated = rows.size() > limit;
+        List<ProjectTask> page = truncated ? rows.subList(0, limit) : rows;
+        Map<UUID, Project> byProjectId = new HashMap<>();
+        for (Project project : projects.findAllById(page.stream().map(ProjectTask::getProjectId).distinct().toList())) {
+            byProjectId.put(project.getId(), project);
+        }
+        List<ProjectTaskView> upserted = new ArrayList<>();
+        List<UUID> deletedIds = new ArrayList<>();
+        for (ProjectTask row : page) {
+            if (row.isDeleted()) {
+                deletedIds.add(row.getId());
+            } else {
+                upserted.add(ProjectTaskMapper.toView(row, byProjectId.get(row.getProjectId())));
+            }
+        }
+        if (truncated) {
+            log.warn("tasksChangedSince truncated userId={} since={} limit={}", userId.value(), since, limit);
+        }
+        log.debug("tasksChangedSince userId={} since={} -> {} upsert(s), {} tombstone(s), truncated={}",
+                userId.value(), since, upserted.size(), deletedIds.size(), truncated);
+        return new ChangeSet<>(upserted, deletedIds, truncated);
     }
 
     // --- internals -----------------------------------------------------------

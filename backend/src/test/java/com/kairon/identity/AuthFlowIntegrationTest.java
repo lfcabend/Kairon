@@ -67,6 +67,9 @@ class AuthFlowIntegrationTest {
         String access = JsonPath.read(registered.getResponse().getContentAsString(), "$.accessToken");
         String refresh1 = registered.getResponse().getCookie(COOKIE).getValue();
         assertThat(refresh1).isNotBlank();
+        // M11 D6: the body now also carries the refresh token, matching the cookie.
+        String bodyRefresh1 = JsonPath.read(registered.getResponse().getContentAsString(), "$.refreshToken");
+        assertThat(bodyRefresh1).isEqualTo(refresh1);
 
         // --- GET /me with the access token --------------------------------
         mvc.perform(get("/api/v1/me").header("Authorization", "Bearer " + access))
@@ -89,6 +92,8 @@ class AuthFlowIntegrationTest {
                 .andReturn();
         String refresh2 = refreshed.getResponse().getCookie(COOKIE).getValue();
         assertThat(refresh2).isNotBlank().isNotEqualTo(refresh1);
+        String bodyRefresh2 = JsonPath.read(refreshed.getResponse().getContentAsString(), "$.refreshToken");
+        assertThat(bodyRefresh2).isEqualTo(refresh2);
 
         // --- replaying the rotated-away token trips reuse detection -------
         mvc.perform(post("/api/v1/auth/refresh").cookie(new Cookie(COOKIE, refresh1)))

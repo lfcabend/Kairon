@@ -1,10 +1,12 @@
 package com.kairon.todo.api;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import com.kairon.common.security.UserId;
+import com.kairon.common.sync.ChangeSet;
 
 /**
  * The todo module's public port. Other modules depend only on this interface and
@@ -39,6 +41,15 @@ public interface TodoApi {
      * (docs/milestones/M9-execution-summaries.md D4).
      */
     PeriodStats periodStats(UserId userId, LocalDate from, LocalDate to);
+
+    /**
+     * Rows (including soft-deleted ones, as tombstone ids) with {@code updatedAt
+     * >= since}, oldest first, capped at {@code limit} (+1 extra fetched just to
+     * detect truncation). Added for M11's Android sync mechanism
+     * (docs/milestones/M11-android-foundation.md D3/D4/D5) — the one query in
+     * this module that deliberately does not filter {@code deletedAt IS NULL}.
+     */
+    ChangeSet<TodoItemView> changedSince(UserId userId, Instant since, int limit);
 
     /** Minimal create payload for cross-module callers. */
     record NewTodo(

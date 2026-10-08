@@ -550,7 +550,12 @@ enable planning help without enabling journal reflection.
 - **Reminders / notifications** — `device_token`, `reminder`, a scheduler, and
   APNs/FCM integration.
 - **Sync bookkeeping** — a per-user `sync_cursor` / server-change-log table if
-  the `since=` scan on `updated_at` proves too coarse.
+  the `since=` scan on `updated_at` proves too coarse. `GET /api/v1/sync`
+  itself is implemented as of M11 (`todo`/`journal`/`project`/`project_task`,
+  the no-migration-needed `updated_at`/`deleted_at` scan this section
+  anticipated) — this bookkeeping escape hatch is still unbuilt, revisit only
+  once a real account's row counts actually hit the per-type cap
+  (`kairon.sync.max-rows-per-type`, default 500).
 
 ---
 

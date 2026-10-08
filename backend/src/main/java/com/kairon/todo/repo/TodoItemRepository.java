@@ -10,6 +10,7 @@ import com.kairon.todo.api.TodoApi;
 import com.kairon.todo.domain.TodoItem;
 import com.kairon.todo.domain.TodoStatus;
 
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -48,4 +49,10 @@ public interface TodoItemRepository extends JpaRepository<TodoItem, UUID> {
     TodoApi.PeriodStats periodStats(@Param("userId") UUID userId, @Param("from") LocalDate from,
             @Param("to") LocalDate to, @Param("fromInstant") Instant fromInstant,
             @Param("toInstantExclusive") Instant toInstantExclusive);
+
+    // Backs TodoApi.changedSince (M11 D3/D4) — the one query here that deliberately
+    // does NOT filter deletedAt IS NULL: a soft-deleted row must still surface so the
+    // client can tombstone it locally.
+    List<TodoItem> findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+            UUID userId, Instant since, Pageable pageable);
 }

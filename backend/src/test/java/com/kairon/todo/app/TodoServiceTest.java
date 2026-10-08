@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -238,5 +239,37 @@ class TodoServiceTest {
         assertThatThrownBy(() -> service.range(USER, DAY, DAY.plusDays(93)))
                 .isInstanceOf(ApiException.class)
                 .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(400));
+    }
+
+    @Test
+    void changedSinceSplitsUpsertsAndTombstones() {
+        TodoItem alive = itemOnDay(100);
+        TodoItem deleted = itemOnDay(200);
+        deleted.softDelete(NOW);
+        Instant since = NOW.minusSeconds(60);
+        when(items.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                USER.value(), since, PageRequest.of(0, 11)))
+                .thenReturn(List.of(alive, deleted));
+
+        var changes = service.changedSince(USER, since, 10);
+
+        assertThat(changes.upserted()).extracting(TodoItemView::id).containsExactly(alive.getId());
+        assertThat(changes.deletedIds()).containsExactly(deleted.getId());
+        assertThat(changes.truncated()).isFalse();
+    }
+
+    @Test
+    void changedSinceSetsTruncatedWhenMoreThanLimitRowsMatch() {
+        TodoItem a = itemOnDay(100);
+        TodoItem b = itemOnDay(200);
+        Instant since = NOW.minusSeconds(60);
+        when(items.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                USER.value(), since, PageRequest.of(0, 2)))
+                .thenReturn(List.of(a, b));
+
+        var changes = service.changedSince(USER, since, 1);
+
+        assertThat(changes.upserted()).hasSize(1);
+        assertThat(changes.truncated()).isTrue();
     }
 }

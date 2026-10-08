@@ -29,7 +29,9 @@ Ancient Greek distinguished *chronos* (χρόνος), clock time that just passe
   the web app.
 - **Web** — React + TypeScript single-page app, **built into the backend jar and
   served by it**. One deployable, one origin, no separate web server.
-- **Mobile** — native Android (Jetpack Compose) and iOS (SwiftUI) apps, later, talking to the same API.
+- **Mobile** — native Android (Jetpack Compose) app, talking to the same API, working
+  toward full feature parity with the web app. Auth, Today, and Daily Todo ship first
+  (M11); Journal and Projects/Gantt, then the assistant features, follow in later slices.
 
 ## Tech stack (summary)
 
@@ -47,7 +49,7 @@ Kairon/
 ├── docs/                     # design, data model, roadmap, ADRs
 ├── backend/                  # Spring Boot service (Gradle, Java 25)
 ├── web/                      # React + Vite + TS SPA (Gradle :web builds it into the backend jar)
-├── mobile/                   # Android + iOS apps (later)
+├── mobile/android/           # Android app (own Gradle root — not part of the root build)
 ├── deploy/helm/kairon/       # Helm chart (app + PostgreSQL dependency); also the local dev DB (kind)
 ├── docker/                   # Dockerfile — one image: API + SPA
 ├── Taskfile.yml              # go-task wrappers for the common commands

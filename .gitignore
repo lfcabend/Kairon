@@ -39,3 +39,9 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+
+# mobile/android (M11 D7 — its own Gradle root)
+mobile/android/local.properties
+mobile/android/openapi.yaml
+*.apk
+*.aab

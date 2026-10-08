@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.projects.api.ProjectTaskView;
+import com.kairon.projects.api.ProjectView;
 import com.kairon.projects.app.ProjectTaskService.CreateCommand;
 import com.kairon.projects.app.ProjectTaskService.PatchCommand;
 import com.kairon.projects.domain.Project;
@@ -24,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageRequest;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -268,5 +270,54 @@ class ProjectTaskServiceTest {
         service.completeTaskIfPresent(USER, task.getId());
 
         assertThat(task.getStatus().name()).isNotEqualTo("DONE");
+    }
+
+    @Test
+    void changedSinceSplitsUpsertsAndTombstones() {
+        Project alive = Project.create(USER.value(), null, "Alive", null, "#6366f1", null, 100, null, null);
+        Project deleted = Project.create(USER.value(), null, "Deleted", null, "#6366f1", null, 200, null, null);
+        deleted.softDelete(NOW);
+        Instant since = NOW.minusSeconds(60);
+        when(projects.findByUserIdAndUpdatedAtGreaterThanEqualOrderByUpdatedAtAscIdAsc(
+                USER.value(), since, PageRequest.of(0, 11)))
+                .thenReturn(List.of(alive, deleted));
+
+        var changes = service.changedSince(USER, since, 10);
+
+        assertThat(changes.upserted()).extracting(ProjectView::id).containsExactly(alive.getId());
+        assertThat(changes.deletedIds()).containsExactly(deleted.getId());
+        assertThat(changes.truncated()).isFalse();
+    }
+
+    @Test
+    void tasksChangedSinceSplitsUpsertsAndTombstonesAcrossProjects() {
+        ProjectTask alive = taskAt(null, 100);
+        ProjectTask deleted = taskAt(null, 200);
+        deleted.softDelete(NOW);
+        Instant since = NOW.minusSeconds(60);
+        when(tasks.findChangedSince(USER.value(), since, PageRequest.of(0, 11)))
+                .thenReturn(List.of(alive, deleted));
+        when(projects.findAllById(List.of(project.getId()))).thenReturn(List.of(project));
+
+        var changes = service.tasksChangedSince(USER, since, 10);
+
+        assertThat(changes.upserted()).extracting(ProjectTaskView::id).containsExactly(alive.getId());
+        assertThat(changes.deletedIds()).containsExactly(deleted.getId());
+        assertThat(changes.truncated()).isFalse();
+    }
+
+    @Test
+    void tasksChangedSinceSetsTruncatedWhenMoreThanLimitRowsMatch() {
+        ProjectTask a = taskAt(null, 100);
+        ProjectTask b = taskAt(null, 200);
+        Instant since = NOW.minusSeconds(60);
+        when(tasks.findChangedSince(USER.value(), since, PageRequest.of(0, 2)))
+                .thenReturn(List.of(a, b));
+        when(projects.findAllById(List.of(project.getId()))).thenReturn(List.of(project));
+
+        var changes = service.tasksChangedSince(USER, since, 1);
+
+        assertThat(changes.upserted()).hasSize(1);
+        assertThat(changes.truncated()).isTrue();
     }
 }
