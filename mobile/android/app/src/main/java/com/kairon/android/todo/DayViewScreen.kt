@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,10 +92,6 @@ fun DayViewScreen(viewModel: TodoViewModel = hiltViewModel()) {
     var showDatePicker by remember { mutableStateOf(false) }
     var showCancelled by remember { mutableStateOf(false) }
 
-    val openItems = state.items.filter { it.status == "OPEN" }
-    val doneItems = state.items.filter { it.status == "DONE" }
-    val cancelledItems = state.items.filter { it.status == "CANCELLED" }
-
     Scaffold(
         topBar = {
             TopAppBar(
@@ -148,100 +145,134 @@ fun DayViewScreen(viewModel: TodoViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                item {
-                    Text(
-                        "${openItems.size} open · ${doneItems.size} done",
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
+                todoListItems(
+                    viewModel = viewModel,
+                    state = state,
+                    showCancelled = showCancelled,
+                    onToggleShowCancelled = { showCancelled = !showCancelled },
+                    quickAddText = quickAddText,
+                    onQuickAddTextChange = { quickAddText = it },
+                    onQuickAddSubmit = {
+                        viewModel.quickAdd(quickAddText)
+                        quickAddText = ""
+                    },
+                )
+            }
+        }
+    }
+}
 
-                if (state.error != null) {
-                    item { Text(state.error ?: "", modifier = Modifier.padding(16.dp)) }
-                }
+/**
+ * The todo-list portion of a day screen — summary count, error, rollover
+ * prompt, quick add, and the open/done/cancelled sections — as a
+ * [LazyListScope] extension so [DayViewScreen] and [com.kairon.android.today.TodayScreen]
+ * can both embed it in their own [LazyColumn] (Today reuses this exact
+ * content bound to [TodoViewModel]'s default day of "today", the same way
+ * the web app's `TodayTasks` reuses `DayView`'s own `TodoList`/`DaySummary`/
+ * `QuickAdd`). Only the date-nav app bar (prev/next/date-picker/Today
+ * button) stays [DayViewScreen]-only, since Today has no date to navigate.
+ */
+fun LazyListScope.todoListItems(
+    viewModel: TodoViewModel,
+    state: DayViewUiState,
+    showCancelled: Boolean,
+    onToggleShowCancelled: () -> Unit,
+    quickAddText: String,
+    onQuickAddTextChange: (String) -> Unit,
+    onQuickAddSubmit: () -> Unit,
+) {
+    val openItems = state.items.filter { it.status == "OPEN" }
+    val doneItems = state.items.filter { it.status == "DONE" }
+    val cancelledItems = state.items.filter { it.status == "CANCELLED" }
 
-                state.rolloverCandidateCount?.let { count ->
-                    item {
-                        Surface(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("$count item(s) to roll over")
-                                TextButton(onClick = viewModel::rollover) { Text("Roll over") }
-                            }
-                        }
-                    }
-                }
+    item {
+        Text(
+            "${openItems.size} open · ${doneItems.size} done",
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+    }
 
-                item {
-                    Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                        OutlinedTextField(
-                            value = quickAddText,
-                            onValueChange = { quickAddText = it },
-                            label = { Text("Quick add") },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        TextButton(onClick = {
-                            viewModel.quickAdd(quickAddText)
-                            quickAddText = ""
-                        }) {
-                            Text("Add")
-                        }
-                    }
-                }
+    if (state.error != null) {
+        item { Text(state.error ?: "", modifier = Modifier.padding(16.dp)) }
+    }
 
-                item {
-                    OpenItemsSection(
-                        fullDayItems = state.items,
-                        openItems = openItems,
-                        onReorder = viewModel::reorderOpen,
-                        onToggleComplete = viewModel::toggleComplete,
-                        onRename = viewModel::rename,
-                        onEditNotes = viewModel::setNotes,
-                        onCancel = viewModel::cancel,
-                        onDelete = viewModel::delete,
-                    )
+    state.rolloverCandidateCount?.let { count ->
+        item {
+            Surface(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("$count item(s) to roll over")
+                    TextButton(onClick = viewModel::rollover) { Text("Roll over") }
                 }
+            }
+        }
+    }
 
-                if (doneItems.isNotEmpty()) {
-                    item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
-                    items(doneItems, key = { it.id }) { item ->
-                        TodoRow(
-                            item = item,
-                            draggable = false,
-                            onToggleComplete = { viewModel.toggleComplete(item) },
-                            onRename = { viewModel.rename(item, it) },
-                            onEditNotes = { viewModel.setNotes(item, it) },
-                            onCancel = { viewModel.cancel(item) },
-                            onDelete = { viewModel.delete(item) },
-                        )
-                    }
-                }
+    item {
+        Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+            OutlinedTextField(
+                value = quickAddText,
+                onValueChange = onQuickAddTextChange,
+                label = { Text("Quick add") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            TextButton(onClick = onQuickAddSubmit) {
+                Text("Add")
+            }
+        }
+    }
 
-                if (cancelledItems.isNotEmpty()) {
-                    item {
-                        TextButton(onClick = { showCancelled = !showCancelled }) {
-                            Text(
-                                if (showCancelled) "Hide ${cancelledItems.size} cancelled"
-                                else "Show ${cancelledItems.size} cancelled",
-                            )
-                        }
-                    }
-                    if (showCancelled) {
-                        items(cancelledItems, key = { it.id }) { item ->
-                            TodoRow(
-                                item = item,
-                                draggable = false,
-                                onToggleComplete = { viewModel.toggleComplete(item) },
-                                onRename = { viewModel.rename(item, it) },
-                                onEditNotes = { viewModel.setNotes(item, it) },
-                                onCancel = { viewModel.cancel(item) },
-                                onDelete = { viewModel.delete(item) },
-                            )
-                        }
-                    }
-                }
+    item {
+        OpenItemsSection(
+            fullDayItems = state.items,
+            openItems = openItems,
+            onReorder = viewModel::reorderOpen,
+            onToggleComplete = viewModel::toggleComplete,
+            onRename = viewModel::rename,
+            onEditNotes = viewModel::setNotes,
+            onCancel = viewModel::cancel,
+            onDelete = viewModel::delete,
+        )
+    }
+
+    if (doneItems.isNotEmpty()) {
+        item { HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp)) }
+        items(doneItems, key = { it.id }) { item ->
+            TodoRow(
+                item = item,
+                draggable = false,
+                onToggleComplete = { viewModel.toggleComplete(item) },
+                onRename = { viewModel.rename(item, it) },
+                onEditNotes = { viewModel.setNotes(item, it) },
+                onCancel = { viewModel.cancel(item) },
+                onDelete = { viewModel.delete(item) },
+            )
+        }
+    }
+
+    if (cancelledItems.isNotEmpty()) {
+        item {
+            TextButton(onClick = onToggleShowCancelled) {
+                Text(
+                    if (showCancelled) "Hide ${cancelledItems.size} cancelled"
+                    else "Show ${cancelledItems.size} cancelled",
+                )
+            }
+        }
+        if (showCancelled) {
+            items(cancelledItems, key = { it.id }) { item ->
+                TodoRow(
+                    item = item,
+                    draggable = false,
+                    onToggleComplete = { viewModel.toggleComplete(item) },
+                    onRename = { viewModel.rename(item, it) },
+                    onEditNotes = { viewModel.setNotes(item, it) },
+                    onCancel = { viewModel.cancel(item) },
+                    onDelete = { viewModel.delete(item) },
+                )
             }
         }
     }
