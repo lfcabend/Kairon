@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mirrors web/public/favicon.svg (the same mark used for the web app's logo) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:pathData="M7,0 H25 A7,7 0 0 1 32,7 V25 A7,7 0 0 1 25,32 H7 A7,7 0 0 1 0,25 V7 A7,7 0 0 1 7,0 Z"
+        android:fillColor="#0F172A" />
+    <path
+        android:pathData="M11,6 h3 v9 l7,-9 h3.6 l-6.6,8.3 L25.8,26 H22 l-6,-8.4 L14,20 v6 h-3 Z"
+        android:fillColor="#F8FAFC" />
+</vector>

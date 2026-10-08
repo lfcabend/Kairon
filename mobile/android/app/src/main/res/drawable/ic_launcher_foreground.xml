@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The web favicon's "K" mark (web/public/favicon.svg), scaled to fit the
+     adaptive icon's safe zone, on its own transparent canvas -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M29.58,21 L39.48,21 L39.48,50.7 L62.58,21 L74.46,21 L52.68,48.39 L78.42,87 L65.88,87 L46.08,59.28 L39.48,67.2 L39.48,87 L29.58,87 Z"
+        android:fillColor="#F8FAFC" />
+</vector>

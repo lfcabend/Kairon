@@ -1,11 +1,18 @@
 package com.kairon.android.core.ui
 
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -35,13 +42,13 @@ private sealed class Route(val path: String) {
 
 // Bottom-nav items, in the same relative order as the web app's top-nav (M11 §6.6):
 // Today first and default, then the day-level Todo view, then Account/About.
-private data class BottomNavItem(val route: Route, val label: String)
+private data class BottomNavItem(val route: Route, val label: String, val icon: ImageVector)
 
 private val bottomNavItems = listOf(
-    BottomNavItem(Route.Today, "Today"),
-    BottomNavItem(Route.DayView, "Todo"),
-    BottomNavItem(Route.Account, "Account"),
-    BottomNavItem(Route.About, "About"),
+    BottomNavItem(Route.Today, "Today", Icons.Default.DateRange),
+    BottomNavItem(Route.DayView, "Todo", Icons.Default.CheckCircle),
+    BottomNavItem(Route.Account, "Account", Icons.Default.AccountCircle),
+    BottomNavItem(Route.About, "About", Icons.Default.Info),
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -69,6 +76,7 @@ fun KaironApp(sessionViewModel: SessionViewModel = hiltViewModel()) {
     }
 
     Scaffold(
+        topBar = { KaironBanner() },
         bottomBar = {
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentDestination = backStackEntry?.destination
@@ -84,7 +92,7 @@ fun KaironApp(sessionViewModel: SessionViewModel = hiltViewModel()) {
                                 restoreState = true
                             }
                         },
-                        icon = { Text(item.label.take(1)) },
+                        icon = { Icon(item.icon, contentDescription = item.label) },
                         label = { Text(item.label) },
                     )
                 }
