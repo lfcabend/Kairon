@@ -1,5 +1,6 @@
 package com.kairon.android.todo
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -393,105 +395,115 @@ private fun TodoRow(
         }
     }
 
-    SwipeToDismissBox(
-        state = dismissState,
-        modifier = rowModifier,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.errorContainer)
-                    .padding(horizontal = 16.dp),
-                contentAlignment = Alignment.CenterEnd,
+    // The margin has to wrap the whole swipe box, background included — padding
+    // only the foreground Surface left the backgroundContent's full-bleed color
+    // showing through around every card at rest.
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)) {
+        SwipeToDismissBox(
+            state = dismissState,
+            modifier = rowModifier,
+            enableDismissFromStartToEnd = false,
+            backgroundContent = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.errorContainer)
+                        .padding(horizontal = 16.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Text("Delete", color = MaterialTheme.colorScheme.onErrorContainer)
+                }
+            },
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-                Text("Delete", color = MaterialTheme.colorScheme.onErrorContainer)
-            }
-        },
-    ) {
-        Surface {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    if (draggable) {
-                        Text("⠿", modifier = dragHandleModifier.padding(end = 4.dp))
-                    } else {
-                        Spacer(modifier = Modifier.width(20.dp))
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                        if (draggable) {
+                            Text("⠿", modifier = dragHandleModifier.padding(end = 4.dp))
+                        } else {
+                            Spacer(modifier = Modifier.width(20.dp))
+                        }
+
+                        Checkbox(checked = done, onCheckedChange = { onToggleComplete() })
+
+                        if (editingTitle) {
+                            OutlinedTextField(
+                                value = titleText,
+                                onValueChange = { titleText = it },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .focusRequester(titleFocusRequester)
+                                    .onFocusChanged { focusState ->
+                                        if (focusState.isFocused) {
+                                            titleHasFocused = true
+                                        } else if (titleHasFocused) {
+                                            editingTitle = false
+                                            val next = titleText.trim()
+                                            if (next.isNotEmpty() && next != item.title) onRename(next) else titleText = item.title
+                                        }
+                                    },
+                                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                                keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+                            )
+                        } else {
+                            Text(
+                                text = item.title,
+                                modifier = Modifier.weight(1f).clickable { editingTitle = true },
+                                textDecoration = if (done || cancelled) TextDecoration.LineThrough else null,
+                                color = if (done || cancelled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+
+                        if (item.priority > 0) {
+                            Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(PRIORITY_COLOR[item.priority]))
+                            Spacer(modifier = Modifier.width(6.dp))
+                        }
+
+                        if (item.rolledOverFromId != null) {
+                            Text("↩", modifier = Modifier.padding(horizontal = 2.dp))
+                        }
+
+                        TextButton(onClick = { notesOpen = !notesOpen }) {
+                            Text(if (notesOpen) "–" else "+")
+                        }
+
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) { Text("⋮") }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                if (!cancelled) {
+                                    DropdownMenuItem(
+                                        text = { Text("Cancel task") },
+                                        onClick = {
+                                            menuOpen = false
+                                            onCancel()
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
 
-                    Checkbox(checked = done, onCheckedChange = { onToggleComplete() })
-
-                    if (editingTitle) {
+                    if (notesOpen) {
                         OutlinedTextField(
-                            value = titleText,
-                            onValueChange = { titleText = it },
-                            singleLine = true,
+                            value = notesText,
+                            onValueChange = { notesText = it },
+                            placeholder = { Text("Notes") },
                             modifier = Modifier
-                                .weight(1f)
-                                .focusRequester(titleFocusRequester)
+                                .fillMaxWidth()
+                                .padding(start = 28.dp, top = 4.dp)
                                 .onFocusChanged { focusState ->
-                                    if (focusState.isFocused) {
-                                        titleHasFocused = true
-                                    } else if (titleHasFocused) {
-                                        editingTitle = false
-                                        val next = titleText.trim()
-                                        if (next.isNotEmpty() && next != item.title) onRename(next) else titleText = item.title
-                                    }
+                                    if (!focusState.isFocused && notesText != (item.notes ?: "")) onEditNotes(notesText)
                                 },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                             keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
                         )
-                    } else {
-                        Text(
-                            text = item.title,
-                            modifier = Modifier.weight(1f).clickable { editingTitle = true },
-                            textDecoration = if (done || cancelled) TextDecoration.LineThrough else null,
-                            color = if (done || cancelled) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                        )
                     }
-
-                    if (item.priority > 0) {
-                        Box(modifier = Modifier.size(8.dp).clip(CircleShape).background(PRIORITY_COLOR[item.priority]))
-                        Spacer(modifier = Modifier.width(6.dp))
-                    }
-
-                    if (item.rolledOverFromId != null) {
-                        Text("↩", modifier = Modifier.padding(horizontal = 2.dp))
-                    }
-
-                    TextButton(onClick = { notesOpen = !notesOpen }) {
-                        Text(if (notesOpen) "–" else "+")
-                    }
-
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) { Text("⋮") }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            if (!cancelled) {
-                                DropdownMenuItem(
-                                    text = { Text("Cancel task") },
-                                    onClick = {
-                                        menuOpen = false
-                                        onCancel()
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
-
-                if (notesOpen) {
-                    OutlinedTextField(
-                        value = notesText,
-                        onValueChange = { notesText = it },
-                        placeholder = { Text("Notes") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(start = 28.dp, top = 4.dp)
-                            .onFocusChanged { focusState ->
-                                if (!focusState.isFocused && notesText != (item.notes ?: "")) onEditNotes(notesText)
-                            },
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                        keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
-                    )
                 }
             }
         }
