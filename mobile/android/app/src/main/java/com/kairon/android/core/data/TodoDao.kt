@@ -32,4 +32,7 @@ interface TodoDao {
 
     @Delete
     suspend fun delete(item: TodoItemEntity)
+
+    @Query("DELETE FROM todo_item")
+    suspend fun clearAll()
 }

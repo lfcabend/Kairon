@@ -27,4 +27,8 @@ class SyncCursorStore @Inject constructor(@ApplicationContext private val contex
     suspend fun write(since: Instant) {
         context.syncDataStore.edit { it[key] = since.toString() }
     }
+
+    suspend fun clear() {
+        context.syncDataStore.edit { it.remove(key) }
+    }
 }

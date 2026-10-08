@@ -16,6 +16,7 @@ private const val TAG = "AuthRepository"
 class AuthRepository @Inject constructor(
     private val authApi: AuthControllerApi,
     private val tokenStore: TokenStore,
+    private val sessionClearer: SessionClearer,
 ) {
 
     val signedIn get() = tokenStore.signedIn
@@ -55,14 +56,14 @@ class AuthRepository @Inject constructor(
         val refreshToken = tokenStore.currentRefreshToken()
         runCatching { authApi.logout(LogoutRequest(refreshToken = refreshToken)) }
             .onFailure { ex -> AppLog.w(TAG, "logout.requestFailed", throwable = ex) }
-        tokenStore.clear()
+        sessionClearer.clearSession()
         AppLog.i(TAG, "logout.done")
     }
 
     suspend fun logoutAll() {
         runCatching { authApi.logoutAll() }
             .onFailure { ex -> AppLog.w(TAG, "logoutAll.requestFailed", throwable = ex) }
-        tokenStore.clear()
+        sessionClearer.clearSession()
         AppLog.i(TAG, "logoutAll.done")
     }
 }

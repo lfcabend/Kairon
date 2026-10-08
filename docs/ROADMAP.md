@@ -562,6 +562,48 @@ one feature.
       enough for this app's scale? Leaning "inline once the `errors` array
       is actually parsed" since the data to do it right already exists.
 
+## M11.8 — Android: sync truncation correctness
+
+Gap found 2026-10-08 while fixing a cross-account data leak (the Android app
+wasn't wiping Room/the `/sync` cursor on logout, so the next user to log in on
+the same device could see the previous user's cached todos — now fixed:
+`SessionClearer` wipes both on every logout and on `AuthAuthenticator`'s
+forced session-end paths). That fix makes this gap considerably more likely to
+bite: every login now starts a full resync from `since=null`, not just an
+incremental delta.
+
+`GET /sync` has no pagination — each type is capped at
+`kairon.sync.max-rows-per-type` (default 500, oldest-`updatedAt`-first) and
+sets that type's `truncated` flag rather than returning the rest
+(`planning.app.SyncService`/`SyncProperties`, M11 D5; already named as an open
+question, M11-android-foundation.md Q2). The response's `since` is always
+`capturedAt` — read *before* the underlying queries run, so a row touched
+mid-request isn't missed on the *next* call (deliberate, M11 D4) — but Android's
+`SyncRepository.sync()` writes that `since` into `SyncCursorStore` unconditionally,
+never checking `truncated`. For an account with more than 500 rows of a given
+type (easy to reach for `todo_item` alone after months of daily use, and more so
+once M11.5 widens sync to `journal`/`project`/`project_task`), the oldest rows
+past the cap are silently never synced to that device again — the cursor has
+already jumped to "now," so a subsequent call only asks for what changed after
+that, and an untouched old row never qualifies.
+
+- [ ] Android: `SyncRepository` must not advance `SyncCursorStore` past a sync
+      call that came back `truncated` for any requested type — keep retrying
+      with the *same* `since` (each call returns the next oldest page) until a
+      full round-trip has every type non-truncated, only then persisting the
+      new cursor.
+- [ ] Decide whether that retry loop runs inline (blocking login/foreground
+      sync until fully caught up) or as a background "catching up" state the
+      UI can show progress for — relevant once a real account's row counts
+      make a single login-time resync noticeably slow.
+- [ ] Add a test reproducing the bug end-to-end: seed >500 todo rows, sync
+      from `since=null`, assert a second sync with no server-side changes
+      still eventually fetches every row rather than stopping after one
+      truncated page.
+- [ ] Revisit whether a real keyset `nextCursor` per type (deferred at M11
+      design time, per Q2) is worth building once this is fixed and the retry
+      loop's login-time cost is actually measured.
+
 ## M12 — Observability: Prometheus & Grafana
 
 Resolves M7's Q1 (`micrometer-registry-prometheus` and the `/actuator/prometheus`
