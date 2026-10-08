@@ -1,6 +1,7 @@
 package com.kairon.android.core.network
 
 import com.kairon.android.core.auth.TokenStore
+import com.kairon.android.core.logging.AppLog
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -30,6 +31,8 @@ import javax.inject.Singleton
  * again. A 401 on the *refresh call itself* (an expired/reused/revoked
  * refresh token) clears the session instead of retrying.
  */
+private const val TAG = "AuthAuthenticator"
+
 @Singleton
 class AuthAuthenticator @Inject constructor(
     private val tokenStore: TokenStore,
@@ -40,23 +43,31 @@ class AuthAuthenticator @Inject constructor(
     private val refreshMutex = Mutex()
 
     override fun authenticate(route: Route?, response: Response): Request? {
+        val url = response.request.url.toString()
         if (responseCount(response) >= 2) {
             // Already retried once for this chain of requests — a fresh refresh still 401'd.
+            AppLog.w(TAG, "session.cleared", mapOf("reason" to "secondUnauthorized", "url" to url))
             tokenStore.clear()
             return null
         }
+        AppLog.d(TAG, "authenticate.unauthorized", mapOf("url" to url))
         val attemptedWithToken = response.request.header("Authorization")
         val refreshedToken = runBlocking {
             refreshMutex.withLock {
                 val current = tokenStore.currentAccessToken()
                 // Someone else already refreshed while we were waiting for the lock.
                 if (current != null && "Bearer $current" != attemptedWithToken) {
+                    AppLog.d(TAG, "authenticate.reusingConcurrentRefresh", mapOf("url" to url))
                     current
                 } else {
                     refreshAccessToken()
                 }
             }
-        } ?: return null
+        }
+        if (refreshedToken == null) {
+            AppLog.w(TAG, "authenticate.giveUp", mapOf("url" to url))
+            return null
+        }
 
         return response.request.newBuilder()
             .header("Authorization", "Bearer $refreshedToken")
@@ -64,7 +75,12 @@ class AuthAuthenticator @Inject constructor(
     }
 
     private fun refreshAccessToken(): String? {
-        val refreshToken = tokenStore.currentRefreshToken() ?: return null
+        val refreshToken = tokenStore.currentRefreshToken()
+        if (refreshToken == null) {
+            AppLog.w(TAG, "session.cleared", mapOf("reason" to "noRefreshTokenStored"))
+            return null
+        }
+        AppLog.d(TAG, "refresh.start", emptyMap())
         val requestBody = json.encodeToString(
             JsonObject.serializer(),
             JsonObject(mapOf("refreshToken" to kotlinx.serialization.json.JsonPrimitive(refreshToken))),
@@ -75,17 +91,33 @@ class AuthAuthenticator @Inject constructor(
             .post(requestBody)
             .build()
 
-        rawHttpClient.newCall(request).execute().use { httpResponse ->
-            if (!httpResponse.isSuccessful) {
-                tokenStore.clear()
-                return null
+        return try {
+            rawHttpClient.newCall(request).execute().use { httpResponse ->
+                // HttpErrorLoggingInterceptor (installed on this same rawHttpClient)
+                // already logged the status/body if httpResponse isn't successful.
+                if (!httpResponse.isSuccessful) {
+                    AppLog.w(TAG, "session.cleared", mapOf("reason" to "refreshRejected", "code" to httpResponse.code))
+                    tokenStore.clear()
+                    return null
+                }
+                val bodyText = httpResponse.body.string()
+                val parsed = json.parseToJsonElement(bodyText) as? JsonObject
+                val newAccessToken = parsed?.get("accessToken")?.jsonPrimitive?.content
+                if (parsed == null || newAccessToken == null) {
+                    AppLog.e(TAG, "refresh.unparseableResponse", mapOf("code" to httpResponse.code))
+                    return null
+                }
+                val newRefreshToken = parsed["refreshToken"]?.jsonPrimitive?.content ?: refreshToken
+                tokenStore.store(newAccessToken, newRefreshToken)
+                AppLog.i(TAG, "refresh.success", emptyMap())
+                newAccessToken
             }
-            val bodyText = httpResponse.body.string()
-            val parsed = json.parseToJsonElement(bodyText) as? JsonObject ?: return null
-            val newAccessToken = parsed["accessToken"]?.jsonPrimitive?.content ?: return null
-            val newRefreshToken = parsed["refreshToken"]?.jsonPrimitive?.content ?: refreshToken
-            tokenStore.store(newAccessToken, newRefreshToken)
-            return newAccessToken
+        } catch (ex: Exception) {
+            // IOException (connect/timeout) is already logged by
+            // HttpErrorLoggingInterceptor; this also catches a malformed JSON
+            // body, which isn't.
+            AppLog.e(TAG, "refresh.failed", throwable = ex)
+            null
         }
     }
 

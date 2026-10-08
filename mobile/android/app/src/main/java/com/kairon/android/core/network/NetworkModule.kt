@@ -38,19 +38,23 @@ object NetworkModule {
     @Provides
     @Singleton
     @RawHttpClient
-    fun rawHttpClient(): OkHttpClient = OkHttpClient.Builder().build()
+    fun rawHttpClient(httpErrorLoggingInterceptor: HttpErrorLoggingInterceptor): OkHttpClient = OkHttpClient.Builder()
+        .addInterceptor(httpErrorLoggingInterceptor)
+        .build()
 
     @Provides
     @Singleton
     fun httpClient(
         authInterceptor: AuthInterceptor,
         authAuthenticator: AuthAuthenticator,
+        httpErrorLoggingInterceptor: HttpErrorLoggingInterceptor,
     ): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BASIC }
         return OkHttpClient.Builder()
             .addInterceptor(authInterceptor)
             .authenticator(authAuthenticator)
             .addInterceptor(logging)
+            .addInterceptor(httpErrorLoggingInterceptor)
             .build()
     }
 

@@ -6,6 +6,8 @@ import com.kairon.android.client.api.PlanningControllerApi
 import com.kairon.android.client.model.ProjectTaskView
 import com.kairon.android.client.model.PromoteRequest
 import com.kairon.android.client.model.TodoItemView
+import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.bodyOrThrow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,6 +16,8 @@ import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.UUID
 import javax.inject.Inject
+
+private const val TAG = "TodayViewModel"
 
 data class TodayUiState(
     val loading: Boolean = true,
@@ -41,10 +45,12 @@ class TodayViewModel @Inject constructor(
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching {
                 val response = planningApi.today(LocalDate.now())
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "refresh")
             }.onSuccess { body ->
+                AppLog.i(
+                    TAG, "refresh.success",
+                    mapOf("todos" to body.todos.orEmpty().size, "dueProjectTasks" to body.dueProjectTasks.orEmpty().size),
+                )
                 _state.value = _state.value.copy(
                     loading = false,
                     todos = body.todos.orEmpty(),
@@ -52,6 +58,7 @@ class TodayViewModel @Inject constructor(
                     hasJournalEntry = body.journalPrompt?.hasEntry ?: false,
                 )
             }.onFailure { ex ->
+                AppLog.e(TAG, "refresh.failed", throwable = ex)
                 _state.value = _state.value.copy(loading = false, error = ex.message ?: "Failed to load Today")
             }
         }
@@ -61,15 +68,15 @@ class TodayViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val response = planningApi.promote(PromoteRequest(projectTaskId = taskId, day = LocalDate.now()))
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "promote")
             }.onSuccess { created ->
+                AppLog.i(TAG, "promote.success", mapOf("taskId" to taskId, "todoId" to created.id))
                 _state.value = _state.value.copy(
                     todos = _state.value.todos + created,
                     addedTaskIds = _state.value.addedTaskIds + taskId,
                 )
             }.onFailure { ex ->
+                AppLog.e(TAG, "promote.failed", mapOf("taskId" to taskId), throwable = ex)
                 _state.value = _state.value.copy(error = ex.message ?: "Failed to add to today")
             }
         }

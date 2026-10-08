@@ -5,12 +5,16 @@ import androidx.lifecycle.viewModelScope
 import com.kairon.android.client.api.MeControllerApi
 import com.kairon.android.client.model.MeResponse
 import com.kairon.android.core.auth.AuthRepository
+import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.bodyOrThrow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+private const val TAG = "AccountViewModel"
 
 data class AccountUiState(
     val loading: Boolean = true,
@@ -37,12 +41,11 @@ class AccountViewModel @Inject constructor(
             _state.value = _state.value.copy(loading = true, error = null)
             runCatching {
                 val response = meApi.me()
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "refresh")
             }.onSuccess { me ->
                 _state.value = _state.value.copy(loading = false, me = me)
             }.onFailure { ex ->
+                AppLog.e(TAG, "refresh.failed", throwable = ex)
                 _state.value = _state.value.copy(loading = false, error = ex.message ?: "Failed to load profile")
             }
         }
@@ -51,6 +54,7 @@ class AccountViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch {
             authRepository.logout()
+            AppLog.i(TAG, "logout")
             _state.value = _state.value.copy(loggedOut = true)
         }
     }
@@ -58,6 +62,7 @@ class AccountViewModel @Inject constructor(
     fun logoutAll() {
         viewModelScope.launch {
             authRepository.logoutAll()
+            AppLog.i(TAG, "logoutAll")
             _state.value = _state.value.copy(loggedOut = true)
         }
     }

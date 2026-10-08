@@ -2,6 +2,8 @@ package com.kairon.android.about
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.bodyOrThrow
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,6 +12,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import javax.inject.Inject
+
+private const val TAG = "AboutViewModel"
 
 data class AboutUiState(
     val loading: Boolean = true,
@@ -27,9 +31,7 @@ class AboutViewModel @Inject constructor(private val aboutApi: AboutApi) : ViewM
         viewModelScope.launch {
             runCatching {
                 val response = aboutApi.info()
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "refresh")
             }.onSuccess { info ->
                 val lines = buildList {
                     info["build"]?.jsonObject?.let { build ->
@@ -45,6 +47,7 @@ class AboutViewModel @Inject constructor(private val aboutApi: AboutApi) : ViewM
                 }
                 _state.value = _state.value.copy(loading = false, lines = lines)
             }.onFailure { ex ->
+                AppLog.e(TAG, "refresh.failed", throwable = ex)
                 _state.value = _state.value.copy(loading = false, error = ex.message ?: "Failed to load build info")
             }
         }

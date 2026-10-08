@@ -94,6 +94,16 @@ android {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
     }
+
+    // AppLog (core.logging) calls plain android.util.Log directly, which
+    // throws "not mocked" under the default unit-test android.jar stub —
+    // this app has no Robolectric. isReturnDefaultValues makes every
+    // unmocked Android SDK call (Log included) return its default instead.
+    testOptions {
+        unitTests {
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {

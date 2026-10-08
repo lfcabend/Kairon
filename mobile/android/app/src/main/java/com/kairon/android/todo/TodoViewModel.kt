@@ -9,6 +9,9 @@ import com.kairon.android.client.model.ReorderRequest
 import com.kairon.android.client.model.RolloverRequest
 import com.kairon.android.core.data.TodoDao
 import com.kairon.android.core.data.TodoItemEntity
+import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.requireSuccessful
 import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,6 +25,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 import javax.inject.Inject
+
+private const val TAG = "TodoViewModel"
 
 data class DayViewUiState(
     val day: LocalDate = LocalDate.now(),
@@ -63,7 +68,11 @@ class TodoViewModel @Inject constructor(
             syncing.value = true
             syncRepository.sync()
                 .onSuccess { error.value = null }
-                .onFailure { error.value = it.message ?: "Sync failed" }
+                .onFailure { ex ->
+                    // SyncRepository already logged the detailed failure; just note the UI-visible effect.
+                    AppLog.w(TAG, "refresh.syncFailed")
+                    error.value = ex.message ?: "Sync failed"
+                }
             syncing.value = false
             checkRolloverCandidates()
         }
@@ -82,12 +91,12 @@ class TodoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val response = todoApi.create(CreateTodoRequest(day = day.value, title = title.trim()))
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "quickAdd")
             }.onSuccess { created ->
                 todoDao.upsert(created.toEntity())
+                AppLog.i(TAG, "quickAdd.success", mapOf("id" to created.id))
             }.onFailure { ex ->
+                AppLog.e(TAG, "quickAdd.failed", throwable = ex)
                 error.value = ex.message ?: "Failed to add todo"
             }
         }
@@ -97,12 +106,12 @@ class TodoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val response = todoApi.complete(item.id, CompleteRequest(complete = item.status != "DONE"))
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "toggleComplete")
             }.onSuccess { updated ->
                 todoDao.upsert(updated.toEntity())
+                AppLog.i(TAG, "toggleComplete.success", mapOf("id" to item.id))
             }.onFailure { ex ->
+                AppLog.e(TAG, "toggleComplete.failed", mapOf("id" to item.id), throwable = ex)
                 error.value = ex.message ?: "Failed to update todo"
             }
         }
@@ -111,11 +120,12 @@ class TodoViewModel @Inject constructor(
     fun delete(item: TodoItemEntity) {
         viewModelScope.launch {
             runCatching {
-                val response = todoApi.delete(item.id)
-                if (!response.isSuccessful) error("HTTP ${response.code()}")
+                todoApi.delete(item.id).requireSuccessful(TAG, "delete")
             }.onSuccess {
                 todoDao.deleteById(item.id)
+                AppLog.i(TAG, "delete.success", mapOf("id" to item.id))
             }.onFailure { ex ->
+                AppLog.e(TAG, "delete.failed", mapOf("id" to item.id), throwable = ex)
                 error.value = ex.message ?: "Failed to delete todo"
             }
         }
@@ -133,12 +143,12 @@ class TodoViewModel @Inject constructor(
             val orderedIds = reordered.map { it.id }
             runCatching {
                 val response = todoApi.reorder(ReorderRequest(day = day.value, orderedIds = orderedIds))
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "reorder")
             }.onSuccess { updated ->
                 todoDao.upsertAll(updated.map { it.toEntity() })
+                AppLog.i(TAG, "reorder.success", mapOf("count" to updated.size))
             }.onFailure { ex ->
+                AppLog.e(TAG, "reorder.failed", throwable = ex)
                 error.value = ex.message ?: "Failed to reorder"
             }
         }
@@ -148,9 +158,11 @@ class TodoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val response = todoApi.rolloverPreview(onDay = day.value)
-                response.body()?.totalItems
+                response.bodyOrThrow(TAG, "rolloverPreview").totalItems
             }.onSuccess { count ->
                 rolloverCandidateCount.value = count?.takeIf { it > 0 }
+            }.onFailure { ex ->
+                AppLog.w(TAG, "rolloverPreview.failed", throwable = ex)
             }
         }
     }
@@ -159,13 +171,13 @@ class TodoViewModel @Inject constructor(
         viewModelScope.launch {
             runCatching {
                 val response = todoApi.rollover(RolloverRequest(toDay = day.value))
-                val body = response.body()
-                if (!response.isSuccessful || body == null) error("HTTP ${response.code()}")
-                body
+                response.bodyOrThrow(TAG, "rollover")
             }.onSuccess { result ->
                 result.rolledOver?.let { todoDao.upsertAll(it.map { item -> item.toEntity() }) }
                 rolloverCandidateCount.value = null
+                AppLog.i(TAG, "rollover.success", mapOf("count" to (result.rolledOver?.size ?: 0)))
             }.onFailure { ex ->
+                AppLog.e(TAG, "rollover.failed", throwable = ex)
                 error.value = ex.message ?: "Rollover failed"
             }
         }
