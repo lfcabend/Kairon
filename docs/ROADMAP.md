@@ -439,15 +439,40 @@ variant at a time. Superseded by:
 
 - [x] `app/build.gradle.kts` declares an `environment` flavor dimension with
       two flavors instead of one global property: **`local`** (the Docker
-      Desktop k8s deployment reached via the ingress-nginx host port,
-      `http://10.0.2.2/kairon/` — not the old bootRun-on-:8080 default, which
-      this flavor split drops) and **`prod`** (the xbmc deploy over
-      Tailscale Funnel, `https://xbmc.tail9ae0e9.ts.net/kairon/`, unchanged
-      from before). Each flavor's `BuildConfig.API_BASE_URL` comes from its
-      own `kairon.apiBaseUrl.<flavor>` Gradle property — `gradle.properties`
+      Desktop k8s deployment's `kairon` Service reached directly on
+      `http://10.0.2.2:8080/kairon/` via `task app-forward`'s
+      `kubectl port-forward` — not the old bootRun-on-:8080 default, which
+      this flavor split drops, and deliberately **not** ingress-nginx on
+      :80) and **`prod`** (the xbmc deploy over Tailscale Funnel,
+      `https://xbmc.tail9ae0e9.ts.net/kairon/`, unchanged from before). Each
+      flavor's `BuildConfig.API_BASE_URL` comes from its own
+      `kairon.apiBaseUrl.<flavor>` Gradle property — `gradle.properties`
       commits both defaults; `local.properties` can still override either
       per-machine (e.g. a physical device needs its LAN IP instead of
       `10.0.2.2` for the `local` flavor).
+- [x] **Correction (2026-10-08): `local` initially pointed at ingress-nginx
+      on :80 (`http://10.0.2.2/kairon/`) — found broken on real-device
+      testing.** Two independent problems: the ingress rule is Host-header-
+      matched to `localhost` (`values-local.yaml`'s `ingress.host`), so a
+      request with `Host: 10.0.2.2` doesn't match it even on a successful
+      connection; and on at least one dev machine, port 80 is owned by
+      Docker Desktop's WSL2 relay (`wslrelay.exe`) in a way the emulator's
+      `10.0.2.2` traffic never reaches (`SocketTimeoutException`), while a
+      genuine host-loopback request succeeds. Switched to `task
+      app-forward` (`kubectl port-forward svc/kairon 8080:8080`, already
+      documented as "no ingress needed") instead — talks to the Service
+      directly, sidestepping both issues.
+- [x] **Second correction, same day: even `http://10.0.2.2:8080/kairon/`
+      (app-forward's own port, no ingress involved) still timed out
+      intermittently from the actual app**, while raw TCP to the identical
+      destination from an `adb shell` session on the same device — single
+      and concurrent — succeeded instantly and repeatedly. The emulator's
+      own NAT translation of the `10.0.2.2` alias, not the backend or the
+      host network, was the unreliable part. Switched `local` to
+      `http://127.0.0.1:8080/kairon/` over an `adb reverse tcp:8080
+      tcp:8080` tunnel (new `task android-reverse`) instead — confirmed
+      reliable where `10.0.2.2` wasn't, since it's a direct ADB-managed pipe
+      rather than the emulator's own network stack.
 - [x] The `local` flavor gets `applicationIdSuffix = ".local"` and its own
       `resValue("string", "app_name", "Kairon (Local)")` (`prod` keeps the
       bare `com.kairon.android` id and plain "Kairon" label) so both can be
@@ -491,6 +516,51 @@ every other M11-family write — these calls go straight to the existing
       weekly/monthly execution summaries, journal reflection.
 - [ ] Android: the assistant settings screen (per-feature opt-in, tone,
       model override) — parity with the web `AccountPage` Assistant section.
+
+## M11.7 — Android: error handling & user feedback
+
+Gap found 2026-10-08 while real-device-testing M11.4's `local` flavor against
+a validation error (registering with too short a password): every Android
+`ViewModel` that touches the network today (`LoginViewModel`/
+`RegisterViewModel` in `AuthViewModels.kt`, the same shape elsewhere) catches
+a failure and surfaces `it.message ?: "<generic fallback>"` — i.e. whatever
+Retrofit's `HttpException`/OkHttp's own exception happens to put in
+`.message` (`"HTTP 400 Bad Request"`, or the literal
+`SocketTimeoutException` text), never the backend's actual error body. This
+throws away real information the backend already computes: the shared
+`common.error.GlobalExceptionHandler` returns RFC 7807 `ProblemDetail` for
+every error, and for Bean Validation failures specifically
+(`handleMethodArgumentNotValid`) adds a structured `errors: [{field,
+message}]` array — e.g. registering with an 8-character password gets back
+a real `{"field": "password", "message": "size must be between 10 and
+200"}`, not just a bare `400`. None of that reaches the user; they see
+nothing (a blank/generic error Text) or a cryptic raw exception string at
+best. Scoped as its own slice rather than folded into M11.5/M11.6 because
+it's a cross-cutting fix touching every screen that calls the network, not
+one feature.
+
+- [ ] A shared parser for the RFC 7807 response body (`title`/`detail`/the
+      validation-specific `errors` array) wired into Retrofit/OkHttp's
+      error path once, in `core.network`, rather than duplicated per
+      repository — model the problem-detail shape in Kotlin (it's already
+      implicitly covered by the generated OpenAPI client's error schema, if
+      any; otherwise a small hand-written DTO) and map it to a user-facing
+      message, preferring the first field error's `message` when present.
+- [ ] A distinct, honest message for connectivity failures (timeout, DNS,
+      connection refused — `IOException` subtypes that never got an HTTP
+      response at all) vs. a real HTTP error response — "Couldn't reach the
+      server" is a different problem than "that password's too short," and
+      conflating them (today's behavior) makes every failure equally
+      unhelpful.
+- [ ] Apply the shared parser everywhere `AuthUiState.Error`-shaped
+      "catch a failure, show `.message`" code exists today, and bake it into
+      whatever the equivalent UI-state pattern becomes in M11.5/M11.6 as
+      those screens are built, rather than letting them repeat the same gap.
+- [ ] Decide (open question): does a field-level validation error (e.g.
+      password too short) belong inline on the offending form field, or is a
+      single error message area under the form (today's pattern) good
+      enough for this app's scale? Leaning "inline once the `errors` array
+      is actually parsed" since the data to do it right already exists.
 
 ## M12 — Observability: Prometheus & Grafana
 

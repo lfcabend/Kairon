@@ -180,6 +180,15 @@ tasks:
     cmds:
       - kubectl port-forward svc/{{.HELM_RELEASE}} {{.APP_LOCAL_PORT}}:8080
 
+  android-reverse:
+    desc: >-
+      One-time-per-emulator-session `adb reverse` tunnel so the emulator's
+      127.0.0.1:8080 reaches the host's :8080 directly (M11.4 follow-up —
+      the "local" flavor's own default, mobile/android/gradle.properties).
+      Run alongside `task app-forward`, which must stay running too.
+    cmds:
+      - adb reverse tcp:8080 tcp:8080
+
   be:
     desc: Run the backend on the host with the local Spring profile (needs db-forward).
     cmds:
