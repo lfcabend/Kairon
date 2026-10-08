@@ -286,16 +286,35 @@ tasks:
       every other consumer of this spec — see .github/workflows/deploy.yml's
       own "pull the spec springdoc-openapi serves live" step) and runs the
       Gradle generator against it.
+    dir: "{{.TASKFILE_DIR}}/mobile/android"
     cmds:
-      - curl -sf http://localhost:8080/kairon/v3/api-docs.yaml -o mobile/android/openapi.yaml
+      - curl -sf http://localhost:8080/kairon/v3/api-docs.yaml -o openapi.yaml
       - "{{.GW_ANDROID}} :openapi-client:openApiGenerate"
 
   android-test:
-    desc: Run the Android app's unit tests + lint (mobile/android is its own Gradle root).
+    desc: >-
+      Run the Android app's unit tests + lint (mobile/android is its own
+      Gradle root). Uses the "local" flavor (M11.4 follow-up) — flavor-
+      qualified task names are mandatory once a flavor dimension exists;
+      the two flavors don't differ in any way that changes test/lint
+      outcomes, so there's no need to run this against "prod" too.
+    dir: "{{.TASKFILE_DIR}}/mobile/android"
     cmds:
-      - "{{.GW_ANDROID}} :app:testDebugUnitTest :app:lintDebug"
+      - "{{.GW_ANDROID}} :app:testLocalDebugUnitTest :app:lintLocalDebug"
 
-  android-build:
-    desc: Assemble the Android app's debug APK.
+  android-build-local:
+    desc: >-
+      Assemble the debug APK that targets the Docker Desktop k8s deployment
+      (M11.4 follow-up — http://10.0.2.2/kairon/ by default, see
+      mobile/android/gradle.properties).
+    dir: "{{.TASKFILE_DIR}}/mobile/android"
     cmds:
-      - "{{.GW_ANDROID}} :app:assembleDebug"
+      - "{{.GW_ANDROID}} :app:assembleLocalDebug"
+
+  android-build-prod:
+    desc: >-
+      Assemble the release APK that targets the real xbmc deploy over
+      Tailscale Funnel (M11.4 follow-up).
+    dir: "{{.TASKFILE_DIR}}/mobile/android"
+    cmds:
+      - "{{.GW_ANDROID}} :app:assembleProdRelease"

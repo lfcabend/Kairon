@@ -1,0 +1,16 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+    M11.4 follow-up — flavor overlay (AGP merges this into the main manifest
+    for every variant of the "local" flavor, debug or release): allows
+    cleartext HTTP, needed to reach the Docker Desktop k8s deployment's
+    ingress-nginx on plain http://10.0.2.2/kairon/. This used to be a
+    build-type (src/debug/) override instead, which was really standing in
+    for "the dev-only flavor" before flavors existed — the "prod" flavor
+    carries no such override in either build type, so it stays
+    cleartext-blocked by Android's own default, correct for its real target,
+    the xbmc deploy's Tailscale Funnel hostname, which is HTTPS.
+    -->
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

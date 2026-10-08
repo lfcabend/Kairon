@@ -71,10 +71,14 @@ jobs:
         working-directory: mobile/android
         run: ./gradlew :openapi-client:openApiGenerate --no-daemon
 
+      # M11.4 follow-up: flavor-qualified task names are mandatory once a
+      # flavor dimension exists. "local" is picked arbitrarily — the two
+      # flavors don't differ in any way that changes test/lint/compile
+      # outcomes, so there's no need to run this job against "prod" too.
       - name: Unit tests + lint
         working-directory: mobile/android
-        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
+        run: ./gradlew :app:testLocalDebugUnitTest :app:lintLocalDebug --no-daemon
 
       - name: Assemble debug APK
         working-directory: mobile/android
-        run: ./gradlew :app:assembleDebug --no-daemon
+        run: ./gradlew :app:assembleLocalDebug --no-daemon

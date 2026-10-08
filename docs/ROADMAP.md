@@ -431,6 +431,44 @@ of just the emulator-loopback dev default.
       stays cleartext-blocked (Android's own default) since the real target
       (the xbmc deploy's Tailscale Funnel hostname) is HTTPS.
 
+**Follow-up (2026-10-08): two product flavors replace the single
+`kairon.apiBaseUrl` override.** The mechanism above worked but meant hand-
+editing the gitignored `local.properties` every time you wanted to switch
+which backend a build talked to — there was only ever one installable
+variant at a time. Superseded by:
+
+- [x] `app/build.gradle.kts` declares an `environment` flavor dimension with
+      two flavors instead of one global property: **`local`** (the Docker
+      Desktop k8s deployment reached via the ingress-nginx host port,
+      `http://10.0.2.2/kairon/` — not the old bootRun-on-:8080 default, which
+      this flavor split drops) and **`prod`** (the xbmc deploy over
+      Tailscale Funnel, `https://xbmc.tail9ae0e9.ts.net/kairon/`, unchanged
+      from before). Each flavor's `BuildConfig.API_BASE_URL` comes from its
+      own `kairon.apiBaseUrl.<flavor>` Gradle property — `gradle.properties`
+      commits both defaults; `local.properties` can still override either
+      per-machine (e.g. a physical device needs its LAN IP instead of
+      `10.0.2.2` for the `local` flavor).
+- [x] The `local` flavor gets `applicationIdSuffix = ".local"` and its own
+      `resValue("string", "app_name", "Kairon (Local)")` (`prod` keeps the
+      bare `com.kairon.android` id and plain "Kairon" label) so both can be
+      installed side by side on the same device/emulator and told apart on
+      the launcher — useful since switching target now means picking a
+      build variant, not re-editing a file and reinstalling over the same
+      app id.
+- [x] The cleartext-traffic manifest override moved from the build-type
+      source set `src/debug/` to the flavor source set `src/local/` — it now
+      follows the `local` flavor into a release build too (never shipped,
+      dev-only flavor) rather than the `debug` build type, and `prod` stays
+      cleartext-blocked in both build types, matching its real HTTPS target.
+- [x] `Taskfile.yml`'s `android-build` split into `android-build-local`
+      (`:app:assembleLocalDebug`) and `android-build-prod`
+      (`:app:assembleProdRelease`); `android-test` now runs
+      `:app:testLocalDebugUnitTest :app:lintLocalDebug` (flavor-qualified
+      task names are mandatory once a flavor dimension exists — the old
+      unqualified `assembleDebug`/`testDebugUnitTest`/`lintDebug` task names
+      no longer resolve). `.github/workflows/android.yml` updated the same
+      way, picking the `local` flavor for CI's compile/lint/unit-test pass.
+
 ## M11.5 — Android: Journal & Projects (Gantt & dependencies)
 
 No milestone plan has been drafted for this yet (contrast M11's own full

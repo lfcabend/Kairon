@@ -1,19 +1,23 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import java.util.Properties
 
-// M11.4 — kairon.apiBaseUrl: checked in local.properties first (gitignored,
-// per-machine — e.g. point at a real deployed backend), falling back to the
-// Gradle property gradle.properties commits (the emulator-dev default).
-// local.properties isn't auto-loaded into Gradle's property system the way
-// gradle.properties is, so it's read by hand here.
+// M11.4 — one API base URL per product flavor (environment dimension, below),
+// each read as kairon.apiBaseUrl.<flavor>: checked in local.properties first
+// (gitignored, per-machine — e.g. a physical device needs its own LAN IP for
+// the "local" flavor instead of the emulator-loopback default), falling back
+// to the committed default in gradle.properties. local.properties isn't
+// auto-loaded into Gradle's property system the way gradle.properties is, so
+// it's read by hand here.
 val localProperties = Properties().apply {
     val file = rootProject.file("local.properties")
     if (file.exists()) {
         file.inputStream().use { load(it) }
     }
 }
-val kaironApiBaseUrl: String = localProperties.getProperty("kairon.apiBaseUrl")
-    ?: providers.gradleProperty("kairon.apiBaseUrl").get()
+fun apiBaseUrlFor(flavor: String): String {
+    val key = "kairon.apiBaseUrl.$flavor"
+    return localProperties.getProperty(key) ?: providers.gradleProperty(key).get()
+}
 
 plugins {
     alias(libs.plugins.android.application)
@@ -39,12 +43,32 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        buildConfigField("String", "API_BASE_URL", "\"$kaironApiBaseUrl\"")
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+        }
+    }
+
+    // M11.4 follow-up — "which backend does this build talk to" is a build
+    // variant, not a hand-edited property file: `local` is the Docker
+    // Desktop k8s deployment (ingress-nginx on the host's :80, reached via
+    // the emulator-loopback alias); `prod` is the real xbmc deploy over
+    // Tailscale Funnel (HTTPS). applicationIdSuffix on `local` lets both be
+    // installed side by side on one device/emulator.
+    flavorDimensions += "environment"
+    productFlavors {
+        create("local") {
+            dimension = "environment"
+            applicationIdSuffix = ".local"
+            resValue("string", "app_name", "Kairon (Local)")
+            buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrlFor("local")}\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            resValue("string", "app_name", "Kairon")
+            buildConfigField("String", "API_BASE_URL", "\"${apiBaseUrlFor("prod")}\"")
         }
     }
 
@@ -62,6 +86,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        resValues = true
     }
 
     packaging {
