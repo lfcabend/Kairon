@@ -17,11 +17,12 @@ class AuthRepositoryTest {
 
     private val authApi = mockk<AuthControllerApi>()
     private val tokenStore = mockk<TokenStore>(relaxed = true)
+    private val sessionClearer = mockk<SessionClearer>(relaxed = true)
     private lateinit var repository: AuthRepository
 
     @Before
     fun setUp() {
-        repository = AuthRepository(authApi, tokenStore)
+        repository = AuthRepository(authApi, tokenStore, sessionClearer)
     }
 
     @Test

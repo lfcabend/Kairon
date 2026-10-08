@@ -1,6 +1,8 @@
 package com.kairon.android.core.network
 
+import com.kairon.android.core.auth.SessionClearer
 import com.kairon.android.core.auth.TokenStore
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -20,6 +22,7 @@ import org.junit.Test
 class AuthAuthenticatorTest {
 
     private val tokenStore = mockk<TokenStore>(relaxed = true)
+    private val sessionClearer = mockk<SessionClearer>(relaxed = true)
     private val rawHttpClient = mockk<OkHttpClient>()
     private val call = mockk<Call>()
     private lateinit var authenticator: AuthAuthenticator
@@ -32,7 +35,7 @@ class AuthAuthenticatorTest {
 
     @Before
     fun setUp() {
-        authenticator = AuthAuthenticator(tokenStore, rawHttpClient, Json { ignoreUnknownKeys = true })
+        authenticator = AuthAuthenticator(tokenStore, sessionClearer, rawHttpClient, Json { ignoreUnknownKeys = true })
         every { tokenStore.currentRefreshToken() } returns "old-refresh"
         every { tokenStore.currentAccessToken() } answers { currentAccess }
         every { tokenStore.store(any(), any()) } answers { currentAccess = firstArg() }
@@ -85,7 +88,7 @@ class AuthAuthenticatorTest {
         val retried = authenticator.authenticate(null, second)
 
         assertNull(retried)
-        verify(exactly = 1) { tokenStore.clear() }
+        coVerify(exactly = 1) { sessionClearer.clearSession() }
     }
 
     @Test
