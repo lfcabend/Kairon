@@ -67,6 +67,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.core.data.TodoItemEntity
 import java.time.Instant
 import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 
 private val PRIORITY_COLOR = listOf(
@@ -75,6 +77,9 @@ private val PRIORITY_COLOR = listOf(
     Color(0xFFF59E0B), // Medium
     Color(0xFFEF4444), // High
 )
+
+// Matches the DatePickerDialog header's own style (e.g. "Oct 8, 2026").
+private val DATE_NAV_FORMATTER = DateTimeFormatter.ofPattern("MMM d, yyyy", Locale.getDefault())
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,7 +103,10 @@ fun DayViewScreen(viewModel: TodoViewModel = hiltViewModel()) {
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         IconButton(onClick = viewModel::goToPreviousDay) { Text("<") }
-                        Text(state.day.toString(), modifier = Modifier.clickable { showDatePicker = true })
+                        Text(
+                            state.day.format(DATE_NAV_FORMATTER),
+                            modifier = Modifier.clickable { showDatePicker = true },
+                        )
                         IconButton(onClick = viewModel::goToNextDay) { Text(">") }
                     }
                 },
