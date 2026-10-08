@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.kairon.android.client.api.TodoControllerApi
 import com.kairon.android.client.model.CompleteRequest
 import com.kairon.android.client.model.CreateTodoRequest
+import com.kairon.android.client.model.PatchTodoRequest
 import com.kairon.android.client.model.ReorderRequest
 import com.kairon.android.client.model.RolloverRequest
 import com.kairon.android.core.data.TodoDao
@@ -24,12 +25,14 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
+import java.util.UUID
 import javax.inject.Inject
 
 private const val TAG = "TodoViewModel"
 
 data class DayViewUiState(
     val day: LocalDate = LocalDate.now(),
+    val today: LocalDate = LocalDate.now(),
     val items: List<TodoItemEntity> = emptyList(),
     val syncing: Boolean = true,
     val error: String? = null,
@@ -56,7 +59,7 @@ class TodoViewModel @Inject constructor(
         error,
         rolloverCandidateCount,
     ) { d, items, isSyncing, err, rolloverCount ->
-        DayViewUiState(d, items, isSyncing, err, rolloverCount)
+        DayViewUiState(d, LocalDate.now(), items, isSyncing, err, rolloverCount)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DayViewUiState())
 
     init {
@@ -78,12 +81,20 @@ class TodoViewModel @Inject constructor(
         }
     }
 
+    fun goToDate(date: LocalDate) {
+        day.value = date
+    }
+
     fun goToPreviousDay() {
-        day.value = day.value.minusDays(1)
+        goToDate(day.value.minusDays(1))
     }
 
     fun goToNextDay() {
-        day.value = day.value.plusDays(1)
+        goToDate(day.value.plusDays(1))
+    }
+
+    fun goToToday() {
+        goToDate(LocalDate.now())
     }
 
     fun quickAdd(title: String) {
@@ -131,16 +142,21 @@ class TodoViewModel @Inject constructor(
         }
     }
 
-    fun move(item: TodoItemEntity, delta: Int) {
+    /**
+     * The backend's `:reorder` endpoint requires every non-deleted id for the
+     * day in the submitted order (`TodoService.reorder` 400s otherwise), so a
+     * reorder confined to the open section has to splice its new order back
+     * into the done/cancelled items' original slots — same approach the web
+     * app's `DayView.reorderSelected`/`TodoList.handleDragEnd` already use.
+     */
+    private fun spliceOpenOrder(fullDayItems: List<TodoItemEntity>, newOpenOrder: List<UUID>): List<UUID> {
+        var i = 0
+        return fullDayItems.map { if (it.status == "OPEN") newOpenOrder[i++] else it.id }
+    }
+
+    fun reorderOpen(fullDayItems: List<TodoItemEntity>, newOpenOrder: List<UUID>) {
         viewModelScope.launch {
-            val current = todoDao.listForDay(day.value)
-            val index = current.indexOfFirst { it.id == item.id }
-            val target = index + delta
-            if (index < 0 || target < 0 || target >= current.size) return@launch
-            val reordered = current.toMutableList()
-            val moved = reordered.removeAt(index)
-            reordered.add(target, moved)
-            val orderedIds = reordered.map { it.id }
+            val orderedIds = spliceOpenOrder(fullDayItems, newOpenOrder)
             runCatching {
                 val response = todoApi.reorder(ReorderRequest(day = day.value, orderedIds = orderedIds))
                 response.bodyOrThrow(TAG, "reorder")
@@ -152,6 +168,31 @@ class TodoViewModel @Inject constructor(
                 error.value = ex.message ?: "Failed to reorder"
             }
         }
+    }
+
+    private suspend fun applyPatch(item: TodoItemEntity, request: PatchTodoRequest, action: String) {
+        runCatching {
+            val response = todoApi.patch(item.id, request)
+            response.bodyOrThrow(TAG, action)
+        }.onSuccess { updated ->
+            todoDao.upsert(updated.toEntity())
+            AppLog.i(TAG, "$action.success", mapOf("id" to item.id))
+        }.onFailure { ex ->
+            AppLog.e(TAG, "$action.failed", mapOf("id" to item.id), throwable = ex)
+            error.value = ex.message ?: "Failed to update todo"
+        }
+    }
+
+    fun rename(item: TodoItemEntity, title: String) {
+        viewModelScope.launch { applyPatch(item, PatchTodoRequest(title = title), "rename") }
+    }
+
+    fun setNotes(item: TodoItemEntity, notes: String) {
+        viewModelScope.launch { applyPatch(item, PatchTodoRequest(notes = notes), "setNotes") }
+    }
+
+    fun cancel(item: TodoItemEntity) {
+        viewModelScope.launch { applyPatch(item, PatchTodoRequest(status = "CANCELLED"), "cancel") }
     }
 
     private fun checkRolloverCandidates() {
