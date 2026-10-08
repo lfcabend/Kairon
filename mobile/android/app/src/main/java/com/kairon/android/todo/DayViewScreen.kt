@@ -429,7 +429,7 @@ private fun TodoRow(
     // The margin has to wrap the whole swipe box, background included — padding
     // only the foreground Surface left the backgroundContent's full-bleed color
     // showing through around every card at rest.
-    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 3.dp)) {
+    Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 2.dp)) {
         SwipeToDismissBox(
             state = dismissState,
             modifier = rowModifier,
@@ -452,7 +452,8 @@ private fun TodoRow(
                 shape = RoundedCornerShape(8.dp),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
             ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)) {
+                // Matches the web TodoRow's own "px-2 py-1.5" (8px/6px).
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                         if (draggable) {
                             Text("⠿", modifier = dragHandleModifier.padding(end = 4.dp))
