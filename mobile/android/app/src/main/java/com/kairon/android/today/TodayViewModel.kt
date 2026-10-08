@@ -21,6 +21,7 @@ private const val TAG = "TodayViewModel"
 
 data class TodayUiState(
     val loading: Boolean = true,
+    val refreshing: Boolean = false,
     val todos: List<TodoItemView> = emptyList(),
     val dueProjectTasks: List<ProjectTaskView> = emptyList(),
     val hasJournalEntry: Boolean = false,
@@ -40,9 +41,18 @@ class TodayViewModel @Inject constructor(
         refresh()
     }
 
-    fun refresh() {
+    /**
+     * [isPullToRefresh] keeps the current content on screen (just shows the
+     * pull indicator) instead of blanking it behind the full-screen spinner
+     * the initial load uses.
+     */
+    fun refresh(isPullToRefresh: Boolean = false) {
         viewModelScope.launch {
-            _state.value = _state.value.copy(loading = true, error = null)
+            _state.value = _state.value.copy(
+                loading = _state.value.loading && !isPullToRefresh,
+                refreshing = isPullToRefresh,
+                error = null,
+            )
             runCatching {
                 val response = planningApi.today(LocalDate.now())
                 response.bodyOrThrow(TAG, "refresh")
@@ -53,13 +63,14 @@ class TodayViewModel @Inject constructor(
                 )
                 _state.value = _state.value.copy(
                     loading = false,
+                    refreshing = false,
                     todos = body.todos.orEmpty(),
                     dueProjectTasks = body.dueProjectTasks.orEmpty(),
                     hasJournalEntry = body.journalPrompt?.hasEntry ?: false,
                 )
             }.onFailure { ex ->
                 AppLog.e(TAG, "refresh.failed", throwable = ex)
-                _state.value = _state.value.copy(loading = false, error = ex.message ?: "Failed to load Today")
+                _state.value = _state.value.copy(loading = false, refreshing = false, error = ex.message ?: "Failed to load Today")
             }
         }
     }
