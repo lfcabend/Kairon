@@ -97,13 +97,18 @@ public class RolloverService {
                 : sweep(userId.value(), toDay, command.fromDay());
 
         int position = nextPosition(userId.value(), toDay);
-        List<TodoItemView> created = new ArrayList<>(sources.size());
+        List<TodoItem> carriedItems = new ArrayList<>(sources.size());
         for (TodoItem source : sources) {
             TodoItem carried = TodoItem.rolledFrom(source, toDay, position);
             source.cancel();
-            created.add(TodoMapper.toView(items.save(carried)));
+            carriedItems.add(items.save(carried));
             position += POSITION_GAP;
         }
+        // Flush once before mapping: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without this
+        // the views below would carry null timestamps until commit.
+        items.flush();
+        List<TodoItemView> created = carriedItems.stream().map(TodoMapper::toView).toList();
         log.info("Rolled over {} item(s) to {} userId={} (mode={})",
                 created.size(), toDay, userId.value(),
                 command.ids() != null && !command.ids().isEmpty() ? "explicit" : "sweep");

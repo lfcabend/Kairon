@@ -119,7 +119,11 @@ public class TodoService implements TodoApi {
                 position,
                 command.estimateMinutes(),
                 command.sourceProjectTaskId());
-        TodoItem saved = items.save(item);
+        // saveAndFlush, not save: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without an
+        // immediate flush here the mapped response below would carry null
+        // timestamps until this transaction actually commits.
+        TodoItem saved = items.saveAndFlush(item);
         log.info("Created todo {} userId={} day={}", saved.getId(), userId.value(), command.day());
         return TodoMapper.toView(saved);
     }
