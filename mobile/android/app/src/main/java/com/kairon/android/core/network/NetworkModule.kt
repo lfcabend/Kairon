@@ -11,11 +11,17 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.modules.SerializersModule
+import kotlinx.serialization.modules.contextual
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.kotlinx.serialization.asConverterFactory
+import java.math.BigDecimal
+import java.time.LocalDate
+import java.time.OffsetDateTime
+import java.util.UUID
 import javax.inject.Singleton
 
 /**
@@ -33,6 +39,15 @@ object NetworkModule {
     fun json(): Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false
+        // Every `@Contextual` field the generated client emits for a
+        // non-multiplatform JDK type needs its serializer registered here —
+        // see JsonContextualSerializers.kt.
+        serializersModule = SerializersModule {
+            contextual(UUID::class, UuidSerializer)
+            contextual(LocalDate::class, LocalDateSerializer)
+            contextual(OffsetDateTime::class, OffsetDateTimeSerializer)
+            contextual(BigDecimal::class, BigDecimalSerializer)
+        }
     }
 
     @Provides
