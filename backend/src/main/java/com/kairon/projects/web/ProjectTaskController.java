@@ -12,7 +12,7 @@ import com.kairon.projects.web.ProjectTaskDtos.CreateProjectTaskRequest;
 import com.kairon.projects.web.ProjectTaskDtos.PatchProjectTaskRequest;
 import com.kairon.projects.web.ProjectTaskDtos.ProjectTaskPageResponse;
 import com.kairon.projects.web.ProjectTaskDtos.ProjectTaskResponse;
-import com.kairon.projects.web.ProjectTaskDtos.ReorderRequest;
+import com.kairon.projects.web.ProjectTaskDtos.ReorderTasksRequest;
 
 import jakarta.validation.Valid;
 
@@ -90,7 +90,7 @@ public class ProjectTaskController {
 
     @PostMapping("/projects/{id}/tasks:reorder")
     public List<ProjectTaskResponse> reorder(@CurrentUser UserId userId, @PathVariable UUID id,
-            @Valid @RequestBody ReorderRequest request) {
+            @Valid @RequestBody ReorderTasksRequest request) {
         log.debug("POST /projects/{}/tasks:reorder userId={} parentTaskId={} count={}",
                 id, userId.value(), request.parentTaskId(), request.orderedIds().size());
         return ProjectTaskResponse.from(tasks.reorder(userId, id, request.parentTaskId(), request.orderedIds()));

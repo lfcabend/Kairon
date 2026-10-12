@@ -10,8 +10,10 @@ journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
 (AI project generation from a description), M9 (weekly & monthly
 execution summaries), M9.5 (AI project editing from a description), M10
 (weekly journal reflection, plus a Batch API migration for M9's
-scheduled summary sweep), and M11 (Android foundation: auth, the generic
-`/sync` mechanism, Today, and Daily Todo) are implemented.**
+scheduled summary sweep), M11 (Android foundation: auth, the generic
+`/sync` mechanism, Today, and Daily Todo), and M11.5 (Android: Daily
+Journal incl. search, and Projects — categories, task tree/board, a
+read-only Gantt with dependency arrows) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -432,7 +434,7 @@ updated when decisions change.
   single-flight 401→refresh→retry fetch wrapper). Tests: Vitest + MSW
   (`src/test/msw/`); Playwright happy paths in `web/e2e/` (`npm run
   test:e2e`, needs a running full stack).
-- `mobile/android/` — (M11) the Android app, Kotlin + Jetpack Compose, its
+- `mobile/android/` — (M11, extended M11.5) the Android app, Kotlin + Jetpack Compose, its
   **own Gradle root** (own `settings.gradle.kts`/AGP — not a subproject of
   the repo's root `:backend`/`:web` build, D7), so `./gradlew build` at the
   repo root is unaffected by anything here and this toolchain never touches
@@ -453,18 +455,73 @@ updated when decisions change.
   single-flight OkHttp `Authenticator`, same 401→refresh→retry shape as the
   web app's own `client.ts`); `core.auth` — `TokenStore` (access token in
   memory, refresh token in `EncryptedSharedPreferences`), `AuthRepository`;
-  `core.data` — Room (`KaironDatabase`/`TodoDao`/`TodoItemEntity`/
-  `RoomConverters`); `core.sync` — `SyncRepository`/`SyncCursorStore`
-  (the `/sync` cursor, a plain `DataStore` key) — the single generic
-  mechanism every later Android milestone (M11.5/M11.6) reuses by widening
-  its requested `types`; `core.ui` — `KaironApp`/`KaironNavHost`/
-  `SessionViewModel`; `auth`/`today`/`todo`/`account`/`about` — one
-  screen + `ViewModel` pair each, `today` and `about` calling their APIs
-  directly (no Room — the same "no natural offline need" reasoning the web
-  `TodayPage`/`AboutPage` already follow), `todo` backed by Room as the
-  single source of truth the UI renders from). Every write is
-  online-required this slice (M11 D2) — no offline write queue yet, a later
-  milestone.
+  `core.data` — Room (`KaironDatabase`, now `version = 2` +
+  `fallbackToDestructiveMigration()`, M11.5 D8 — no real user data exists
+  outside dev/test devices yet, so a real migration path is unnecessary
+  ceremony/`TodoDao`/`TodoItemEntity`/`JournalDao`/`JournalEntryEntity`/
+  `ProjectDao`/`ProjectEntity`/`ProjectTaskDao`/`ProjectTaskEntity` (the
+  latter three pairs, M11.5 — each mirrors its `*View` wire shape
+  field-for-field minus `deletedAt`, same precedent `TodoItemEntity` already
+  set; no entity for `ProjectCategory` or `TaskDependency` — neither is
+  sync-fed)/`RoomConverters` (gained a `BigDecimal` converter for
+  `ProjectTaskEntity`'s hours fields)); `core.sync` —
+  `SyncRepository`/`SyncCursorStore` (the `/sync` cursor, a plain
+  `DataStore` key) — the single generic mechanism M11.5 reused by widening
+  its requested `types` to `todo,journal,project,projectTask` (M11.5 D7),
+  fanning upserts/tombstones out to the three new DAOs above via
+  `JournalMappers`/`ProjectMappers`/`ProjectTaskMappers` (View→Entity, same
+  shape as `TodoMappers`; `ProjectTaskResponse.toEntity` takes an explicit
+  `projectName`/`projectColor` since that single-task write response, unlike
+  `ProjectTaskView`'s own sync/list shape, carries neither); `core.auth` —
+  `SessionClearer` extended to wipe all three new tables on logout, closing
+  what would otherwise repeat the cross-account-leak bug M11.8 found and
+  fixed for `todo`; `core.ui` — `KaironApp`/`KaironNavHost`/
+  `SessionViewModel`/`KaironBanner` (M11.5 — gained an `OverflowMenu` (⋮)
+  holding Account/About, M11.5 D3)/`OverflowMenu` (new, M11.5); `auth`/
+  `today`/`todo`/`account`/`about` — one screen + `ViewModel` pair each,
+  `today` and `about` calling their APIs directly (no Room — the same "no
+  natural offline need" reasoning the web `TodayPage`/`AboutPage` already
+  follow), `todo` backed by Room as the single source of truth the UI
+  renders from; `journal` (M11.5 — `JournalDayScreen`/`JournalEntryScreen`
+  (D1: a plain multi-line `TextField` over raw markdown, no WYSIWYG)/
+  `JournalCalendar` (D5: has-entry dots computed from a Room-only
+  `DISTINCT day` query, no network call)/`JournalSearchScreen` (D6: always
+  a live `GET /journal:search` call, never Room-backed) +
+  `JournalViewModel`/`JournalEntryViewModel`/`JournalSearchViewModel`);
+  `projects` (M11.5 — `ProjectListScreen` (category-grouped or
+  priority-sorted, live-fetched like `project-categories`, D10)/
+  `CategoryManagerScreen` (a dialog, not a full screen)/`ProjectFormScreen`
+  (create/edit, whole-form `PATCH` echoing `actualStart`/`actualEnd`/
+  `expectedVersion` straight through unedited, same posture the web
+  `ProjectFormDialog` already takes)/`ProjectDetailScreen` (Tabs: Tree ⇄
+  Board ⇄ Gantt, Room-backed, D9)/`TaskTreeTab` (flat indented rows,
+  tap-based "Move up/down" within the sibling group instead of drag, D4)/
+  `TaskBoardTab` (four status columns, a tap-opened status picker instead
+  of drag, D4)/`GanttTab` (a hand-drawn, read-only Compose `Canvas` chart —
+  bars/milestone diamonds/dependency arrows (red when
+  `violatesConstraint`)/a today line, horizontally **and** vertically
+  scrollable from the start, D2)/`TaskEditScreen` (whole-form edit, D15,
+  embeds `DependencySection`)/`DependencySection` (list predecessors +
+  remove; an "Add" picker; a backend `400`/`409` — self/cross-project/
+  cycle/duplicate, M5 D3/D4 — surfaces as the screen's own inline error) +
+  `ProjectViewModel`/`ProjectFormViewModel`/`ProjectDetailViewModel`/
+  `ProjectTaskViewModel` — the latter two split by screen rather than by
+  the plan's original 1:1 file-per-concept guess: `ProjectDetailViewModel`
+  owns the Tree/Board/Gantt tabs' shared project+task+dependency state and
+  tap-reorder/status-change actions, `ProjectTaskViewModel` owns one task's
+  own edit screen (fields + its own dependency add/remove), since splitting
+  further would only have meant passing the same state back and forth).
+  Every write is online-required (M11 D2) — no offline write queue yet, a
+  later milestone. M11.5 also fixed a real pre-existing backend defect
+  surfaced by actually generating a client against the four reorder
+  endpoints: `TodoDtos`/`ProjectDtos`/`ProjectCategoryDtos`/
+  `ProjectTaskDtos` each nested an identically-named `ReorderRequest`
+  record, and springdoc names OpenAPI schemas by simple class name alone —
+  so three of the four were silently colliding into one wrong schema (the
+  `todo` one, spurious `day` field included) until the latter three were
+  renamed `ReorderProjectsRequest`/`ReorderCategoriesRequest`/
+  `ReorderTasksRequest` (see `docs/milestones/M11.5-android-journal-projects.md`
+  §10).
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
@@ -498,11 +555,10 @@ updated when decisions change.
 
 **M10.5 — MCP server for assistant features (bring-your-own Claude
 subscription)** (see `docs/ROADMAP.md`) is still undrafted and outstanding —
-M11 was implemented ahead of it on direct request, not because M10.5 was
-dropped. Next for the Android track specifically is **M11.5 — Journal &
-Projects (Gantt & dependencies)**, reusing M11's auth/sync/nav foundation
-with no further plumbing work expected (see `docs/ROADMAP.md`); **M11.6 —
-assistant features & settings** follows after that.
+M11 and M11.5 were both implemented ahead of it on direct request, not
+because M10.5 was dropped. Next for the Android track specifically is
+**M11.6 — assistant features & settings**, following M11.5's own
+auth/sync/nav foundation (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

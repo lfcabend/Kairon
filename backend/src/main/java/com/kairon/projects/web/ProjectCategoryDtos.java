@@ -34,7 +34,10 @@ final class ProjectCategoryDtos {
             Long expectedVersion) {
     }
 
-    record ReorderRequest(@NotEmpty List<UUID> orderedIds) {
+    // Named distinctly from ProjectDtos/ProjectTaskDtos/TodoDtos' own
+    // ReorderRequest — see ProjectTaskDtos.ReorderTasksRequest's comment for
+    // why: springdoc was silently collapsing all four into one OpenAPI schema.
+    record ReorderCategoriesRequest(@NotEmpty List<UUID> orderedIds) {
     }
 
     record ProjectCategoryResponse(

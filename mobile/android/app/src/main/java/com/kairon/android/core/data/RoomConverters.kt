@@ -1,11 +1,15 @@
 package com.kairon.android.core.data
 
 import androidx.room.TypeConverter
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
-/** Room has no native support for `java.time.*`/[UUID] — store them as strings. */
+/**
+ * Room has no native support for `java.time.*`/[UUID]/[BigDecimal] — store
+ * them as strings.
+ */
 class RoomConverters {
 
     @TypeConverter
@@ -25,4 +29,10 @@ class RoomConverters {
 
     @TypeConverter
     fun stringToInstant(value: String?): Instant? = value?.let(Instant::parse)
+
+    @TypeConverter
+    fun bigDecimalToString(value: BigDecimal?): String? = value?.toPlainString()
+
+    @TypeConverter
+    fun stringToBigDecimal(value: String?): BigDecimal? = value?.let(::BigDecimal)
 }

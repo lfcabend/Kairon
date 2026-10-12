@@ -2,9 +2,14 @@ package com.kairon.android.core.network
 
 import com.kairon.android.about.AboutApi
 import com.kairon.android.client.api.AuthControllerApi
+import com.kairon.android.client.api.JournalControllerApi
 import com.kairon.android.client.api.MeControllerApi
 import com.kairon.android.client.api.PlanningControllerApi
+import com.kairon.android.client.api.ProjectCategoryControllerApi
+import com.kairon.android.client.api.ProjectControllerApi
+import com.kairon.android.client.api.ProjectTaskControllerApi
 import com.kairon.android.client.api.SyncControllerApi
+import com.kairon.android.client.api.TaskDependencyControllerApi
 import com.kairon.android.client.api.TodoControllerApi
 import dagger.Module
 import dagger.Provides
@@ -104,4 +109,24 @@ object NetworkModule {
     @Provides
     @Singleton
     fun aboutApi(retrofit: Retrofit): AboutApi = retrofit.create(AboutApi::class.java)
+
+    @Provides
+    @Singleton
+    fun journalApi(retrofit: Retrofit): JournalControllerApi = retrofit.create(JournalControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun projectApi(retrofit: Retrofit): ProjectControllerApi = retrofit.create(ProjectControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun projectCategoryApi(retrofit: Retrofit): ProjectCategoryControllerApi = retrofit.create(ProjectCategoryControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun projectTaskApi(retrofit: Retrofit): ProjectTaskControllerApi = retrofit.create(ProjectTaskControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun taskDependencyApi(retrofit: Retrofit): TaskDependencyControllerApi = retrofit.create(TaskDependencyControllerApi::class.java)
 }

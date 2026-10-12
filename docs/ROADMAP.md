@@ -497,18 +497,26 @@ variant at a time. Superseded by:
 ## M11.5 — Android: Journal & Projects (Gantt & dependencies)
 
 See [`milestones/M11.5-android-journal-projects.md`](milestones/M11.5-android-journal-projects.md)
-for the full plan (Status: Draft). Needs **no backend work at all** — every
-endpoint and `/sync` change-set this slice consumes already shipped in
-M3/M4/M5/M11; this is purely Android-side (three new Room entities, new
-screens, widening `/sync`'s requested `types` to `journal,project,projectTask`).
-Three scope-downs relative to web, each a locked user decision in the plan:
-journal editing is a plain markdown textarea (no WYSIWYG), the Gantt tab is
-read-only (no drag-to-reschedule), and task reordering/board status changes
-are tap-based (no touch drag-and-drop). Account/About move behind a top-bar
-overflow menu so the bottom nav can fit Journal/Projects alongside Today/Todo.
+for the full plan (Status: Accepted — implemented). Needed **no backend
+work at all** on the data-model side — every endpoint and `/sync`
+change-set this slice consumes had already shipped in M3/M4/M5/M11 — but
+implementation did surface and fix one pre-existing backend defect: four
+distinct `ReorderRequest` DTOs (todo/project/category/task) shared an
+identical simple class name, so springdoc was silently collapsing them into
+one OpenAPI schema (the `todo` one, `day` field and all); each now has its
+own schema name (`ReorderProjectsRequest`/`ReorderCategoriesRequest`/
+`ReorderTasksRequest`) so the generated Android client gets the right shape
+for all four. Everything else is purely Android-side (three new Room
+entities, new screens, widening `/sync`'s requested `types` to
+`journal,project,projectTask`). Three scope-downs relative to web, each a
+locked user decision in the plan: journal editing is a plain markdown
+textarea (no WYSIWYG), the Gantt tab is read-only (no drag-to-reschedule),
+and task reordering/board status changes are tap-based (no touch
+drag-and-drop). Account/About moved behind a top-bar overflow menu so the
+bottom nav could fit Journal/Projects alongside Today/Todo.
 
-- [ ] Android: Daily Journal (incl. search).
-- [ ] Android: Projects — categories, task tree/board, Gantt & dependencies.
+- [x] Android: Daily Journal (incl. search).
+- [x] Android: Projects — categories, task tree/board, Gantt & dependencies.
       `task_dependency` has no soft delete, so it stays out of the generic
       sync feed (M11 D9, confirmed) — fetched live per project detail screen
       instead.
@@ -589,7 +597,7 @@ mid-request isn't missed on the *next* call (deliberate, M11 D4) — but Android
 `SyncRepository.sync()` writes that `since` into `SyncCursorStore` unconditionally,
 never checking `truncated`. For an account with more than 500 rows of a given
 type (easy to reach for `todo_item` alone after months of daily use, and more so
-once M11.5 widens sync to `journal`/`project`/`project_task`), the oldest rows
+now that M11.5 has widened sync to `journal`/`project`/`project_task`), the oldest rows
 past the cap are silently never synced to that device again — the cursor has
 already jumped to "now," so a subsequent call only asks for what changed after
 that, and an untouched old row never qualifies.

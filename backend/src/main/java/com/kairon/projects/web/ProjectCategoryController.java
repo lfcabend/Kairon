@@ -11,7 +11,7 @@ import com.kairon.projects.app.ProjectCategoryService.PatchCommand;
 import com.kairon.projects.web.ProjectCategoryDtos.CreateProjectCategoryRequest;
 import com.kairon.projects.web.ProjectCategoryDtos.PatchProjectCategoryRequest;
 import com.kairon.projects.web.ProjectCategoryDtos.ProjectCategoryResponse;
-import com.kairon.projects.web.ProjectCategoryDtos.ReorderRequest;
+import com.kairon.projects.web.ProjectCategoryDtos.ReorderCategoriesRequest;
 
 import jakarta.validation.Valid;
 
@@ -79,7 +79,7 @@ public class ProjectCategoryController {
 
     @PostMapping("/project-categories:reorder")
     public List<ProjectCategoryResponse> reorder(@CurrentUser UserId userId,
-            @Valid @RequestBody ReorderRequest request) {
+            @Valid @RequestBody ReorderCategoriesRequest request) {
         log.debug("POST /project-categories:reorder userId={} count={}",
                 userId.value(), request.orderedIds().size());
         return ProjectCategoryResponse.from(categories.reorder(userId, request.orderedIds()));

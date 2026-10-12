@@ -64,7 +64,13 @@ final class ProjectTaskDtos {
             Long expectedVersion) {
     }
 
-    record ReorderRequest(UUID parentTaskId, @NotEmpty List<UUID> orderedIds) {
+    // Named distinctly from ProjectDtos/ProjectCategoryDtos/TodoDtos' own
+    // ReorderRequest — springdoc names OpenAPI schemas by simple class name,
+    // so four identically-named records across modules were silently
+    // collapsing into one schema (the generated Android client was getting
+    // TodoDtos.ReorderRequest's shape for every one of them, dropping this
+    // record's parentTaskId entirely).
+    record ReorderTasksRequest(UUID parentTaskId, @NotEmpty List<UUID> orderedIds) {
     }
 
     record ProjectTaskResponse(
