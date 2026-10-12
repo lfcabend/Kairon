@@ -20,16 +20,20 @@ import { GripVertical } from "lucide-react";
 import type { Project } from "@/lib/api/types";
 
 import { ProjectCard } from "./ProjectCard";
+import { matchesFilter } from "./projectFilter";
 import { useProjectsByPriority, useReorderProjects } from "./useProjects";
 
 interface Props {
   /** D21 — dragging is only offered when the status/size filters are at their defaults. */
   draggable: boolean;
+  /** The Projects page's quick filter (local name match, applied client-side — no refetch). */
+  filterText?: string;
 }
 
 /** Flat, cross-category, drag-orderable list for "Sort by: Priority" (D19). */
-export function ProjectPriorityList({ draggable }: Props) {
-  const { data: projects = [], isLoading } = useProjectsByPriority();
+export function ProjectPriorityList({ draggable, filterText = "" }: Props) {
+  const { data: allProjects = [], isLoading } = useProjectsByPriority();
+  const projects = allProjects.filter((p) => matchesFilter(p, filterText));
   const reorder = useReorderProjects();
 
   const sensors = useSensors(
@@ -51,7 +55,11 @@ export function ProjectPriorityList({ draggable }: Props) {
   if (isLoading) return null;
 
   if (projects.length === 0) {
-    return <p className="text-sm text-muted-foreground">No projects yet.</p>;
+    return (
+      <p className="text-sm text-muted-foreground">
+        {filterText.trim() === "" ? "No projects yet." : "No projects match your filter."}
+      </p>
+    );
   }
 
   return (

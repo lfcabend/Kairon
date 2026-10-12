@@ -24,6 +24,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -107,29 +108,41 @@ fun ProjectListScreen(
                 Text(state.error ?: "", modifier = Modifier.padding(16.dp))
             }
 
-            when (state.sortMode) {
-                ProjectSortMode.PRIORITY -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                    items(state.projects, key = { it.id.toString() }) { project ->
-                        ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+            val filteredProjects = state.filteredProjects
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                OutlinedTextField(
+                    value = state.filterText,
+                    onValueChange = viewModel::setFilterText,
+                    label = { Text("Filter projects") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+
+                when (state.sortMode) {
+                    ProjectSortMode.PRIORITY -> LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(filteredProjects, key = { it.id.toString() }) { project ->
+                            ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                        }
                     }
-                }
-                ProjectSortMode.CATEGORY -> {
-                    val byCategory = state.projects.groupBy { it.categoryId }
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        state.categories.forEach { category ->
-                            val projects = byCategory[category.id].orEmpty()
-                            if (projects.isNotEmpty()) {
-                                item { CategoryHeader(category.name ?: "") }
-                                items(projects, key = { it.id.toString() }) { project ->
-                                    ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                    ProjectSortMode.CATEGORY -> {
+                        val byCategory = filteredProjects.groupBy { it.categoryId }
+                        LazyColumn(modifier = Modifier.fillMaxSize()) {
+                            state.categories.forEach { category ->
+                                val projects = byCategory[category.id].orEmpty()
+                                if (projects.isNotEmpty()) {
+                                    item { CategoryHeader(category.name ?: "") }
+                                    items(projects, key = { it.id.toString() }) { project ->
+                                        ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                                    }
                                 }
                             }
-                        }
-                        val uncategorized = byCategory[null].orEmpty()
-                        if (uncategorized.isNotEmpty()) {
-                            item { CategoryHeader("Uncategorized") }
-                            items(uncategorized, key = { it.id.toString() }) { project ->
-                                ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                            val uncategorized = byCategory[null].orEmpty()
+                            if (uncategorized.isNotEmpty()) {
+                                item { CategoryHeader("Uncategorized") }
+                                items(uncategorized, key = { it.id.toString() }) { project ->
+                                    ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                                }
                             }
                         }
                     }

@@ -32,7 +32,16 @@ data class ProjectListUiState(
     val sortMode: ProjectSortMode = ProjectSortMode.CATEGORY,
     val loading: Boolean = true,
     val error: String? = null,
-)
+    val filterText: String = "",
+) {
+    /** Local (no refetch) name match for the quick filter — mirrors the web app's `matchesFilter`. */
+    val filteredProjects: List<ProjectResponse>
+        get() {
+            val needle = filterText.trim()
+            if (needle.isEmpty()) return projects
+            return projects.filter { it.name?.contains(needle, ignoreCase = true) == true }
+        }
+}
 
 /**
  * Backs [ProjectListScreen] — both categories and the project list are
@@ -51,12 +60,15 @@ class ProjectViewModel @Inject constructor(
     private val sortMode = MutableStateFlow(ProjectSortMode.CATEGORY)
     private val loading = MutableStateFlow(true)
     private val error = MutableStateFlow<String?>(null)
+    private val filterText = MutableStateFlow("")
 
     val state: StateFlow<ProjectListUiState> = combine(
-        categories, projects, sortMode, loading, error,
-    ) { cats, projs, sort, isLoading, err ->
-        ProjectListUiState(cats, projs, sort, isLoading, err)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProjectListUiState())
+        combine(categories, projects, sortMode, loading, error) { cats, projs, sort, isLoading, err ->
+            ProjectListUiState(cats, projs, sort, isLoading, err)
+        },
+        filterText,
+    ) { base, filter -> base.copy(filterText = filter) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProjectListUiState())
 
     init {
         refresh()
@@ -65,6 +77,11 @@ class ProjectViewModel @Inject constructor(
     fun setSortMode(mode: ProjectSortMode) {
         sortMode.value = mode
         refresh()
+    }
+
+    /** Local filter over the already-fetched project list — no refetch (mirrors the web app's quick filter). */
+    fun setFilterText(text: String) {
+        filterText.value = text
     }
 
     fun refresh() {

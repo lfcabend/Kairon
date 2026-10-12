@@ -23,12 +23,14 @@ import { GripVertical } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Project, ProjectSize, ProjectStatus } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 import { GenerateProjectDialog } from "../assistant/GenerateProjectDialog";
 import { CategoryManagerDialog } from "./CategoryManagerDialog";
+import { matchesFilter } from "./projectFilter";
 import { ProjectCard } from "./ProjectCard";
 import { ProjectFormDialog } from "./ProjectFormDialog";
 import { ProjectPriorityList } from "./ProjectPriorityList";
@@ -237,6 +239,7 @@ export function ProjectListPage() {
   const [sortMode, setSortMode] = useState<SortMode>("status");
   const [status, setStatus] = useState("any");
   const [size, setSize] = useState("any");
+  const [filterText, setFilterText] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [formDefaultCategoryId, setFormDefaultCategoryId] = useState<string | undefined>(undefined);
   const [managingCategories, setManagingCategories] = useState(false);
@@ -249,7 +252,7 @@ export function ProjectListPage() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
     useSensor(KeyboardSensor),
   );
-  const isDefaultFilter = status === "any" && size === "any";
+  const isDefaultFilter = status === "any" && size === "any" && filterText.trim() === "";
   const statusParam = status === "any" ? undefined : (status as ProjectStatus);
   const sizeParam = size === "any" ? undefined : (size as ProjectSize);
 
@@ -258,8 +261,9 @@ export function ProjectListPage() {
 
   const sections = useMemo(() => {
     if (sortMode === "priority") return [];
+    const filtered = projects.filter((p) => matchesFilter(p, filterText));
     const byCategory = new Map<string | null, Project[]>();
-    for (const project of projects) {
+    for (const project of filtered) {
       const key = project.categoryId;
       if (!byCategory.has(key)) byCategory.set(key, []);
       byCategory.get(key)!.push(project);
@@ -274,7 +278,7 @@ export function ProjectListPage() {
       ordered.push({ id: "uncategorized", name: "Uncategorized", projects: uncategorized });
     }
     return ordered;
-  }, [projects, categories, sortMode]);
+  }, [projects, categories, sortMode, filterText]);
 
   const draggingProject = projects.find((p) => p.id === draggingProjectId) ?? null;
 
@@ -299,6 +303,14 @@ export function ProjectListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Projects</h1>
         <div className="flex flex-wrap items-center gap-2">
+          <Input
+            value={filterText}
+            onChange={(e) => setFilterText(e.target.value)}
+            placeholder="Filter projects…"
+            aria-label="Filter projects"
+            className="w-[180px]"
+          />
+
           <Select value={sortMode} onValueChange={(v) => setSortMode(v as SortMode)}>
             <SelectTrigger aria-label="Sort by" className="w-[170px]">
               <SelectValue />
@@ -356,9 +368,11 @@ export function ProjectListPage() {
       </div>
 
       {sortMode === "priority" ? (
-        <ProjectPriorityList draggable={isDefaultFilter} />
+        <ProjectPriorityList draggable={isDefaultFilter} filterText={filterText} />
       ) : isLoading ? null : sections.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No projects yet.</p>
+        <p className="text-sm text-muted-foreground">
+          {filterText.trim() === "" ? "No projects yet." : "No projects match your filter."}
+        </p>
       ) : sortMode === "custom" ? (
         <CustomOrderSections
           sections={sections}

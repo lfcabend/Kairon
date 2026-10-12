@@ -61,6 +61,24 @@ test("creating a project via the dialog adds it to the list", async () => {
   expect(await screen.findByText("New venture")).toBeInTheDocument();
 });
 
+test("the quick filter narrows the rendered projects by name without refetching", async () => {
+  const category = seedCategories([{ name: "Home" }])[0];
+  seedProjects([
+    { name: "Alpha", categoryId: category.id },
+    { name: "Beta" },
+  ]);
+  const user = userEvent.setup();
+  renderApp("/projects");
+
+  expect(await screen.findByText("Alpha")).toBeInTheDocument();
+  expect(screen.getByText("Beta")).toBeInTheDocument();
+
+  await user.type(screen.getByLabelText("Filter projects"), "alp");
+
+  expect(screen.getByText("Alpha")).toBeInTheDocument();
+  expect(screen.queryByText("Beta")).not.toBeInTheDocument();
+});
+
 test("the priority list renders every non-archived project flat, without category grouping", async () => {
   const category = seedCategories([{ name: "Home" }])[0];
   seedProjects([{ name: "Alpha", categoryId: category.id }, { name: "Beta" }]);
