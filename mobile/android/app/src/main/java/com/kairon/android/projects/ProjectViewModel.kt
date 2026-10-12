@@ -6,9 +6,11 @@ import com.kairon.android.client.api.ProjectCategoryControllerApi
 import com.kairon.android.client.api.ProjectControllerApi
 import com.kairon.android.client.model.CreateProjectCategoryRequest
 import com.kairon.android.client.model.PatchProjectCategoryRequest
+import com.kairon.android.client.model.PatchProjectRequest
 import com.kairon.android.client.model.ProjectCategoryResponse
 import com.kairon.android.client.model.ProjectResponse
 import com.kairon.android.client.model.ReorderCategoriesRequest
+import com.kairon.android.client.model.ReorderProjectsRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
 import com.kairon.android.core.network.requireSuccessful
@@ -45,6 +47,10 @@ val PROJECT_SIZE_OPTIONS: List<Pair<String?, String>> = listOf(
     "L" to "L",
     "XL" to "XL",
 )
+
+/** The real (non-"any") statuses with display labels, for the project-row quick status change. */
+val PROJECT_STATUS_LABELS: List<Pair<String, String>> =
+    PROJECT_STATUS_OPTIONS.mapNotNull { (value, label) -> value?.let { it to label } }
 
 data class ProjectListUiState(
     val categories: List<ProjectCategoryResponse> = emptyList(),
@@ -162,6 +168,59 @@ class ProjectViewModel @Inject constructor(
             }.onFailure { ex ->
                 AppLog.e(TAG, "deleteProject.failed", mapOf("id" to id), throwable = ex)
                 error.value = ex.message ?: "Failed to delete project"
+            }
+        }
+    }
+
+    /** Quick status change from the project row (whole-form `PATCH`, D15 — same echo-current-fields shape as [ProjectFormViewModel.save]). */
+    fun changeStatus(project: ProjectResponse, status: String) {
+        val id = project.id ?: return
+        if (project.status == status) return
+        viewModelScope.launch {
+            runCatching {
+                projectApi.patch2(
+                    id,
+                    PatchProjectRequest(
+                        name = project.name ?: "",
+                        status = status,
+                        categoryId = project.categoryId,
+                        description = project.description,
+                        propertySize = project.propertySize,
+                        color = project.color,
+                        startDate = project.startDate,
+                        endDate = project.endDate,
+                        actualStart = project.actualStart,
+                        actualEnd = project.actualEnd,
+                        expectedVersion = project.version,
+                    ),
+                ).bodyOrThrow(TAG, "changeStatus")
+            }.onSuccess { updated ->
+                projects.value = projects.value.map { if (it.id == updated.id) updated else it }
+                AppLog.i(TAG, "changeStatus.success", mapOf("id" to id, "status" to status))
+            }.onFailure { ex ->
+                AppLog.e(TAG, "changeStatus.failed", mapOf("id" to id), throwable = ex)
+                error.value = ex.message ?: "Failed to change status"
+            }
+        }
+    }
+
+    /**
+     * "By priority" tap-reorder (web's drag-based "Sort by: Priority", D19 —
+     * mirrored here as tap up/down, same precedent [reorderCategories] already
+     * set for this app rather than introducing drag gestures). Only meaningful
+     * while [sortMode] is [ProjectSortMode.PRIORITY] and no local name filter is
+     * narrowing the list — the screen only wires this up under those conditions.
+     */
+    fun reorderProjects(orderedIds: List<UUID>) {
+        viewModelScope.launch {
+            runCatching {
+                projectApi.reorder1(ReorderProjectsRequest(orderedIds)).bodyOrThrow(TAG, "reorderProjects")
+            }.onSuccess { reordered ->
+                projects.value = reordered
+                AppLog.i(TAG, "reorderProjects.success", mapOf("count" to reordered.size))
+            }.onFailure { ex ->
+                AppLog.e(TAG, "reorderProjects.failed", throwable = ex)
+                error.value = ex.message ?: "Failed to reorder projects"
             }
         }
     }

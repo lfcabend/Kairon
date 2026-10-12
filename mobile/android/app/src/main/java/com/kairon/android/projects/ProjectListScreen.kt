@@ -2,6 +2,7 @@ package com.kairon.android.projects
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -38,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -47,8 +51,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.client.model.ProjectCategoryResponse
 import com.kairon.android.client.model.ProjectResponse
@@ -172,10 +179,26 @@ fun ProjectListScreen(
                     }
                 }
                 when (state.sortMode) {
-                    ProjectSortMode.PRIORITY -> LazyColumn(modifier = Modifier.fillMaxSize()) {
-                        items(filteredProjects, key = { it.id.toString() }) { project ->
-                            ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                    ProjectSortMode.PRIORITY -> {
+                        // Drag-reorder only makes sense against the server's full priority
+                        // order — disabled while the quick filter narrows the list, same
+                        // rule the web app's own drag reorder follows (D21).
+                        val reorderable = state.filterText.isBlank()
+                        if (!reorderable) {
+                            Text(
+                                "Clear the filter to reorder by priority.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                            )
                         }
+                        PriorityProjectList(
+                            projects = filteredProjects,
+                            reorderable = reorderable,
+                            onOpenProject = onOpenProject,
+                            onChangeStatus = { project, status -> viewModel.changeStatus(project, status) },
+                            onReorder = viewModel::reorderProjects,
+                        )
                     }
                     ProjectSortMode.CATEGORY -> {
                         val byCategory = filteredProjects.groupBy { it.categoryId }
@@ -185,7 +208,11 @@ fun ProjectListScreen(
                                 if (projects.isNotEmpty()) {
                                     item { CategoryHeader(category.name ?: "") }
                                     items(projects, key = { it.id.toString() }) { project ->
-                                        ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                                        ProjectRow(
+                                            project = project,
+                                            onClick = { project.id?.let(onOpenProject) },
+                                            onChangeStatus = { status -> viewModel.changeStatus(project, status) },
+                                        )
                                     }
                                 }
                             }
@@ -193,7 +220,11 @@ fun ProjectListScreen(
                             if (uncategorized.isNotEmpty()) {
                                 item { CategoryHeader("Uncategorized") }
                                 items(uncategorized, key = { it.id.toString() }) { project ->
-                                    ProjectRow(project = project, onClick = { project.id?.let(onOpenProject) })
+                                    ProjectRow(
+                                        project = project,
+                                        onClick = { project.id?.let(onOpenProject) },
+                                        onChangeStatus = { status -> viewModel.changeStatus(project, status) },
+                                    )
                                 }
                             }
                         }
@@ -235,9 +266,15 @@ private fun CategoryHeader(name: String) {
 }
 
 @Composable
-private fun ProjectRow(project: ProjectResponse, onClick: () -> Unit) {
+private fun ProjectRow(
+    project: ProjectResponse,
+    onClick: () -> Unit,
+    onChangeStatus: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    dragHandle: (@Composable () -> Unit)? = null,
+) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onClick),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         tonalElevation = 1.dp,
     ) {
@@ -245,6 +282,9 @@ private fun ProjectRow(project: ProjectResponse, onClick: () -> Unit) {
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (dragHandle != null) {
+                Box(modifier = Modifier.padding(end = 8.dp)) { dragHandle() }
+            }
             Box(
                 modifier = Modifier
                     .size(12.dp)
@@ -257,10 +297,138 @@ private fun ProjectRow(project: ProjectResponse, onClick: () -> Unit) {
                     Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            Text(project.status ?: "", style = MaterialTheme.typography.labelSmall)
+            ProjectStatusChip(status = project.status, onSelect = onChangeStatus)
+        }
+    }
+}
+
+/** Status chip as a tap-opened picker (same idiom as `TaskBoardTab`'s task-status chip) so status can change without opening the edit screen. */
+@Composable
+private fun ProjectStatusChip(status: String?, onSelect: (String) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        AssistChip(
+            onClick = { expanded = true },
+            label = { Text(PROJECT_STATUS_LABELS.firstOrNull { it.first == status }?.second ?: status ?: "") },
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            PROJECT_STATUS_LABELS.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        if (value != status) onSelect(value)
+                    },
+                )
+            }
         }
     }
 }
 
 internal fun parseHexColor(hex: String?): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex ?: "#6366f1")) }.getOrDefault(Color.Gray)
+
+/**
+ * "By priority" drag-reorder (mirrors the web app's own drag-based "Sort by:
+ * Priority", D19). Hand-rolled on top of [LazyListState]'s own layout info rather
+ * than a third-party reorder library — no auto-scroll-while-dragging, but this
+ * app's project lists are short enough that it isn't missed, and it keeps this
+ * the only drag interaction in the app from pulling in a new dependency.
+ *
+ * The drag gesture lives on a dedicated handle glyph (not the whole row), so it
+ * never fights the row's own tap-to-open or the status chip's own tap-to-open
+ * dropdown — same reasoning the web app's own `GripVertical` drag handle button
+ * follows (`ProjectCard.tsx`).
+ */
+@Composable
+private fun PriorityProjectList(
+    projects: List<ProjectResponse>,
+    reorderable: Boolean,
+    onOpenProject: (UUID) -> Unit,
+    onChangeStatus: (ProjectResponse, String) -> Unit,
+    onReorder: (List<UUID>) -> Unit,
+) {
+    // Local working copy so rows can shuffle live while dragging, ahead of the
+    // server round trip `onReorder` triggers on drop; resynced whenever the
+    // upstream list changes for any other reason (refresh, filter toggle, etc.).
+    var items by remember { mutableStateOf(projects) }
+    LaunchedEffect(projects) { items = projects }
+
+    val listState = rememberLazyListState()
+    var draggingId by remember { mutableStateOf<UUID?>(null) }
+    var draggingInitialOffset by remember { mutableFloatStateOf(0f) }
+    var draggedDistance by remember { mutableFloatStateOf(0f) }
+
+    fun layoutInfoFor(id: UUID?) =
+        id?.let { target -> listState.layoutInfo.visibleItemsInfo.firstOrNull { items.getOrNull(it.index)?.id == target } }
+
+    LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        itemsIndexed(items, key = { _, project -> project.id.toString() }) { _, project ->
+            val isDragging = project.id == draggingId
+            val displacement = if (isDragging) {
+                val info = layoutInfoFor(draggingId)
+                if (info != null) draggingInitialOffset + draggedDistance - info.offset else 0f
+            } else {
+                0f
+            }
+
+            ProjectRow(
+                project = project,
+                onClick = { project.id?.let(onOpenProject) },
+                onChangeStatus = { status -> onChangeStatus(project, status) },
+                modifier = Modifier
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer {
+                        translationY = displacement
+                        shadowElevation = if (isDragging) 8f else 0f
+                    }
+                    .let { if (isDragging) it else it.animateItem() },
+                dragHandle = if (!reorderable) null else {
+                    {
+                        Text(
+                            "⋮⋮",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.pointerInput(project.id) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = {
+                                        val info = layoutInfoFor(project.id)
+                                        draggingId = project.id
+                                        draggedDistance = 0f
+                                        draggingInitialOffset = info?.offset?.toFloat() ?: 0f
+                                    },
+                                    onDragEnd = {
+                                        draggingId = null
+                                        draggedDistance = 0f
+                                        onReorder(items.mapNotNull { it.id })
+                                    },
+                                    onDragCancel = {
+                                        items = projects
+                                        draggingId = null
+                                        draggedDistance = 0f
+                                    },
+                                    onDrag = { change, dragAmount ->
+                                        change.consume()
+                                        draggedDistance += dragAmount.y
+                                        val draggingIndex = items.indexOfFirst { it.id == draggingId }
+                                        val info = layoutInfoFor(draggingId)
+                                        if (draggingIndex == -1 || info == null) return@detectDragGesturesAfterLongPress
+                                        val start = draggingInitialOffset + draggedDistance
+                                        val end = start + info.size
+                                        val target = listState.layoutInfo.visibleItemsInfo.firstOrNull { candidate ->
+                                            candidate.index != draggingIndex &&
+                                                start <= candidate.offset + candidate.size &&
+                                                end >= candidate.offset
+                                        }
+                                        if (target != null) {
+                                            items = items.toMutableList().apply { add(target.index, removeAt(draggingIndex)) }
+                                        }
+                                    },
+                                )
+                            },
+                        )
+                    }
+                },
+            )
+        }
+    }
+}
