@@ -75,6 +75,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.assistant.SuggestTodosEntryPoint
 import com.kairon.android.core.data.TodoItemEntity
 import java.time.Instant
 import java.time.ZoneOffset
@@ -153,6 +154,11 @@ fun DayViewScreen(viewModel: TodoViewModel = hiltViewModel()) {
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
+                item {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.End) {
+                        SuggestTodosEntryPoint(day = state.day)
+                    }
+                }
                 todoListItems(
                     viewModel = viewModel,
                     state = state,

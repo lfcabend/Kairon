@@ -523,13 +523,25 @@ bottom nav could fit Journal/Projects alongside Today/Todo.
 
 ## M11.6 — Android: assistant features & settings
 
-No milestone plan has been drafted for this yet. Online-required, same as
-every other M11-family write — these calls go straight to the existing
-`/assistant/*` endpoints.
+See [`milestones/M11.6-android-assistant.md`](milestones/M11.6-android-assistant.md)
+for the full plan (Status: Accepted — implemented). Needed **no backend work
+at all** — every endpoint this slice consumes already shipped in
+M8/M8.5/M9/M9.5/M10, and the generated Kotlin client already had all six
+assistant controllers. Online-required, same as every other M11-family
+write. A "Summaries" entry joins the top-bar overflow menu
+(Account/Summaries/About) rather than growing the bottom nav; todo-
+suggestions/project-generation/project-editing stay embedded entry points on
+their existing host screens, same as web. The project-plan/project-edit
+review screens get full exclude-with-cascade parity with web (not a
+simplified cut), and journal reflection's opt-in gets the same
+confirmation-dialog friction web gives it. One scope-down from the original
+plan: D6's markdown renderer is a small hand-rolled Compose renderer instead
+of the `multiplatform-markdown-renderer-m3` dependency (§8 Q3's own named
+fallback) — see the milestone plan's corrections section.
 
-- [ ] Android: todo suggestions, AI project generation, AI project editing,
+- [x] Android: todo suggestions, AI project generation, AI project editing,
       weekly/monthly execution summaries, journal reflection.
-- [ ] Android: the assistant settings screen (per-feature opt-in, tone,
+- [x] Android: the assistant settings screen (per-feature opt-in, tone,
       model override) — parity with the web `AccountPage` Assistant section.
 
 ## M11.7 — Android: error handling & user feedback

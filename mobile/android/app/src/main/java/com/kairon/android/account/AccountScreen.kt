@@ -12,9 +12,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.assistant.AssistantSettingsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -26,7 +29,9 @@ fun AccountScreen(onLoggedOut: () -> Unit, viewModel: AccountViewModel = hiltVie
     }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Account") }) }) { padding ->
-        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+        ) {
             state.error?.let { Text(it) }
             state.me?.let { me ->
                 Text("Email: ${me.email ?: ""}")
@@ -40,6 +45,8 @@ fun AccountScreen(onLoggedOut: () -> Unit, viewModel: AccountViewModel = hiltVie
             Button(onClick = viewModel::logoutAll, modifier = Modifier.padding(top = 8.dp)) {
                 Text("Log out everywhere")
             }
+
+            AssistantSettingsSection()
         }
     }
 }

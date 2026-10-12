@@ -11,9 +11,12 @@ journal), M4 (projects core), M5 (Gantt & dependencies), M6 (Today), M7
 execution summaries), M9.5 (AI project editing from a description), M10
 (weekly journal reflection, plus a Batch API migration for M9's
 scheduled summary sweep), M11 (Android foundation: auth, the generic
-`/sync` mechanism, Today, and Daily Todo), and M11.5 (Android: Daily
+`/sync` mechanism, Today, and Daily Todo), M11.5 (Android: Daily
 Journal incl. search, and Projects — categories, task tree/board, a
-read-only Gantt with dependency arrows) are implemented.**
+read-only Gantt with dependency arrows), and M11.6 (Android: assistant
+features & settings — todo suggestions, AI project generation/editing,
+execution summaries, journal reflection, and the assistant settings
+screen) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -477,8 +480,9 @@ updated when decisions change.
   what would otherwise repeat the cross-account-leak bug M11.8 found and
   fixed for `todo`; `core.ui` — `KaironApp`/`KaironNavHost`/
   `SessionViewModel`/`KaironBanner` (M11.5 — gained an `OverflowMenu` (⋮)
-  holding Account/About, M11.5 D3)/`OverflowMenu` (new, M11.5); `auth`/
-  `today`/`todo`/`account`/`about` — one screen + `ViewModel` pair each,
+  holding Account/About, M11.5 D3; M11.6 — that menu gains a third entry,
+  Summaries, D1)/`OverflowMenu` (new, M11.5; M11.6 adds the Summaries item);
+  `auth`/`today`/`todo`/`account`/`about` — one screen + `ViewModel` pair each,
   `today` and `about` calling their APIs directly (no Room — the same "no
   natural offline need" reasoning the web `TodayPage`/`AboutPage` already
   follow), `todo` backed by Room as the single source of truth the UI
@@ -516,7 +520,44 @@ updated when decisions change.
   own edit screen (fields + its own dependency add/remove), since splitting
   further would only have meant passing the same state back and forth).
   Every write is online-required (M11 D2) — no offline write queue yet, a
-  later milestone. M11.5 also fixed a real pre-existing backend defect
+  later milestone). M11.6 (assistant features & settings, Android's own
+  feature-parity-with-web capstone, needing no backend change at all: every
+  endpoint/DTO shape it consumes already shipped in M8–M10, and the
+  generated Kotlin client already had all six assistant controllers) adds
+  `assistant` — self-contained button/dialog "entry points" embedded on
+  existing screens rather than new nav destinations (`SuggestTodosEntryPoint`,
+  placed on both `today.TodayScreen` and `todo.DayViewScreen`;
+  `ProjectGenerationEntryPoint`, on `projects.ProjectListScreen`;
+  `ProjectEditEntryPoint`, on `projects.ProjectDetailScreen` — each does its
+  own `GET /me` flag check and renders nothing if its feature is off, D11),
+  plus `SuggestedTaskList` (shared review rows), `ProjectPlanReviewScreen`/
+  `ProjectEditReviewScreen` (full per-item exclude-with-cascade parity with
+  web, D3 — the cascade logic itself lives in `AssistantCascade.kt`'s pure
+  `effectiveExcludedTaskKeys`/`excludedNewTaskKeys`/`isTaskOperationExcluded`/
+  `isDependencyOperationDisabled`, D9), `AssistantPreferences.kt` (a typed
+  `AssistantPreferences` struct + defensive `parseAssistantPreferences`/
+  merge-write `mergedAssistantPreferencesPatch` over `MeResponse`'s loosely-
+  typed `preferences: Map<String, JsonElement>?`, D7), `AssistantSettingsSection`
+  (embedded in `AccountScreen`, D2 — five toggles, a tone selector, a model-
+  override selector; enabling journal reflection alone opens a confirmation
+  dialog first, D4), `SummariesScreen`/`SummaryDetailDialog` (a new
+  `Route.Summaries` destination reached via `KaironBanner`'s `OverflowMenu`,
+  D1 — history list + generate buttons; the detail dialog polls
+  `GET /assistant/runs/{id}` on a fixed interval while a run is
+  `PENDING`/`RUNNING`, D8) + `MarkdownText.kt` (a small hand-rolled Compose
+  markdown renderer for a run's `outputMarkdown` — headings, `**bold**`,
+  bullet lists, one GFM table shape — taken in place of the plan's original
+  `multiplatform-markdown-renderer-m3` dependency per that plan's own named
+  fallback; see `docs/milestones/M11.6-android-assistant.md` §10) +
+  `SuggestTodosViewModel`/`ProjectPlanViewModel`/`ProjectEditViewModel`/
+  `SummariesViewModel`/`AssistantSettingsViewModel` (no repository/DAO layer
+  for any assistant call, D10 — ViewModels call the generated
+  `AssistantRunControllerApi`/`ProjectPlanControllerApi`/
+  `ProjectEditControllerApi`/`SuggestedTaskControllerApi`/
+  `SuggestedProjectControllerApi`/`SuggestedProjectEditControllerApi`
+  directly; none of `assistant_run`/`assistant_suggested_*` is Room-cached or
+  `/sync`-fed, D5 — every assistant screen is a live fetch).
+  M11.5 also fixed a real pre-existing backend defect
   surfaced by actually generating a client against the four reorder
   endpoints: `TodoDtos`/`ProjectDtos`/`ProjectCategoryDtos`/
   `ProjectTaskDtos` each nested an identically-named `ReorderRequest`
@@ -559,10 +600,11 @@ updated when decisions change.
 
 **M10.5 — MCP server for assistant features (bring-your-own Claude
 subscription)** (see `docs/ROADMAP.md`) is still undrafted and outstanding —
-M11 and M11.5 were both implemented ahead of it on direct request, not
-because M10.5 was dropped. Next for the Android track specifically is
-**M11.6 — assistant features & settings**, following M11.5's own
-auth/sync/nav foundation (see `docs/ROADMAP.md`).
+M11, M11.5, and now M11.6 were all implemented ahead of it on direct
+request, not because M10.5 was dropped. M11.6 — Android: assistant features
+& settings — is implemented, closing out the three-slice Android track
+(M11 → M11.5 → M11.6) with full feature parity against web. M10.5 is now
+the one remaining undrafted milestone on the board (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

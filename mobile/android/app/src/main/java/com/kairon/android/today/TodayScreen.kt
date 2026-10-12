@@ -25,8 +25,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.assistant.SuggestTodosEntryPoint
 import com.kairon.android.todo.TodoViewModel
 import com.kairon.android.todo.todoListItems
+import java.time.LocalDate
 
 /**
  * The app's landing screen (no date-nav — always "today"). Embeds its own
@@ -68,7 +70,12 @@ fun TodayScreen(
                     item { Text(state.error ?: "", modifier = Modifier.padding(16.dp)) }
                 }
 
-                item { Text("Today's tasks", modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) }
+                item {
+                    Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Today's tasks")
+                        SuggestTodosEntryPoint(day = LocalDate.now())
+                    }
+                }
                 todoListItems(
                     viewModel = todoViewModel,
                     state = todoState,

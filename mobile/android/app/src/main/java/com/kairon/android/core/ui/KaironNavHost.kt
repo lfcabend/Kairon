@@ -28,6 +28,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.kairon.android.about.AboutScreen
 import com.kairon.android.account.AccountScreen
+import com.kairon.android.assistant.SummariesScreen
 import com.kairon.android.auth.LoginScreen
 import com.kairon.android.auth.RegisterScreen
 import com.kairon.android.journal.JournalDayScreen
@@ -48,6 +49,7 @@ private sealed class Route(val path: String) {
     data object DayView : Route("day")
     data object Account : Route("account")
     data object About : Route("about")
+    data object Summaries : Route("summaries")
     data object Journal : Route("journal")
     data object JournalEntry : Route("journal/entry/{day}/{entryId}")
     data object JournalSearch : Route("journal/search")
@@ -97,6 +99,7 @@ fun KaironApp(sessionViewModel: SessionViewModel = hiltViewModel()) {
             KaironBanner(
                 onAccount = { navController.navigate(Route.Account.path) },
                 onAbout = { navController.navigate(Route.About.path) },
+                onSummaries = { navController.navigate(Route.Summaries.path) },
             )
         },
         bottomBar = {
@@ -130,6 +133,7 @@ fun KaironApp(sessionViewModel: SessionViewModel = hiltViewModel()) {
             composable(Route.DayView.path) { DayViewScreen() }
             composable(Route.Account.path) { AccountScreen(onLoggedOut = {}) }
             composable(Route.About.path) { AboutScreen() }
+            composable(Route.Summaries.path) { SummariesScreen(onBack = { navController.popBackStack() }) }
 
             composable(Route.Journal.path) { backStackEntry ->
                 val targetDay = backStackEntry.savedStateHandle.get<String>("targetDay")?.let(LocalDate::parse)

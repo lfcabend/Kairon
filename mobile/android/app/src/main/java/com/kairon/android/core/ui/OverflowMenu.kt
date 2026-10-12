@@ -16,16 +16,18 @@ import androidx.compose.runtime.setValue
 /**
  * D3 — Account/About moved out of the bottom nav (which only has room for
  * four primary destinations: Today/Todo/Journal/Projects) into this overflow
- * menu, reachable from every top-level screen via [KaironBanner].
+ * menu, reachable from every top-level screen via [KaironBanner]. M11.6 D1
+ * adds "Summaries" here too, for the same "secondary, tucked away" reason.
  */
 @Composable
-fun OverflowMenu(onAccount: () -> Unit, onAbout: () -> Unit) {
+fun OverflowMenu(onAccount: () -> Unit, onAbout: () -> Unit, onSummaries: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     IconButton(onClick = { expanded = true }) {
         Icon(Icons.Default.MoreVert, contentDescription = "More")
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
         DropdownMenuItem(text = { Text("Account") }, onClick = { expanded = false; onAccount() })
+        DropdownMenuItem(text = { Text("Summaries") }, onClick = { expanded = false; onSummaries() })
         DropdownMenuItem(text = { Text("About") }, onClick = { expanded = false; onAbout() })
     }
 }

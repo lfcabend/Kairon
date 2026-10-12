@@ -20,10 +20,11 @@ import com.kairon.android.R
  * app's `AppLayout` header: the same logo mark as `web/public/favicon.svg`
  * next to the "Kairon" wordmark. M11.5 adds the [OverflowMenu] (D3) here —
  * the one place Account/About stay reachable from every top-level screen
- * now that the bottom nav is full with Today/Todo/Journal/Projects.
+ * now that the bottom nav is full with Today/Todo/Journal/Projects. M11.6 D1
+ * adds a third entry, Summaries.
  */
 @Composable
-fun KaironBanner(onAccount: () -> Unit, onAbout: () -> Unit) {
+fun KaironBanner(onAccount: () -> Unit, onAbout: () -> Unit, onSummaries: () -> Unit) {
     Surface {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
@@ -38,7 +39,7 @@ fun KaironBanner(onAccount: () -> Unit, onAbout: () -> Unit) {
                 )
                 Text("Kairon", modifier = Modifier.padding(start = 10.dp))
             }
-            OverflowMenu(onAccount = onAccount, onAbout = onAbout)
+            OverflowMenu(onAccount = onAccount, onAbout = onAbout, onSummaries = onSummaries)
         }
     }
 }

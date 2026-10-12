@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.assistant.ProjectEditEntryPoint
 import java.util.UUID
 
 private val TABS = listOf("Tree", "Board", "Gantt")
@@ -54,6 +55,7 @@ fun ProjectDetailScreen(
                     }
                 },
                 actions = {
+                    ProjectEditEntryPoint(onApplied = viewModel::refresh)
                     IconButton(onClick = { onEditProject(viewModel.projectId) }) {
                         Icon(Icons.Default.Edit, contentDescription = "Edit project")
                     }

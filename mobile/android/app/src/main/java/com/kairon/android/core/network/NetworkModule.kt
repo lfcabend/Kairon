@@ -1,13 +1,19 @@
 package com.kairon.android.core.network
 
 import com.kairon.android.about.AboutApi
+import com.kairon.android.client.api.AssistantRunControllerApi
 import com.kairon.android.client.api.AuthControllerApi
 import com.kairon.android.client.api.JournalControllerApi
 import com.kairon.android.client.api.MeControllerApi
 import com.kairon.android.client.api.PlanningControllerApi
 import com.kairon.android.client.api.ProjectCategoryControllerApi
 import com.kairon.android.client.api.ProjectControllerApi
+import com.kairon.android.client.api.ProjectEditControllerApi
+import com.kairon.android.client.api.ProjectPlanControllerApi
 import com.kairon.android.client.api.ProjectTaskControllerApi
+import com.kairon.android.client.api.SuggestedProjectControllerApi
+import com.kairon.android.client.api.SuggestedProjectEditControllerApi
+import com.kairon.android.client.api.SuggestedTaskControllerApi
 import com.kairon.android.client.api.SyncControllerApi
 import com.kairon.android.client.api.TaskDependencyControllerApi
 import com.kairon.android.client.api.TodoControllerApi
@@ -129,4 +135,28 @@ object NetworkModule {
     @Provides
     @Singleton
     fun taskDependencyApi(retrofit: Retrofit): TaskDependencyControllerApi = retrofit.create(TaskDependencyControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun assistantRunApi(retrofit: Retrofit): AssistantRunControllerApi = retrofit.create(AssistantRunControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun projectPlanApi(retrofit: Retrofit): ProjectPlanControllerApi = retrofit.create(ProjectPlanControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun projectEditApi(retrofit: Retrofit): ProjectEditControllerApi = retrofit.create(ProjectEditControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun suggestedTaskApi(retrofit: Retrofit): SuggestedTaskControllerApi = retrofit.create(SuggestedTaskControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun suggestedProjectApi(retrofit: Retrofit): SuggestedProjectControllerApi = retrofit.create(SuggestedProjectControllerApi::class.java)
+
+    @Provides
+    @Singleton
+    fun suggestedProjectEditApi(retrofit: Retrofit): SuggestedProjectEditControllerApi = retrofit.create(SuggestedProjectEditControllerApi::class.java)
 }

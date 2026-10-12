@@ -57,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.assistant.ProjectGenerationEntryPoint
 import com.kairon.android.client.model.ProjectCategoryResponse
 import com.kairon.android.client.model.ProjectResponse
 import java.util.UUID
@@ -161,6 +162,9 @@ fun ProjectListScreen(
             val filteredProjects = state.filteredProjects
 
             Column(modifier = Modifier.fillMaxSize()) {
+                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    ProjectGenerationEntryPoint(onCreated = onOpenProject)
+                }
                 if (searchActive) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
