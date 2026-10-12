@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Row
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.client.model.TodoSuggestionRequest
+import com.kairon.android.core.ui.InlineError
 import java.time.LocalDate
 
 /**
@@ -59,7 +60,7 @@ fun SuggestTodosEntryPoint(day: LocalDate, viewModel: SuggestTodosViewModel = hi
                             RadioButton(selected = horizon == TodoSuggestionRequest.Horizon.WEEK, onClick = { horizon = TodoSuggestionRequest.Horizon.WEEK })
                             Text("This week")
                         }
-                        state.error?.let { Text(it) }
+                        state.error?.let { InlineError(it) }
                     } else {
                         SuggestedTaskList(
                             suggestions = state.suggestions.orEmpty(),

@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.ui.InlineError
 
 private val TONE_OPTIONS: List<Pair<String, String>> = listOf("encouraging" to "Encouraging", "balanced" to "Balanced", "direct" to "Direct")
 private val MODEL_OPTIONS: List<Pair<String?, String>> = listOf(
@@ -110,7 +111,7 @@ fun AssistantSettingsSection(viewModel: AssistantSettingsViewModel = hiltViewMod
         )
 
         state.error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
+            InlineError(it, modifier = Modifier.padding(top = 8.dp))
         }
     }
 

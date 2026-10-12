@@ -547,8 +547,11 @@ enable planning help without enabling journal reflection.
   created_at)`.
 - **Recurring todos** — `todo_template(id, user_id, rrule, title, …)` + a
   scheduler that materialises items per day.
-- **Reminders / notifications** — `device_token`, `reminder`, a scheduler, and
-  APNs/FCM integration.
+- **Reminders / notifications (server-driven push)** — `device_token`,
+  `reminder`, a scheduler, and APNs/FCM integration. Still a stub: no schema
+  exists for this. `ROADMAP.md` M11.9 covers *local* notifications instead —
+  entirely on-device (Android `WorkManager` + the existing `/sync`-fed Room
+  cache), so it needs no new backend table at all.
 - **Sync bookkeeping** — a per-user `sync_cursor` / server-change-log table if
   the `since=` scan on `updated_at` proves too coarse. `GET /api/v1/sync`
   itself is implemented as of M11 (`todo`/`journal`/`project`/`project_task`,

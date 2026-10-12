@@ -784,8 +784,11 @@ Decisions still open:
 - HS256 vs RS256 for access-token signing (defer until/if services split).
 - Which markdown editor component for web and mobile.
 - CloudNativePG vs a managed Postgres offering for prod.
-- Whether "Today" needs push notifications/reminders (would add a scheduler +
-  device token storage + APNs/FCM). Currently backlog.
+- Whether a real backend-driven push channel (a scheduler + device token
+  storage + FCM) is ever needed. Still backlog — `ROADMAP.md` M11.9 covers
+  the on-device half (local `WorkManager`-scheduled notifications for
+  overdue project tasks / incomplete daily todos, evaluated from data
+  already cached via `/sync`, no server involvement at notification time).
 - Whether assistant monthly token budgets need to be per-feature rather than
   per-user, and whether a public deployment should require a zero-retention
   Anthropic organisation for the instance key.

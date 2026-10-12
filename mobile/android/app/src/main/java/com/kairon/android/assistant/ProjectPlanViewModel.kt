@@ -10,6 +10,8 @@ import com.kairon.android.client.model.AssistantSuggestedProjectView
 import com.kairon.android.client.model.ProjectPlanRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -67,7 +69,7 @@ class ProjectPlanViewModel @Inject constructor(
                 _state.value = _state.value.copy(generating = false, plan = run.suggestedProject)
             }.onFailure { ex ->
                 AppLog.e(TAG, "generate.failed", throwable = ex)
-                _state.value = _state.value.copy(generating = false, error = ex.message ?: "Could not generate a plan")
+                _state.value = _state.value.copy(generating = false, error = ex.toAppError().userMessage())
             }
         }
     }
@@ -89,7 +91,7 @@ class ProjectPlanViewModel @Inject constructor(
                 _state.value = _state.value.copy(accepting = false, createdProjectId = created.id)
             }.onFailure { ex ->
                 AppLog.e(TAG, "accept.failed", throwable = ex)
-                _state.value = _state.value.copy(accepting = false, error = ex.message ?: "Could not create the project")
+                _state.value = _state.value.copy(accepting = false, error = ex.toAppError().userMessage())
             }
         }
     }

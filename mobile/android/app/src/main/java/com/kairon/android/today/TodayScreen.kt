@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.assistant.SuggestTodosEntryPoint
+import com.kairon.android.core.ui.InlineError
 import com.kairon.android.todo.TodoViewModel
 import com.kairon.android.todo.todoListItems
 import java.time.LocalDate
@@ -66,8 +67,8 @@ fun TodayScreen(
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                if (state.error != null) {
-                    item { Text(state.error ?: "", modifier = Modifier.padding(16.dp)) }
+                state.error?.let { message ->
+                    item { InlineError(message, modifier = Modifier.padding(16.dp)) }
                 }
 
                 item {

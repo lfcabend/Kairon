@@ -11,8 +11,10 @@ import com.kairon.android.client.model.RolloverRequest
 import com.kairon.android.core.data.TodoDao
 import com.kairon.android.core.data.TodoItemEntity
 import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.AppError
 import com.kairon.android.core.network.bodyOrThrow
 import com.kairon.android.core.network.requireSuccessful
+import com.kairon.android.core.network.toAppError
 import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,6 +24,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -35,7 +38,10 @@ data class DayViewUiState(
     val today: LocalDate = LocalDate.now(),
     val items: List<TodoItemEntity> = emptyList(),
     val syncing: Boolean = true,
-    val error: String? = null,
+    /** A background `/sync` failure (D6) — shown as a banner above the cached list, never blocking it. */
+    val syncError: AppError? = null,
+    /** A foreground action failure (D7), or a D9/D10 not-found/conflict outcome for a mutation. */
+    val error: AppError? = null,
     val rolloverCandidateCount: Int? = null,
 )
 
@@ -49,17 +55,18 @@ class TodoViewModel @Inject constructor(
 
     private val day = MutableStateFlow(LocalDate.now())
     private val syncing = MutableStateFlow(true)
-    private val error = MutableStateFlow<String?>(null)
+    private val syncError = MutableStateFlow<AppError?>(null)
+    private val error = MutableStateFlow<AppError?>(null)
     private val rolloverCandidateCount = MutableStateFlow<Int?>(null)
 
     val state: StateFlow<DayViewUiState> = combine(
-        day,
-        day.flatMapLatest { todoDao.observeForDay(it) },
+        day.flatMapLatest { d -> todoDao.observeForDay(d).map { d to it } },
         syncing,
+        syncError,
         error,
         rolloverCandidateCount,
-    ) { d, items, isSyncing, err, rolloverCount ->
-        DayViewUiState(d, LocalDate.now(), items, isSyncing, err, rolloverCount)
+    ) { (d, items), isSyncing, syncErr, err, rolloverCount ->
+        DayViewUiState(d, LocalDate.now(), items, isSyncing, syncErr, err, rolloverCount)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DayViewUiState())
 
     init {
@@ -70,15 +77,19 @@ class TodoViewModel @Inject constructor(
         viewModelScope.launch {
             syncing.value = true
             syncRepository.sync()
-                .onSuccess { error.value = null }
+                .onSuccess { syncError.value = null }
                 .onFailure { ex ->
                     // SyncRepository already logged the detailed failure; just note the UI-visible effect.
                     AppLog.w(TAG, "refresh.syncFailed")
-                    error.value = ex.message ?: "Sync failed"
+                    syncError.value = ex.toAppError()
                 }
             syncing.value = false
             checkRolloverCandidates()
         }
+    }
+
+    fun dismissSyncError() {
+        syncError.value = null
     }
 
     fun goToDate(date: LocalDate) {
@@ -108,9 +119,19 @@ class TodoViewModel @Inject constructor(
                 AppLog.i(TAG, "quickAdd.success", mapOf("id" to created.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "quickAdd.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to add todo"
+                error.value = ex.toAppError()
             }
         }
+    }
+
+    /** D9/D10: a stale/gone row purges from Room (the day list drops it on its own); a conflict's "Reload" is just [refresh]. */
+    private fun handleMutationFailure(ex: Throwable, itemId: UUID, tag: String) {
+        val appError = ex.toAppError()
+        AppLog.e(TAG, "$tag.failed", mapOf("id" to itemId), throwable = ex)
+        if (appError is AppError.NotFound) {
+            viewModelScope.launch { todoDao.deleteById(itemId) }
+        }
+        error.value = appError
     }
 
     fun toggleComplete(item: TodoItemEntity) {
@@ -121,10 +142,7 @@ class TodoViewModel @Inject constructor(
             }.onSuccess { updated ->
                 todoDao.upsert(updated.toEntity())
                 AppLog.i(TAG, "toggleComplete.success", mapOf("id" to item.id))
-            }.onFailure { ex ->
-                AppLog.e(TAG, "toggleComplete.failed", mapOf("id" to item.id), throwable = ex)
-                error.value = ex.message ?: "Failed to update todo"
-            }
+            }.onFailure { ex -> handleMutationFailure(ex, item.id, "toggleComplete") }
         }
     }
 
@@ -135,10 +153,7 @@ class TodoViewModel @Inject constructor(
             }.onSuccess {
                 todoDao.deleteById(item.id)
                 AppLog.i(TAG, "delete.success", mapOf("id" to item.id))
-            }.onFailure { ex ->
-                AppLog.e(TAG, "delete.failed", mapOf("id" to item.id), throwable = ex)
-                error.value = ex.message ?: "Failed to delete todo"
-            }
+            }.onFailure { ex -> handleMutationFailure(ex, item.id, "delete") }
         }
     }
 
@@ -165,7 +180,7 @@ class TodoViewModel @Inject constructor(
                 AppLog.i(TAG, "reorder.success", mapOf("count" to updated.size))
             }.onFailure { ex ->
                 AppLog.e(TAG, "reorder.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to reorder"
+                error.value = ex.toAppError()
             }
         }
     }
@@ -177,10 +192,7 @@ class TodoViewModel @Inject constructor(
         }.onSuccess { updated ->
             todoDao.upsert(updated.toEntity())
             AppLog.i(TAG, "$action.success", mapOf("id" to item.id))
-        }.onFailure { ex ->
-            AppLog.e(TAG, "$action.failed", mapOf("id" to item.id), throwable = ex)
-            error.value = ex.message ?: "Failed to update todo"
-        }
+        }.onFailure { ex -> handleMutationFailure(ex, item.id, action) }
     }
 
     fun rename(item: TodoItemEntity, title: String) {
@@ -219,7 +231,7 @@ class TodoViewModel @Inject constructor(
                 AppLog.i(TAG, "rollover.success", mapOf("count" to (result.rolledOver?.size ?: 0)))
             }.onFailure { ex ->
                 AppLog.e(TAG, "rollover.failed", throwable = ex)
-                error.value = ex.message ?: "Rollover failed"
+                error.value = ex.toAppError()
             }
         }
     }

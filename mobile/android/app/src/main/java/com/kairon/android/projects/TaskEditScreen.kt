@@ -43,6 +43,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.network.AppError
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.ui.InlineError
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -82,6 +85,10 @@ fun TaskEditScreen(
     ) { padding ->
         if (!state.loaded) return@Scaffold
 
+        val fieldError = { field: String ->
+            (state.error as? AppError.Validation)?.fieldErrors?.firstOrNull { it.field == field }?.message
+        }
+
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
         ) {
@@ -90,6 +97,8 @@ fun TaskEditScreen(
                 onValueChange = viewModel::setName,
                 label = { Text("Name") },
                 singleLine = true,
+                isError = fieldError("name") != null,
+                supportingText = fieldError("name")?.let { { Text(it) } },
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(modifier = Modifier.height(8.dp))
@@ -170,14 +179,22 @@ fun TaskEditScreen(
                 )
             }
 
-            if (state.error != null) {
-                Text(state.error ?: "", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 8.dp))
+            val formLevelError = state.error?.let {
+                if (it is AppError.Validation) null else it.userMessage()
+            }
+            formLevelError?.let { message ->
+                InlineError(
+                    message,
+                    actionLabel = if (state.error is AppError.Conflict) "Reload" else null,
+                    onAction = if (state.error is AppError.Conflict) viewModel::reload else null,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
             }
 
             Spacer(modifier = Modifier.height(16.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onBack) { Text("Cancel") }
-                Button(onClick = viewModel::save, enabled = !state.saving) { Text("Save") }
+                Button(onClick = viewModel::save, enabled = !state.saving && !state.gone) { Text("Save") }
             }
         }
     }

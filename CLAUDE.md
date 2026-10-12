@@ -13,10 +13,17 @@ execution summaries), M9.5 (AI project editing from a description), M10
 scheduled summary sweep), M11 (Android foundation: auth, the generic
 `/sync` mechanism, Today, and Daily Todo), M11.5 (Android: Daily
 Journal incl. search, and Projects — categories, task tree/board, a
-read-only Gantt with dependency arrows), and M11.6 (Android: assistant
+read-only Gantt with dependency arrows), M11.6 (Android: assistant
 features & settings — todo suggestions, AI project generation/editing,
 execution summaries, journal reflection, and the assistant settings
-screen) are implemented.**
+screen), and M11.7 (Android: error handling & user feedback — a shared
+`AppError` categorization replacing every screen's old `ex.message ?:
+"<fallback>"`, backend-`detail`-verbatim display for most categories but
+fixed Android-owned copy for connectivity/server errors, per-field
+validation display, non-blocking sync-failure banners, a one-shot
+session-expired explanation on the login screen, and dedicated
+not-found/conflict handling for mutations against a since-deleted or
+since-modified row) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -566,7 +573,59 @@ updated when decisions change.
   `todo` one, spurious `day` field included) until the latter three were
   renamed `ReorderProjectsRequest`/`ReorderCategoriesRequest`/
   `ReorderTasksRequest` (see `docs/milestones/M11.5-android-journal-projects.md`
-  §10).
+  §10). M11.7 (Android: error handling & user feedback — a cross-cutting fix
+  on this whole module, not a new feature; see
+  `docs/milestones/M11.7-android-error-handling.md`) adds `core.network`
+  `ProblemDetail`/`FieldProblem` (a lenient RFC 7807 body parser, `null` on
+  any parse failure rather than throwing) and the sealed `AppError`/
+  `FieldError` + `Throwable.toAppError()`/`AppError.userMessage()`/
+  `AppError.syncBannerMessage()` — the single mapping every call site in the
+  app now uses in place of the old `ex.message ?: "<fallback>"`, replacing
+  that pattern at every one of its ~50 occurrences across 16 files;
+  `core.auth` `SessionExpiredSignal` (an app-scoped one-shot `SharedFlow`,
+  wired into `AuthAuthenticator`'s three forced-session-clear branches,
+  distinguishing a forced expiry from an ordinary manual "Log out" so
+  `LoginScreen` can explain why the user landed there); `core.ui`
+  `ErrorBanner` (dismissible, optional "Retry" — background `/sync`
+  failures in `TodoViewModel`/`JournalViewModel`/`ProjectDetailViewModel`,
+  the only three `ViewModel`s that actually inject `SyncRepository`) and
+  `InlineError` (icon + error-colored text, an optional trailing
+  `actionLabel`/`onAction` — every other screen's former bare
+  `Text(state.error)`, a form field's own `supportingText` for a validation
+  message, and an `AppError.Conflict`'s "Reload" action). `AuthUiState.Error`
+  now carries the `AppError` itself rather than a flattened `String`, the
+  one exception to every other `ViewModel`'s "flatten to `.userMessage()`"
+  treatment, so `LoginScreen`/`RegisterScreen` can place a `Validation`
+  error's message under the matching field's own `supportingText` while a
+  `LoginRejected`/any other category still renders as today's one
+  form-level line, attributed to neither field (a wrong-password and a
+  no-such-email 401 intentionally carry the identical message, so pinning
+  it to one field would undo the backend's own enumeration defense).
+  `ProjectFormScreen`/`TaskEditScreen` get the same per-field `Validation`
+  treatment for their own `name` field. A mutation against a row that 404s
+  because it was deleted elsewhere purges that row from Room immediately
+  (`ProjectTaskViewModel.save`/`delete`, `ProjectFormViewModel.save`,
+  `JournalEntryViewModel.save`/`delete`, `TodoViewModel`'s
+  `toggleComplete`/`delete`/`rename`/`setNotes`/`cancel`, and
+  `ProjectViewModel`'s category rename/delete/reorder — categories are
+  never Room-cached, so there `NotFound` just drops the row from the
+  in-memory list instead) and disables that screen's Save button via a new
+  `gone: Boolean` field; a 409 `Conflict` instead gets a `reload()`
+  function (re-syncs then re-reads the one row from Room, overwriting any
+  unsaved edit) wired to `InlineError`'s "Reload" action — `TodoViewModel`'s
+  own inline actions and `ProjectViewModel`'s category functions reuse
+  their existing `refresh()`/`reloadCategories()` instead of a bespoke
+  `reload()`, since neither has a separate form to repopulate. New tests:
+  `AppErrorMappingTest`/`ProblemDetailTest` (pure-function, every mapping
+  branch), `AuthAuthenticatorTest` extended for the expiry signal,
+  `ProjectTaskViewModelTest`/`TodoViewModelTest` (new — the D9/D10 branches),
+  and this milestone's own first `androidTest` source set —
+  `ErrorBannerTest`/`InlineErrorTest`/`LoginScreenTest`, Compose UI tests
+  that construct the real `ViewModel` directly (bypassing Hilt) and need a
+  new `mockk-android` `androidTestImplementation` dependency (same version
+  as the existing `mockk`) since no `androidTest` source set existed before
+  this milestone and plain JVM `mockk` doesn't work against real Android
+  bytecode on-device.
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
@@ -600,11 +659,15 @@ updated when decisions change.
 
 **M10.5 — MCP server for assistant features (bring-your-own Claude
 subscription)** (see `docs/ROADMAP.md`) is still undrafted and outstanding —
-M11, M11.5, and now M11.6 were all implemented ahead of it on direct
+M11, M11.5, M11.6, and now M11.7 were all implemented ahead of it on direct
 request, not because M10.5 was dropped. M11.6 — Android: assistant features
-& settings — is implemented, closing out the three-slice Android track
-(M11 → M11.5 → M11.6) with full feature parity against web. M10.5 is now
-the one remaining undrafted milestone on the board (see `docs/ROADMAP.md`).
+& settings — closed out the three-slice Android feature-parity track
+(M11 → M11.5 → M11.6) with full feature parity against web; M11.7 — Android:
+error handling & user feedback — is a cross-cutting fix on top of that track
+(every screen that touches the network, not one feature), found while
+real-device-testing M11.4 and implemented as its own slice rather than
+folded into M11.5/M11.6. M10.5 is now the one remaining undrafted milestone
+on the board (see `docs/ROADMAP.md`).
 
 ## What Kairon is
 

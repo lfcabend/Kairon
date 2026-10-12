@@ -23,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.network.AppError
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.ui.InlineError
 
 @Composable
 fun LoginScreen(
@@ -33,10 +36,19 @@ fun LoginScreen(
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     val state by viewModel.state.collectAsState()
+    val sessionExpiredMessage by viewModel.sessionExpiredMessage.collectAsState()
 
     LaunchedEffect(state) {
         if (state is AuthUiState.Success) onLoggedIn()
     }
+
+    val fieldError = { field: String ->
+        ((state as? AuthUiState.Error)?.error as? AppError.Validation)
+            ?.fieldErrors?.firstOrNull { it.field == field }?.message
+    }
+    val formLevelError = (state as? AuthUiState.Error)?.error?.let {
+        if (it is AppError.Validation) null else it.userMessage()
+    } ?: sessionExpiredMessage
 
     Column(
         modifier = Modifier.fillMaxSize().padding(24.dp),
@@ -44,14 +56,24 @@ fun LoginScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text("Kairon")
-        OutlinedTextField(value = email, onValueChange = { email = it }, label = { Text("Email") },
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp))
-        OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Password") },
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+        OutlinedTextField(
+            value = email,
+            onValueChange = { email = it },
+            label = { Text("Email") },
+            isError = fieldError("email") != null,
+            supportingText = fieldError("email")?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        )
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it },
+            label = { Text("Password") },
+            isError = fieldError("password") != null,
+            supportingText = fieldError("password")?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
 
-        if (state is AuthUiState.Error) {
-            Text((state as AuthUiState.Error).message)
-        }
+        formLevelError?.let { InlineError(it, modifier = Modifier.padding(top = 8.dp)) }
 
         Button(
             onClick = { viewModel.login(email, password) },

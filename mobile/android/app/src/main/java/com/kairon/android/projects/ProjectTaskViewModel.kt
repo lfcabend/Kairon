@@ -12,8 +12,12 @@ import com.kairon.android.client.model.TaskDependencyResponse
 import com.kairon.android.core.data.ProjectTaskDao
 import com.kairon.android.core.data.ProjectTaskEntity
 import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.AppError
 import com.kairon.android.core.network.bodyOrThrow
 import com.kairon.android.core.network.requireSuccessful
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,8 +47,10 @@ data class ProjectTaskFormUiState(
     val dependencies: List<TaskDependencyResponse> = emptyList(),
     val loadingDependencies: Boolean = true,
     val saving: Boolean = false,
-    val error: String? = null,
+    val error: AppError? = null,
     val saved: Boolean = false,
+    /** D9 — the row was confirmed deleted elsewhere; Save stays disabled until the user backs out. */
+    val gone: Boolean = false,
 )
 
 /**
@@ -58,6 +64,7 @@ class ProjectTaskViewModel @Inject constructor(
     private val taskApi: ProjectTaskControllerApi,
     private val dependencyApi: TaskDependencyControllerApi,
     private val projectTaskDao: ProjectTaskDao,
+    private val syncRepository: SyncRepository,
 ) : ViewModel() {
 
     val projectId: UUID = UUID.fromString(requireNotNull(savedStateHandle.get<String>("projectId")))
@@ -114,7 +121,7 @@ class ProjectTaskViewModel @Inject constructor(
             )
         }.onFailure { ex ->
             AppLog.e(TAG, "listDependencies.failed", throwable = ex)
-            _state.value = _state.value.copy(error = ex.message ?: "Failed to load dependencies", loadingDependencies = false)
+            _state.value = _state.value.copy(error = ex.toAppError(), loadingDependencies = false)
         }
     }
 
@@ -132,7 +139,7 @@ class ProjectTaskViewModel @Inject constructor(
     fun save() {
         val current = _state.value
         if (current.name.isBlank()) {
-            _state.value = current.copy(error = "Name is required")
+            _state.value = current.copy(error = AppError.Domain("Name is required"))
             return
         }
         viewModelScope.launch {
@@ -175,8 +182,14 @@ class ProjectTaskViewModel @Inject constructor(
                 AppLog.i(TAG, "save.success", mapOf("id" to saved.id))
                 _state.value = _state.value.copy(saving = false, saved = true)
             }.onFailure { ex ->
+                val appError = ex.toAppError()
                 AppLog.e(TAG, "save.failed", mapOf("id" to id), throwable = ex)
-                _state.value = _state.value.copy(saving = false, error = ex.message ?: "Failed to save task")
+                if (appError is AppError.NotFound && id != null) {
+                    viewModelScope.launch { projectTaskDao.deleteById(id) }
+                    _state.value = _state.value.copy(saving = false, error = appError, gone = true)
+                } else {
+                    _state.value = _state.value.copy(saving = false, error = appError)
+                }
             }
         }
     }
@@ -191,8 +204,38 @@ class ProjectTaskViewModel @Inject constructor(
                 AppLog.i(TAG, "delete.success", mapOf("id" to id))
                 _state.value = _state.value.copy(saved = true)
             }.onFailure { ex ->
+                val appError = ex.toAppError()
                 AppLog.e(TAG, "delete.failed", mapOf("id" to id), throwable = ex)
-                _state.value = _state.value.copy(error = ex.message ?: "Failed to delete task")
+                if (appError is AppError.NotFound) {
+                    projectTaskDao.deleteById(id)
+                    _state.value = _state.value.copy(error = appError, gone = true)
+                } else {
+                    _state.value = _state.value.copy(error = appError)
+                }
+            }
+        }
+    }
+
+    /** D10 — re-syncs then re-reads this task from Room, overwriting any unsaved local edits. */
+    fun reload() {
+        val id = taskId ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(error = null)
+            syncRepository.sync().onFailure { ex -> AppLog.w(TAG, "reload.syncFailed", throwable = ex) }
+            projectTaskDao.listForProject(projectId).firstOrNull { it.id == id }?.let { existing ->
+                version = existing.version
+                _state.value = _state.value.copy(
+                    name = existing.name,
+                    description = existing.description ?: "",
+                    status = existing.status,
+                    parentTaskId = existing.parentTaskId,
+                    plannedStart = existing.plannedStart,
+                    plannedEnd = existing.plannedEnd,
+                    estimateHours = existing.estimateHours?.toPlainString() ?: "",
+                    actualHours = existing.actualHours?.toPlainString() ?: "",
+                    progressPercent = existing.progressPercent,
+                    isMilestone = existing.isMilestone,
+                )
             }
         }
     }
@@ -209,7 +252,7 @@ class ProjectTaskViewModel @Inject constructor(
                 AppLog.i(TAG, "addDependency.success", mapOf("taskId" to id, "predecessorId" to predecessorId))
             }.onFailure { ex ->
                 AppLog.e(TAG, "addDependency.failed", mapOf("taskId" to id), throwable = ex)
-                _state.value = _state.value.copy(error = ex.message ?: "Failed to add dependency")
+                _state.value = _state.value.copy(error = ex.toAppError())
             }
         }
     }
@@ -223,7 +266,7 @@ class ProjectTaskViewModel @Inject constructor(
                 AppLog.i(TAG, "removeDependency.success", mapOf("id" to dependency.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "removeDependency.failed", mapOf("id" to dependency.id), throwable = ex)
-                _state.value = _state.value.copy(error = ex.message ?: "Failed to remove dependency")
+                _state.value = _state.value.copy(error = ex.toAppError())
             }
         }
     }

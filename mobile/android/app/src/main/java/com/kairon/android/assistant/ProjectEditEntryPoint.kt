@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.ui.InlineError
 
 /**
  * Self-contained "Edit with AI" button + description-form dialog (D11) —
@@ -69,7 +70,7 @@ fun ProjectEditEntryPoint(onApplied: () -> Unit, viewModel: ProjectEditViewModel
                             label = { Text("Describe the change") },
                             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         )
-                        state.error?.let { Text(it) }
+                        state.error?.let { InlineError(it) }
                     } else {
                         ProjectEditReviewScreen(
                             diff = state.diff!!,
@@ -78,7 +79,7 @@ fun ProjectEditEntryPoint(onApplied: () -> Unit, viewModel: ProjectEditViewModel
                             excludedKeys = state.excludedKeys,
                             onToggle = viewModel::toggleExcluded,
                         )
-                        state.error?.let { Text(it) }
+                        state.error?.let { InlineError(it) }
                     }
                 }
             },

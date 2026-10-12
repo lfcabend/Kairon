@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.client.model.SummaryRequest
+import com.kairon.android.core.ui.InlineError
 
 private val KIND_LABEL = mapOf(
     "WEEKLY_SUMMARY" to "Weekly",
@@ -81,7 +82,7 @@ fun SummariesScreen(onBack: () -> Unit, viewModel: SummariesViewModel = hiltView
             }
 
             state.error?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp))
+                InlineError(it, modifier = Modifier.padding(16.dp))
             }
 
             if (!state.loading && state.runs.isEmpty()) {

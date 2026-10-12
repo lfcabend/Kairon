@@ -77,6 +77,11 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.assistant.SuggestTodosEntryPoint
 import com.kairon.android.core.data.TodoItemEntity
+import com.kairon.android.core.network.AppError
+import com.kairon.android.core.network.syncBannerMessage
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.ui.ErrorBanner
+import com.kairon.android.core.ui.InlineError
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -206,8 +211,26 @@ fun LazyListScope.todoListItems(
         )
     }
 
-    if (state.error != null) {
-        item { Text(state.error ?: "", modifier = Modifier.padding(16.dp)) }
+    state.syncError?.let { appError ->
+        item {
+            ErrorBanner(
+                message = appError.syncBannerMessage(),
+                onDismiss = viewModel::dismissSyncError,
+                onRetry = viewModel::refresh,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+    }
+
+    state.error?.let { appError ->
+        item {
+            InlineError(
+                appError.userMessage(),
+                actionLabel = if (appError is AppError.Conflict) "Reload" else null,
+                onAction = if (appError is AppError.Conflict) viewModel::refresh else null,
+                modifier = Modifier.padding(16.dp),
+            )
+        }
     }
 
     state.rolloverCandidateCount?.let { count ->

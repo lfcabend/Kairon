@@ -9,6 +9,8 @@ import com.kairon.android.client.model.JournalReflectionRequest
 import com.kairon.android.client.model.SummaryRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -73,7 +75,7 @@ class SummariesViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "refresh.failed", throwable = ex)
-                    _state.value = _state.value.copy(loading = false, journalReflectionEnabled = journalReflectionEnabled, error = ex.message ?: "Failed to load summaries")
+                    _state.value = _state.value.copy(loading = false, journalReflectionEnabled = journalReflectionEnabled, error = ex.toAppError().userMessage())
                 }
         }
     }
@@ -90,7 +92,7 @@ class SummariesViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "requestSummary.failed", throwable = ex)
-                    _state.value = _state.value.copy(requestingSummary = false, error = ex.message ?: "Could not start a summary run")
+                    _state.value = _state.value.copy(requestingSummary = false, error = ex.toAppError().userMessage())
                 }
         }
     }
@@ -107,7 +109,7 @@ class SummariesViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "requestJournalReflection.failed", throwable = ex)
-                    _state.value = _state.value.copy(requestingReflection = false, error = ex.message ?: "Could not start a reflection run")
+                    _state.value = _state.value.copy(requestingReflection = false, error = ex.toAppError().userMessage())
                 }
         }
     }
@@ -131,7 +133,8 @@ class SummariesViewModel @Inject constructor(
             val result = runCatching { assistantRunApi.getRun(id).bodyOrThrow(TAG, "getRun") }
             val run = result.getOrNull()
             if (run == null) {
-                _state.value = _state.value.copy(selectedRunLoading = false, error = result.exceptionOrNull()?.message ?: "Failed to load run")
+                val message = result.exceptionOrNull()?.toAppError()?.userMessage() ?: "Failed to load run"
+                _state.value = _state.value.copy(selectedRunLoading = false, error = message)
                 return
             }
             _state.value = _state.value.copy(selectedRun = run, selectedRunLoading = false)

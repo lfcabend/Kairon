@@ -41,6 +41,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.core.data.JournalEntryEntity
+import com.kairon.android.core.network.syncBannerMessage
+import com.kairon.android.core.ui.ErrorBanner
+import com.kairon.android.core.ui.InlineError
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -124,8 +127,15 @@ fun JournalDayScreen(
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            if (state.error != null) {
-                Text(state.error ?: "", modifier = Modifier.padding(16.dp))
+            state.syncError?.let { appError ->
+                ErrorBanner(
+                    message = appError.syncBannerMessage(),
+                    onDismiss = viewModel::dismissSyncError,
+                    onRetry = viewModel::refresh,
+                )
+            }
+            state.error?.let { message ->
+                InlineError(message, modifier = Modifier.padding(16.dp))
             }
             if (state.entries.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

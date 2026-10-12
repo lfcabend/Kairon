@@ -12,8 +12,10 @@ import com.kairon.android.client.model.ProjectResponse
 import com.kairon.android.client.model.ReorderCategoriesRequest
 import com.kairon.android.client.model.ReorderProjectsRequest
 import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.AppError
 import com.kairon.android.core.network.bodyOrThrow
 import com.kairon.android.core.network.requireSuccessful
+import com.kairon.android.core.network.toAppError
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -57,7 +59,7 @@ data class ProjectListUiState(
     val projects: List<ProjectResponse> = emptyList(),
     val sortMode: ProjectSortMode = ProjectSortMode.CATEGORY,
     val loading: Boolean = true,
-    val error: String? = null,
+    val error: AppError? = null,
     val filterText: String = "",
     val statusFilter: String? = null,
     val sizeFilter: String? = null,
@@ -87,7 +89,7 @@ class ProjectViewModel @Inject constructor(
     private val projects = MutableStateFlow<List<ProjectResponse>>(emptyList())
     private val sortMode = MutableStateFlow(ProjectSortMode.CATEGORY)
     private val loading = MutableStateFlow(true)
-    private val error = MutableStateFlow<String?>(null)
+    private val error = MutableStateFlow<AppError?>(null)
     private val filterText = MutableStateFlow("")
     private val statusFilter = MutableStateFlow<String?>(null)
     private val sizeFilter = MutableStateFlow<String?>(null)
@@ -152,9 +154,21 @@ class ProjectViewModel @Inject constructor(
                 loading.value = false
             }.onFailure { ex ->
                 AppLog.e(TAG, "refresh.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to load projects"
+                error.value = ex.toAppError()
                 loading.value = false
             }
+        }
+    }
+
+    /** D10 — re-fetches only the category list, for a category Conflict's "Reload" action. */
+    fun reloadCategories() {
+        viewModelScope.launch {
+            runCatching { categoryApi.list3().bodyOrThrow(TAG, "reloadCategories") }
+                .onSuccess { cats ->
+                    categories.value = cats
+                    error.value = null
+                }
+                .onFailure { ex -> AppLog.w(TAG, "reloadCategories.failed", throwable = ex) }
         }
     }
 
@@ -167,7 +181,7 @@ class ProjectViewModel @Inject constructor(
                 AppLog.i(TAG, "deleteProject.success", mapOf("id" to id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "deleteProject.failed", mapOf("id" to id), throwable = ex)
-                error.value = ex.message ?: "Failed to delete project"
+                error.value = ex.toAppError()
             }
         }
     }
@@ -199,7 +213,7 @@ class ProjectViewModel @Inject constructor(
                 AppLog.i(TAG, "changeStatus.success", mapOf("id" to id, "status" to status))
             }.onFailure { ex ->
                 AppLog.e(TAG, "changeStatus.failed", mapOf("id" to id), throwable = ex)
-                error.value = ex.message ?: "Failed to change status"
+                error.value = ex.toAppError()
             }
         }
     }
@@ -220,7 +234,7 @@ class ProjectViewModel @Inject constructor(
                 AppLog.i(TAG, "reorderProjects.success", mapOf("count" to reordered.size))
             }.onFailure { ex ->
                 AppLog.e(TAG, "reorderProjects.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to reorder projects"
+                error.value = ex.toAppError()
             }
         }
     }
@@ -234,11 +248,12 @@ class ProjectViewModel @Inject constructor(
                 AppLog.i(TAG, "createCategory.success", mapOf("id" to it.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "createCategory.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to create category"
+                error.value = ex.toAppError()
             }
         }
     }
 
+    /** D9/D10 — a category deleted/modified elsewhere since this list was fetched; categories are never Room-cached, so "Reload" is [reloadCategories]. */
     fun renameCategory(category: ProjectCategoryResponse, name: String, color: String?) {
         viewModelScope.launch {
             runCatching {
@@ -249,10 +264,7 @@ class ProjectViewModel @Inject constructor(
             }.onSuccess { updated ->
                 categories.value = categories.value.map { if (it.id == updated.id) updated else it }
                 AppLog.i(TAG, "renameCategory.success", mapOf("id" to updated.id))
-            }.onFailure { ex ->
-                AppLog.e(TAG, "renameCategory.failed", mapOf("id" to category.id), throwable = ex)
-                error.value = ex.message ?: "Failed to rename category"
-            }
+            }.onFailure { ex -> handleCategoryFailure(ex, category, "renameCategory") }
         }
     }
 
@@ -264,10 +276,7 @@ class ProjectViewModel @Inject constructor(
                 categories.value = categories.value.filterNot { it.id == category.id }
                 refresh()
                 AppLog.i(TAG, "deleteCategory.success", mapOf("id" to category.id))
-            }.onFailure { ex ->
-                AppLog.e(TAG, "deleteCategory.failed", mapOf("id" to category.id), throwable = ex)
-                error.value = ex.message ?: "Failed to delete category"
-            }
+            }.onFailure { ex -> handleCategoryFailure(ex, category, "deleteCategory") }
         }
     }
 
@@ -280,8 +289,17 @@ class ProjectViewModel @Inject constructor(
                 AppLog.i(TAG, "reorderCategories.success", mapOf("count" to reordered.size))
             }.onFailure { ex ->
                 AppLog.e(TAG, "reorderCategories.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to reorder categories"
+                error.value = ex.toAppError()
             }
         }
+    }
+
+    private fun handleCategoryFailure(ex: Throwable, category: ProjectCategoryResponse, tag: String) {
+        val appError = ex.toAppError()
+        AppLog.e(TAG, "$tag.failed", mapOf("id" to category.id), throwable = ex)
+        if (appError is AppError.NotFound) {
+            categories.value = categories.value.filterNot { it.id == category.id }
+        }
+        error.value = appError
     }
 }

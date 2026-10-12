@@ -37,6 +37,9 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import com.kairon.android.core.network.AppError
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.ui.InlineError
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -155,8 +158,13 @@ fun ProjectListScreen(
             onRefresh = viewModel::refresh,
             modifier = Modifier.fillMaxSize().padding(padding),
         ) {
-            if (state.error != null) {
-                Text(state.error ?: "", modifier = Modifier.padding(16.dp))
+            state.error?.let { appError ->
+                InlineError(
+                    appError.userMessage(),
+                    actionLabel = if (appError is AppError.Conflict) "Reload" else null,
+                    onAction = if (appError is AppError.Conflict) viewModel::reloadCategories else null,
+                    modifier = Modifier.padding(16.dp),
+                )
             }
 
             val filteredProjects = state.filteredProjects

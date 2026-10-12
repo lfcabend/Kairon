@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.assistant.AssistantSettingsSection
+import com.kairon.android.core.ui.InlineError
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,7 +33,7 @@ fun AccountScreen(onLoggedOut: () -> Unit, viewModel: AccountViewModel = hiltVie
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
         ) {
-            state.error?.let { Text(it) }
+            state.error?.let { InlineError(it) }
             state.me?.let { me ->
                 Text("Email: ${me.email ?: ""}")
                 Text("Name: ${me.displayName ?: ""}")

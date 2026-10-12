@@ -10,7 +10,10 @@ import com.kairon.android.client.model.PatchProjectRequest
 import com.kairon.android.client.model.ProjectCategoryResponse
 import com.kairon.android.core.data.ProjectDao
 import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.AppError
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -38,9 +41,11 @@ data class ProjectFormUiState(
     val endDate: LocalDate? = null,
     val categories: List<ProjectCategoryResponse> = emptyList(),
     val saving: Boolean = false,
-    val error: String? = null,
+    val error: AppError? = null,
     val saved: Boolean = false,
     val savedProjectId: UUID? = null,
+    /** D9 — the row was confirmed deleted elsewhere; Save stays disabled until the user backs out. */
+    val gone: Boolean = false,
 )
 
 /** Create or whole-form edit (D15) a project. */
@@ -50,6 +55,7 @@ class ProjectFormViewModel @Inject constructor(
     private val projectApi: ProjectControllerApi,
     private val categoryApi: ProjectCategoryControllerApi,
     private val projectDao: ProjectDao,
+    private val syncRepository: SyncRepository,
 ) : ViewModel() {
 
     private val projectId: UUID? = savedStateHandle.get<String>("projectId")
@@ -105,7 +111,7 @@ class ProjectFormViewModel @Inject constructor(
     fun save() {
         val current = _state.value
         if (current.name.isBlank()) {
-            _state.value = current.copy(error = "Name is required")
+            _state.value = current.copy(error = AppError.Domain("Name is required"))
             return
         }
         viewModelScope.launch {
@@ -147,8 +153,38 @@ class ProjectFormViewModel @Inject constructor(
                 AppLog.i(TAG, "save.success", mapOf("id" to saved.id))
                 _state.value = _state.value.copy(saving = false, saved = true, savedProjectId = saved.id)
             }.onFailure { ex ->
+                val appError = ex.toAppError()
                 AppLog.e(TAG, "save.failed", mapOf("id" to id), throwable = ex)
-                _state.value = _state.value.copy(saving = false, error = ex.message ?: "Failed to save project")
+                if (appError is AppError.NotFound && id != null) {
+                    viewModelScope.launch { projectDao.deleteById(id) }
+                    _state.value = _state.value.copy(saving = false, error = appError, gone = true)
+                } else {
+                    _state.value = _state.value.copy(saving = false, error = appError)
+                }
+            }
+        }
+    }
+
+    /** D10 — re-syncs then re-reads this project from Room, overwriting any unsaved local edits. */
+    fun reload() {
+        val id = projectId ?: return
+        viewModelScope.launch {
+            _state.value = _state.value.copy(error = null)
+            syncRepository.sync().onFailure { ex -> AppLog.w(TAG, "reload.syncFailed", throwable = ex) }
+            projectDao.findById(id)?.let { project ->
+                expectedVersion = project.version
+                actualStart = project.actualStart
+                actualEnd = project.actualEnd
+                _state.value = _state.value.copy(
+                    name = project.name,
+                    description = project.description ?: "",
+                    categoryId = project.categoryId,
+                    size = project.size,
+                    color = project.color,
+                    status = project.status,
+                    startDate = project.startDate,
+                    endDate = project.endDate,
+                )
             }
         }
     }

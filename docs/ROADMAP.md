@@ -546,48 +546,33 @@ fallback) — see the milestone plan's corrections section.
 
 ## M11.7 — Android: error handling & user feedback
 
-Gap found 2026-10-08 while real-device-testing M11.4's `local` flavor against
-a validation error (registering with too short a password): every Android
-`ViewModel` that touches the network today (`LoginViewModel`/
-`RegisterViewModel` in `AuthViewModels.kt`, the same shape elsewhere) catches
-a failure and surfaces `it.message ?: "<generic fallback>"` — i.e. whatever
-Retrofit's `HttpException`/OkHttp's own exception happens to put in
-`.message` (`"HTTP 400 Bad Request"`, or the literal
-`SocketTimeoutException` text), never the backend's actual error body. This
-throws away real information the backend already computes: the shared
-`common.error.GlobalExceptionHandler` returns RFC 7807 `ProblemDetail` for
-every error, and for Bean Validation failures specifically
-(`handleMethodArgumentNotValid`) adds a structured `errors: [{field,
-message}]` array — e.g. registering with an 8-character password gets back
-a real `{"field": "password", "message": "size must be between 10 and
-200"}`, not just a bare `400`. None of that reaches the user; they see
-nothing (a blank/generic error Text) or a cryptic raw exception string at
-best. Scoped as its own slice rather than folded into M11.5/M11.6 because
-it's a cross-cutting fix touching every screen that calls the network, not
-one feature.
+See [`milestones/M11.7-android-error-handling.md`](milestones/M11.7-android-error-handling.md)
+for the full plan (Status: Accepted — implemented). Gap found 2026-10-08 while
+real-device-testing M11.4's `local` flavor against a validation error
+(registering with too short a password): every Android `ViewModel` that
+touches the network caught a failure and surfaced `it.message ?:
+"<generic fallback>"` — whatever Retrofit's `HttpException`/OkHttp's own
+exception happened to put in `.message`, never the backend's actual RFC 7807
+error body — confirmed to repeat at ~50 call sites across 16 files.
+Android-only, needed **no backend change** — `GlobalExceptionHandler`/
+`ApiException` already send exactly the shape this plan parses, including
+a structured `errors: [{field, message}]` array for Bean Validation
+failures. Scoped as its own slice rather than folded into M11.5/M11.6
+because it's a cross-cutting fix touching every screen that calls the
+network, not one feature.
 
-- [ ] A shared parser for the RFC 7807 response body (`title`/`detail`/the
-      validation-specific `errors` array) wired into Retrofit/OkHttp's
-      error path once, in `core.network`, rather than duplicated per
-      repository — model the problem-detail shape in Kotlin (it's already
-      implicitly covered by the generated OpenAPI client's error schema, if
-      any; otherwise a small hand-written DTO) and map it to a user-facing
-      message, preferring the first field error's `message` when present.
-- [ ] A distinct, honest message for connectivity failures (timeout, DNS,
-      connection refused — `IOException` subtypes that never got an HTTP
-      response at all) vs. a real HTTP error response — "Couldn't reach the
-      server" is a different problem than "that password's too short," and
-      conflating them (today's behavior) makes every failure equally
-      unhelpful.
-- [ ] Apply the shared parser everywhere `AuthUiState.Error`-shaped
-      "catch a failure, show `.message`" code exists today, and bake it into
-      whatever the equivalent UI-state pattern becomes in M11.5/M11.6 as
-      those screens are built, rather than letting them repeat the same gap.
-- [ ] Decide (open question): does a field-level validation error (e.g.
-      password too short) belong inline on the offending form field, or is a
-      single error message area under the form (today's pattern) good
-      enough for this app's scale? Leaning "inline once the `errors` array
-      is actually parsed" since the data to do it right already exists.
+- [x] A shared `AppError` categorization + RFC 7807 body parser in
+      `core.network`, replacing every `.message`-based error with one
+      derived from the actual exception type/HTTP status/response body.
+- [x] Fixed, Android-owned copy for connectivity failures and server errors
+      (5xx) so those two always read as "try again later," regardless of
+      whatever the backend's own text says for a given failure; every other
+      error shows the backend's own (already non-technical) `detail`
+      verbatim.
+- [x] Inline, per-field display for validation errors; a non-blocking
+      banner over cached data (not a full-screen block) for background sync
+      failures; a one-shot explanation on the login screen when a session
+      is force-expired, distinct from a manual logout.
 
 ## M11.8 — Android: sync truncation correctness
 
@@ -630,6 +615,45 @@ that, and an untouched old row never qualifies.
 - [ ] Revisit whether a real keyset `nextCursor` per type (deferred at M11
       design time, per Q2) is worth building once this is fixed and the retry
       loop's login-time cost is actually measured.
+
+## M11.9 — Android: configurable notifications for overdue and incomplete items
+
+See [`milestones/M11.9-android-notifications.md`](milestones/M11.9-android-notifications.md)
+for the full plan (Status: Draft). Local, on-device notifications only — no
+backend change, no FCM/push infrastructure, no `device_token`/`reminder`
+schema (that stub in `DATA_MODEL.md`'s "Not in the first cut" section is for
+true server-driven push and stays unbuilt; this milestone covers the
+on-device half of `ROADMAP.md`'s own "reminders/push notifications" backlog
+item). Two independent, user-configurable reminder types, both evaluated
+from data the app already caches via `/sync` (`todo_item`, `project_task`):
+a daily reminder if the day's todo items aren't all complete by a
+user-chosen time, and a notification when a project task becomes overdue
+(`plannedEnd < today` and not `DONE` — the same definition
+`ProjectsApi.dueOrOverdue` already uses on the backend). Settings (per-type
+on/off, the daily reminder's trigger time) live on-device only (Proto
+DataStore) — not synced to the backend or across devices, a deliberate
+scope-down from how assistant settings sync today (*user decision*). A new
+periodic `WorkManager` job performs its own `/sync` call before evaluating
+either condition, since nothing in the app today triggers a background sync
+outside of a screen being opened.
+
+- [ ] Android: a "Notifications" section on the Account screen — two
+      toggles (daily incomplete-todo reminder, overdue project-task
+      notifications) and a time picker for the daily reminder's trigger
+      time.
+- [ ] Android: a periodic `WorkManager` job (no new backend endpoint) that
+      syncs, then reads the Room cache (`TodoDao`/`ProjectTaskDao`) and fires
+      a local notification for each enabled, due condition — a daily digest
+      for incomplete todos (at most once per calendar day) and a digest for
+      newly-overdue project tasks (not re-sent once already notified for a
+      given task).
+- [ ] Android: the Android 13+ `POST_NOTIFICATIONS` runtime permission
+      request flow, requested the first time either toggle is turned on.
+- [ ] Android: two notification channels (daily reminder, overdue tasks) so
+      a user can manage them independently from system settings too.
+- [ ] The periodic job's lifecycle is tied to the session (enqueued on
+      login, cancelled from `SessionClearer`) so a logged-out device doesn't
+      keep polling.
 
 ## M12 — Observability: Prometheus & Grafana
 
@@ -833,6 +857,7 @@ add-on).
 Bring-your-own Anthropic key per user ·
 local / self-hosted model option · embeddings / semantic search over
 journal history if Postgres FTS is outgrown · tags · attachments · recurring
-todos · reminders/push notifications · journal revision history · project
+todos · backend-driven push notifications (FCM/`device_token`) — the
+on-device half shipped as M11.9 · journal revision history · project
 templates · CSV/Markdown export · calendar (ICS) feed · dark/light theming
 polish.

@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import com.kairon.android.core.ui.InlineError
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -70,7 +71,7 @@ fun JournalSearchScreen(
         Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when {
                 state.searching -> CircularProgressIndicator(modifier = Modifier.padding(16.dp))
-                state.error != null -> Text(state.error ?: "", modifier = Modifier.padding(16.dp))
+                state.error != null -> InlineError(state.error ?: "", modifier = Modifier.padding(16.dp))
                 state.query.isBlank() -> Text(
                     "Search your journal entries",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -1,6 +1,7 @@
 package com.kairon.android.core.network
 
 import com.kairon.android.core.auth.SessionClearer
+import com.kairon.android.core.auth.SessionExpiredSignal
 import com.kairon.android.core.auth.TokenStore
 import io.mockk.coVerify
 import io.mockk.every
@@ -23,6 +24,7 @@ class AuthAuthenticatorTest {
 
     private val tokenStore = mockk<TokenStore>(relaxed = true)
     private val sessionClearer = mockk<SessionClearer>(relaxed = true)
+    private val sessionExpiredSignal = mockk<SessionExpiredSignal>(relaxed = true)
     private val rawHttpClient = mockk<OkHttpClient>()
     private val call = mockk<Call>()
     private lateinit var authenticator: AuthAuthenticator
@@ -35,7 +37,7 @@ class AuthAuthenticatorTest {
 
     @Before
     fun setUp() {
-        authenticator = AuthAuthenticator(tokenStore, sessionClearer, rawHttpClient, Json { ignoreUnknownKeys = true })
+        authenticator = AuthAuthenticator(tokenStore, sessionClearer, sessionExpiredSignal, rawHttpClient, Json { ignoreUnknownKeys = true })
         every { tokenStore.currentRefreshToken() } returns "old-refresh"
         every { tokenStore.currentAccessToken() } answers { currentAccess }
         every { tokenStore.store(any(), any()) } answers { currentAccess = firstArg() }
@@ -77,6 +79,7 @@ class AuthAuthenticatorTest {
 
         assertEquals("Bearer new-access", retried?.header("Authorization"))
         verify(exactly = 1) { rawHttpClient.newCall(any()) }
+        verify(exactly = 0) { sessionExpiredSignal.notifyExpired() }
     }
 
     @Test
@@ -89,6 +92,35 @@ class AuthAuthenticatorTest {
 
         assertNull(retried)
         coVerify(exactly = 1) { sessionClearer.clearSession() }
+        verify(exactly = 1) { sessionExpiredSignal.notifyExpired() }
+    }
+
+    @Test
+    fun noRefreshTokenStoredClearsTheSessionAndEmitsTheExpirySignalExactlyOnce() {
+        every { tokenStore.currentRefreshToken() } returns null
+        val request = originalRequest()
+
+        val retried = authenticator.authenticate(null, unauthorizedResponse(request))
+
+        assertNull(retried)
+        verify(exactly = 1) { sessionExpiredSignal.notifyExpired() }
+    }
+
+    @Test
+    fun aRejectedRefreshClearsTheSessionAndEmitsTheExpirySignalExactlyOnce() {
+        every { call.execute() } returns Response.Builder()
+            .request(Request.Builder().url("http://10.0.2.2:8080/kairon/api/v1/auth/refresh").build())
+            .protocol(Protocol.HTTP_1_1)
+            .code(401)
+            .message("Unauthorized")
+            .build()
+        val request = originalRequest()
+
+        val retried = authenticator.authenticate(null, unauthorizedResponse(request))
+
+        assertNull(retried)
+        coVerify(exactly = 1) { sessionClearer.clearSession() }
+        verify(exactly = 1) { sessionExpiredSignal.notifyExpired() }
     }
 
     @Test

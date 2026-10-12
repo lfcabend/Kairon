@@ -8,6 +8,8 @@ import com.kairon.android.client.model.PromoteRequest
 import com.kairon.android.core.data.TodoDao
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,7 +71,7 @@ class TodayViewModel @Inject constructor(
                 )
             }.onFailure { ex ->
                 AppLog.e(TAG, "refresh.failed", throwable = ex)
-                _state.value = _state.value.copy(loading = false, refreshing = false, error = ex.message ?: "Failed to load Today")
+                _state.value = _state.value.copy(loading = false, refreshing = false, error = ex.toAppError().userMessage())
             }
         }
     }
@@ -91,7 +93,7 @@ class TodayViewModel @Inject constructor(
                 AppLog.i(TAG, "promote.success", mapOf("taskId" to taskId, "todoId" to created.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "promote.failed", mapOf("taskId" to taskId), throwable = ex)
-                _state.value = _state.value.copy(error = ex.message ?: "Failed to add to today")
+                _state.value = _state.value.copy(error = ex.toAppError().userMessage())
             }
         }
     }

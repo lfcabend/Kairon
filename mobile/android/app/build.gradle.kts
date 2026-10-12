@@ -148,5 +148,9 @@ dependencies {
 
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
+    // M11.7 — LoginScreenTest constructs a real LoginViewModel with mocked
+    // collaborators directly (no Hilt test runner wired up); mockk's plain JVM
+    // artifact doesn't work against real Android bytecode on-device/emulator.
+    androidTestImplementation(libs.mockk.android)
     debugImplementation(libs.compose.ui.test.manifest)
 }

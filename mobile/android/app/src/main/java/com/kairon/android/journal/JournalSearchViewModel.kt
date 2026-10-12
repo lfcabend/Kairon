@@ -6,6 +6,8 @@ import com.kairon.android.client.api.JournalControllerApi
 import com.kairon.android.client.model.JournalSearchHitResponse
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
@@ -66,7 +68,7 @@ class JournalSearchViewModel @Inject constructor(
                     searching.value = false
                 }.onFailure { ex ->
                     AppLog.e(TAG, "search.failed", throwable = ex)
-                    error.value = ex.message ?: "Search failed"
+                    error.value = ex.toAppError().userMessage()
                     searching.value = false
                 }
             }

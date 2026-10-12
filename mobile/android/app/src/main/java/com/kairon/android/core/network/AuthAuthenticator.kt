@@ -1,6 +1,7 @@
 package com.kairon.android.core.network
 
 import com.kairon.android.core.auth.SessionClearer
+import com.kairon.android.core.auth.SessionExpiredSignal
 import com.kairon.android.core.auth.TokenStore
 import com.kairon.android.core.logging.AppLog
 import kotlinx.coroutines.runBlocking
@@ -38,6 +39,7 @@ private const val TAG = "AuthAuthenticator"
 class AuthAuthenticator @Inject constructor(
     private val tokenStore: TokenStore,
     private val sessionClearer: SessionClearer,
+    private val sessionExpiredSignal: SessionExpiredSignal,
     @RawHttpClient private val rawHttpClient: OkHttpClient,
     private val json: Json,
 ) : Authenticator {
@@ -49,6 +51,7 @@ class AuthAuthenticator @Inject constructor(
         if (responseCount(response) >= 2) {
             // Already retried once for this chain of requests — a fresh refresh still 401'd.
             AppLog.w(TAG, "session.cleared", mapOf("reason" to "secondUnauthorized", "url" to url))
+            sessionExpiredSignal.notifyExpired()
             runBlocking { sessionClearer.clearSession() }
             return null
         }
@@ -80,6 +83,7 @@ class AuthAuthenticator @Inject constructor(
         val refreshToken = tokenStore.currentRefreshToken()
         if (refreshToken == null) {
             AppLog.w(TAG, "session.cleared", mapOf("reason" to "noRefreshTokenStored"))
+            sessionExpiredSignal.notifyExpired()
             return null
         }
         AppLog.d(TAG, "refresh.start", emptyMap())
@@ -99,6 +103,7 @@ class AuthAuthenticator @Inject constructor(
                 // already logged the status/body if httpResponse isn't successful.
                 if (!httpResponse.isSuccessful) {
                     AppLog.w(TAG, "session.cleared", mapOf("reason" to "refreshRejected", "code" to httpResponse.code))
+                    sessionExpiredSignal.notifyExpired()
                     runBlocking { sessionClearer.clearSession() }
                     return null
                 }

@@ -29,6 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.assistant.ProjectEditEntryPoint
+import com.kairon.android.core.network.syncBannerMessage
+import com.kairon.android.core.ui.ErrorBanner
+import com.kairon.android.core.ui.InlineError
 import java.util.UUID
 
 private val TABS = listOf("Tree", "Board", "Gantt")
@@ -82,8 +85,15 @@ fun ProjectDetailScreen(
                     }
                 }
 
-                if (state.error != null) {
-                    Text(state.error ?: "", color = MaterialTheme.colorScheme.error)
+                state.syncError?.let { appError ->
+                    ErrorBanner(
+                        message = appError.syncBannerMessage(),
+                        onDismiss = viewModel::dismissSyncError,
+                        onRetry = viewModel::refresh,
+                    )
+                }
+                state.error?.let { message ->
+                    InlineError(message)
                 }
 
                 when (selectedTab) {

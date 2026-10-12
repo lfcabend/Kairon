@@ -13,8 +13,11 @@ import com.kairon.android.core.data.ProjectEntity
 import com.kairon.android.core.data.ProjectTaskDao
 import com.kairon.android.core.data.ProjectTaskEntity
 import com.kairon.android.core.logging.AppLog
+import com.kairon.android.core.network.AppError
 import com.kairon.android.core.network.bodyOrThrow
 import com.kairon.android.core.network.requireSuccessful
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -36,6 +39,8 @@ data class ProjectDetailUiState(
     val tasks: List<ProjectTaskEntity> = emptyList(),
     val dependencies: List<TaskDependencyResponse> = emptyList(),
     val syncing: Boolean = true,
+    /** A background `/sync` failure (D6) — shown as a banner above the cached tree/board/Gantt, never blocking them. */
+    val syncError: AppError? = null,
     val error: String? = null,
 )
 
@@ -59,16 +64,17 @@ class ProjectDetailViewModel @Inject constructor(
 
     private val dependencies = MutableStateFlow<List<TaskDependencyResponse>>(emptyList())
     private val syncing = MutableStateFlow(true)
+    private val syncError = MutableStateFlow<AppError?>(null)
     private val error = MutableStateFlow<String?>(null)
 
     val state: StateFlow<ProjectDetailUiState> = combine(
-        projectDao.observeById(projectId),
-        projectTaskDao.observeForProject(projectId),
+        combine(projectDao.observeById(projectId), projectTaskDao.observeForProject(projectId)) { project, tasks -> project to tasks },
         dependencies,
         syncing,
+        syncError,
         error,
-    ) { project, tasks, deps, isSyncing, err ->
-        ProjectDetailUiState(project, tasks, deps, isSyncing, err)
+    ) { (project, tasks), deps, isSyncing, syncErr, err ->
+        ProjectDetailUiState(project, tasks, deps, isSyncing, syncErr, err)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProjectDetailUiState())
 
     init {
@@ -78,10 +84,19 @@ class ProjectDetailViewModel @Inject constructor(
     fun refresh() {
         viewModelScope.launch {
             syncing.value = true
-            syncRepository.sync().onFailure { ex -> AppLog.w(TAG, "refresh.syncFailed", throwable = ex) }
+            syncRepository.sync()
+                .onSuccess { syncError.value = null }
+                .onFailure { ex ->
+                    AppLog.w(TAG, "refresh.syncFailed", throwable = ex)
+                    syncError.value = ex.toAppError()
+                }
             loadDependencies()
             syncing.value = false
         }
+    }
+
+    fun dismissSyncError() {
+        syncError.value = null
     }
 
     private suspend fun loadDependencies() {
@@ -92,7 +107,7 @@ class ProjectDetailViewModel @Inject constructor(
             error.value = null
         }.onFailure { ex ->
             AppLog.e(TAG, "listDependencies.failed", throwable = ex)
-            error.value = ex.message ?: "Failed to load dependencies"
+            error.value = ex.toAppError().userMessage()
         }
     }
 
@@ -121,7 +136,7 @@ class ProjectDetailViewModel @Inject constructor(
                 AppLog.i(TAG, "reorder.success", mapOf("count" to updated.size))
             }.onFailure { ex ->
                 AppLog.e(TAG, "reorder.failed", throwable = ex)
-                error.value = ex.message ?: "Failed to reorder"
+                error.value = ex.toAppError().userMessage()
             }
         }
     }
@@ -151,7 +166,7 @@ class ProjectDetailViewModel @Inject constructor(
                 AppLog.i(TAG, "setStatus.success", mapOf("id" to task.id, "status" to status))
             }.onFailure { ex ->
                 AppLog.e(TAG, "setStatus.failed", mapOf("id" to task.id), throwable = ex)
-                error.value = ex.message ?: "Failed to update status"
+                error.value = ex.toAppError().userMessage()
             }
         }
     }
@@ -165,7 +180,7 @@ class ProjectDetailViewModel @Inject constructor(
                 AppLog.i(TAG, "deleteTask.success", mapOf("id" to task.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "deleteTask.failed", mapOf("id" to task.id), throwable = ex)
-                error.value = ex.message ?: "Failed to delete task"
+                error.value = ex.toAppError().userMessage()
             }
         }
     }

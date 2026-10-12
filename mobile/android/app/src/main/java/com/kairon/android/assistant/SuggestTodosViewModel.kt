@@ -9,6 +9,8 @@ import com.kairon.android.client.model.AssistantSuggestedTaskView
 import com.kairon.android.client.model.TodoSuggestionRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -63,7 +65,7 @@ class SuggestTodosViewModel @Inject constructor(
                 _state.value = _state.value.copy(requesting = false, suggestions = run.suggestions.orEmpty())
             }.onFailure { ex ->
                 AppLog.e(TAG, "suggest.failed", throwable = ex)
-                _state.value = _state.value.copy(requesting = false, error = ex.message ?: "Could not get suggestions")
+                _state.value = _state.value.copy(requesting = false, error = ex.toAppError().userMessage())
             }
         }
     }
@@ -78,7 +80,7 @@ class SuggestTodosViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "accept.failed", mapOf("id" to id), throwable = ex)
-                    _state.value = _state.value.copy(error = ex.message ?: "Could not accept suggestion")
+                    _state.value = _state.value.copy(error = ex.toAppError().userMessage())
                 }
         }
     }
@@ -93,7 +95,7 @@ class SuggestTodosViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "dismiss.failed", mapOf("id" to id), throwable = ex)
-                    _state.value = _state.value.copy(error = ex.message ?: "Could not dismiss suggestion")
+                    _state.value = _state.value.copy(error = ex.toAppError().userMessage())
                 }
         }
     }

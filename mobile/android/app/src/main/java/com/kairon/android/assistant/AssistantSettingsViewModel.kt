@@ -6,6 +6,8 @@ import com.kairon.android.client.api.MeControllerApi
 import com.kairon.android.client.model.UpdateMeRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,7 +56,7 @@ class AssistantSettingsViewModel @Inject constructor(
                 }
                 .onFailure { ex ->
                     AppLog.e(TAG, "refresh.failed", throwable = ex)
-                    _state.value = _state.value.copy(loading = false, error = ex.message ?: "Failed to load settings")
+                    _state.value = _state.value.copy(loading = false, error = ex.toAppError().userMessage())
                 }
         }
     }
@@ -76,7 +78,7 @@ class AssistantSettingsViewModel @Inject constructor(
                 )
             }.onFailure { ex ->
                 AppLog.e(TAG, "update.failed", throwable = ex)
-                _state.value = _state.value.copy(saving = false, error = ex.message ?: "Could not save")
+                _state.value = _state.value.copy(saving = false, error = ex.toAppError().userMessage())
             }
         }
     }

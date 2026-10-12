@@ -15,6 +15,8 @@ import com.kairon.android.core.data.ProjectTaskDao
 import com.kairon.android.core.data.ProjectTaskEntity
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.core.network.toAppError
+import com.kairon.android.core.network.userMessage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -91,7 +93,7 @@ class ProjectEditViewModel @Inject constructor(
                 _state.value = _state.value.copy(generating = false, diff = run.suggestedProjectEdit)
             }.onFailure { ex ->
                 AppLog.e(TAG, "generate.failed", throwable = ex)
-                _state.value = _state.value.copy(generating = false, error = ex.message ?: "Could not generate a diff")
+                _state.value = _state.value.copy(generating = false, error = ex.toAppError().userMessage())
             }
         }
     }
@@ -113,7 +115,7 @@ class ProjectEditViewModel @Inject constructor(
                 _state.value = _state.value.copy(applying = false, applied = true)
             }.onFailure { ex ->
                 AppLog.e(TAG, "apply.failed", throwable = ex)
-                _state.value = _state.value.copy(applying = false, error = ex.message ?: "Could not apply the changes")
+                _state.value = _state.value.copy(applying = false, error = ex.toAppError().userMessage())
             }
         }
     }

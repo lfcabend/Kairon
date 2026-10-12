@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.ui.InlineError
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -83,10 +84,10 @@ fun ProjectGenerationEntryPoint(onCreated: (UUID) -> Unit, viewModel: ProjectPla
                         Row(modifier = Modifier.fillMaxWidth()) {
                             PlanDateField(label = "Target deadline (optional)", date = targetDeadline, onChange = { targetDeadline = it }, clearable = true)
                         }
-                        state.error?.let { Text(it) }
+                        state.error?.let { InlineError(it) }
                     } else {
                         ProjectPlanReviewScreen(plan = state.plan!!, excludedKeys = state.excludedKeys, onToggle = viewModel::toggleExcluded)
-                        state.error?.let { Text(it) }
+                        state.error?.let { InlineError(it) }
                     }
                 }
             },

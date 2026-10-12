@@ -29,6 +29,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.kairon.android.core.network.AppError
+import com.kairon.android.core.network.userMessage
+import com.kairon.android.core.ui.InlineError
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -105,10 +108,11 @@ fun JournalEntryScreen(
                 modifier = Modifier.fillMaxWidth().weight(1f),
             )
 
-            if (state.error != null) {
-                Text(
-                    state.error ?: "",
-                    color = MaterialTheme.colorScheme.error,
+            state.error?.let { appError ->
+                InlineError(
+                    appError.userMessage(),
+                    actionLabel = if (appError is AppError.Conflict) "Reload" else null,
+                    onAction = if (appError is AppError.Conflict) viewModel::reload else null,
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
             }
@@ -118,7 +122,7 @@ fun JournalEntryScreen(
                 horizontalArrangement = Arrangement.End,
             ) {
                 TextButton(onClick = onBack) { Text("Cancel") }
-                Button(onClick = viewModel::save, enabled = !state.saving) { Text("Save") }
+                Button(onClick = viewModel::save, enabled = !state.saving && !state.gone) { Text("Save") }
             }
         }
     }
