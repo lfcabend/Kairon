@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { projectsApi } from "@/lib/api/projects";
-import type { CreateProjectBody, PatchProjectBody, Project, ProjectsPage } from "@/lib/api/types";
+import type { CreateProjectBody, PatchProjectBody, Project, ProjectsPage, ProjectStatus } from "@/lib/api/types";
 import { randomId } from "@/lib/id";
 
 import { projectKeys } from "./projectKeys";
@@ -143,6 +143,59 @@ function applyLocalOrder(content: Project[], orderedIds: string[]): Project[] {
     result[slotIndex] = byId.get(orderedIds[k])!;
   });
   return result;
+}
+
+/**
+ * Quick status change from the project overview card: same whole-form `PATCH` as
+ * `usePatchProject` (D15) but optimistically updates the cached list query first,
+ * same precedent as `useMoveProjectCategory`.
+ */
+export function useChangeProjectStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ project, status }: { project: Project; status: ProjectStatus }) =>
+      projectsApi.patch(project.id, {
+        categoryId: project.categoryId,
+        name: project.name,
+        description: project.description,
+        status,
+        size: project.size,
+        color: project.color,
+        startDate: project.startDate,
+        endDate: project.endDate,
+        actualStart: project.actualStart,
+        actualEnd: project.actualEnd,
+        expectedVersion: project.version,
+      }),
+    onMutate: async ({ project, status }) => {
+      await qc.cancelQueries({ queryKey: ["projects", "list"] });
+      const previous = qc.getQueriesData<ProjectsPage>({ queryKey: ["projects", "list"] });
+      for (const [key, data] of previous) {
+        if (!data) continue;
+        qc.setQueryData<ProjectsPage>(key, {
+          ...data,
+          content: data.content.map((p) => (p.id === project.id ? { ...p, status } : p)),
+        });
+      }
+      const previousPriority = qc.getQueryData<Project[]>(projectKeys.priorityOrdered());
+      if (previousPriority) {
+        qc.setQueryData<Project[]>(
+          projectKeys.priorityOrdered(),
+          previousPriority.map((p) => (p.id === project.id ? { ...p, status } : p)),
+        );
+      }
+      return { previous, previousPriority };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previous.forEach(([key, data]) => qc.setQueryData<ProjectsPage>(key, data));
+      if (ctx?.previousPriority) qc.setQueryData(projectKeys.priorityOrdered(), ctx.previousPriority);
+    },
+    onSuccess: (updated) => {
+      qc.setQueryData(projectKeys.detail(updated.id), updated);
+      qc.invalidateQueries({ queryKey: ["projects", "list"] });
+      qc.invalidateQueries({ queryKey: projectKeys.priorityOrdered() });
+    },
+  });
 }
 
 /**
