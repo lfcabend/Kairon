@@ -496,15 +496,22 @@ variant at a time. Superseded by:
 
 ## M11.5 — Android: Journal & Projects (Gantt & dependencies)
 
-No milestone plan has been drafted for this yet (contrast M11's own full
-plan) — reuses M11's auth/sync/nav foundation with no further plumbing work
-expected, widening `/sync`'s requested `types` to `journal`/`project`.
+See [`milestones/M11.5-android-journal-projects.md`](milestones/M11.5-android-journal-projects.md)
+for the full plan (Status: Draft). Needs **no backend work at all** — every
+endpoint and `/sync` change-set this slice consumes already shipped in
+M3/M4/M5/M11; this is purely Android-side (three new Room entities, new
+screens, widening `/sync`'s requested `types` to `journal,project,projectTask`).
+Three scope-downs relative to web, each a locked user decision in the plan:
+journal editing is a plain markdown textarea (no WYSIWYG), the Gantt tab is
+read-only (no drag-to-reschedule), and task reordering/board status changes
+are tap-based (no touch drag-and-drop). Account/About move behind a top-bar
+overflow menu so the bottom nav can fit Journal/Projects alongside Today/Todo.
 
 - [ ] Android: Daily Journal (incl. search).
 - [ ] Android: Projects — categories, task tree/board, Gantt & dependencies.
-      `task_dependency` has no soft delete, so it likely stays out of the
-      generic sync feed (M11 D9) — probably fetched live per project detail
-      screen instead; to be confirmed at this milestone's own design time.
+      `task_dependency` has no soft delete, so it stays out of the generic
+      sync feed (M11 D9, confirmed) — fetched live per project detail screen
+      instead.
 
 ## M11.6 — Android: assistant features & settings
 
