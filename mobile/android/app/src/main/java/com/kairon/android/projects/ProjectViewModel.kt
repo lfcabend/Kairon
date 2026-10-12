@@ -26,6 +26,26 @@ private const val TAG = "ProjectViewModel"
 
 enum class ProjectSortMode { CATEGORY, PRIORITY }
 
+/** Mirrors the web app's STATUS_OPTIONS (ProjectListPage.tsx) — `null` means "any". */
+val PROJECT_STATUS_OPTIONS: List<Pair<String?, String>> = listOf(
+    null to "Active (not archived)",
+    "PLANNING" to "Planning",
+    "ACTIVE" to "Active",
+    "ON_HOLD" to "On hold",
+    "DONE" to "Done",
+    "ARCHIVED" to "Archived",
+)
+
+/** Mirrors the web app's SIZE_OPTIONS (ProjectListPage.tsx) — `null` means "any size". */
+val PROJECT_SIZE_OPTIONS: List<Pair<String?, String>> = listOf(
+    null to "Any size",
+    "XS" to "XS",
+    "S" to "S",
+    "M" to "M",
+    "L" to "L",
+    "XL" to "XL",
+)
+
 data class ProjectListUiState(
     val categories: List<ProjectCategoryResponse> = emptyList(),
     val projects: List<ProjectResponse> = emptyList(),
@@ -33,6 +53,8 @@ data class ProjectListUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val filterText: String = "",
+    val statusFilter: String? = null,
+    val sizeFilter: String? = null,
 ) {
     /** Local (no refetch) name match for the quick filter — mirrors the web app's `matchesFilter`. */
     val filteredProjects: List<ProjectResponse>
@@ -61,13 +83,17 @@ class ProjectViewModel @Inject constructor(
     private val loading = MutableStateFlow(true)
     private val error = MutableStateFlow<String?>(null)
     private val filterText = MutableStateFlow("")
+    private val statusFilter = MutableStateFlow<String?>(null)
+    private val sizeFilter = MutableStateFlow<String?>(null)
 
     val state: StateFlow<ProjectListUiState> = combine(
         combine(categories, projects, sortMode, loading, error) { cats, projs, sort, isLoading, err ->
             ProjectListUiState(cats, projs, sort, isLoading, err)
         },
         filterText,
-    ) { base, filter -> base.copy(filterText = filter) }
+        statusFilter,
+        sizeFilter,
+    ) { base, filter, status, size -> base.copy(filterText = filter, statusFilter = status, sizeFilter = size) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProjectListUiState())
 
     init {
@@ -84,6 +110,21 @@ class ProjectViewModel @Inject constructor(
         filterText.value = text
     }
 
+    /**
+     * Status/size, unlike the name filter, are server-side (mirrors the web app's
+     * `useProjects(status, categoryId, size, page)`) — only Category sort mode supports
+     * them (`priorityOrdered` takes no filter params, same limitation the web app has).
+     */
+    fun setStatusFilter(status: String?) {
+        statusFilter.value = status
+        refresh()
+    }
+
+    fun setSizeFilter(size: String?) {
+        sizeFilter.value = size
+        refresh()
+    }
+
     fun refresh() {
         viewModelScope.launch {
             loading.value = true
@@ -91,7 +132,11 @@ class ProjectViewModel @Inject constructor(
                 val cats = categoryApi.list3().bodyOrThrow(TAG, "listCategories")
                 val projs = when (sortMode.value) {
                     ProjectSortMode.PRIORITY -> projectApi.priorityOrdered().bodyOrThrow(TAG, "priorityOrdered")
-                    ProjectSortMode.CATEGORY -> projectApi.list1(pageSize = 200).bodyOrThrow(TAG, "list").content ?: emptyList()
+                    ProjectSortMode.CATEGORY -> projectApi.list1(
+                        status = statusFilter.value,
+                        size = sizeFilter.value,
+                        pageSize = 200,
+                    ).bodyOrThrow(TAG, "list").content ?: emptyList()
                 }
                 cats to projs
             }.onSuccess { (cats, projs) ->
