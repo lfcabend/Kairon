@@ -13,6 +13,9 @@ import javax.inject.Singleton
 
 private const val TAG = "SyncRepository"
 
+/** Every type this app version requests — the one place to extend when a later milestone widens it. */
+private val REQUESTED_TYPES = listOf("todo", "journal", "project", "projectTask")
+
 /**
  * Owns the `/sync` call and fans upserts/tombstones out to each feature's
  * Room DAO (M11 §6.3). M11.5 widens the requested set to every type the
@@ -30,11 +33,20 @@ class SyncRepository @Inject constructor(
 ) {
 
     suspend fun sync(): Result<Unit> = runCatching {
-        val since = cursorStore.read()
-        AppLog.d(TAG, "sync.start", mapOf("since" to since))
+        val storedSince = cursorStore.read()
+        val syncedTypes = cursorStore.readSyncedTypes()
+        val neverSyncedTypes = REQUESTED_TYPES.filterNot { it in syncedTypes }
+        // A single shared cursor only makes sense for a fixed type set. The
+        // first time this device requests a type it's never synced before
+        // (freshly widened by an app update, or a genuinely fresh install),
+        // treat the stored cursor as absent for this one call — otherwise
+        // any pre-existing row for that type older than the cursor would be
+        // silently excluded forever (see SyncCursorStore's own doc comment).
+        val effectiveSince = if (neverSyncedTypes.isEmpty()) storedSince else null
+        AppLog.d(TAG, "sync.start", mapOf("since" to effectiveSince, "neverSyncedTypes" to neverSyncedTypes))
         val response = syncApi.sync(
-            since?.let { OffsetDateTime.ofInstant(it, java.time.ZoneOffset.UTC) },
-            "todo,journal,project,projectTask",
+            effectiveSince?.let { OffsetDateTime.ofInstant(it, java.time.ZoneOffset.UTC) },
+            REQUESTED_TYPES.joinToString(","),
         )
         val body = response.bodyOrThrow(TAG, "sync")
         var upsertedCount = 0
@@ -90,6 +102,7 @@ class SyncRepository @Inject constructor(
         }
 
         body.since?.toInstant()?.let { cursorStore.write(it) }
+        cursorStore.writeSyncedTypes(REQUESTED_TYPES.toSet())
         AppLog.i(TAG, "sync.success", mapOf("upserted" to upsertedCount, "deleted" to deletedCount))
     }.onFailure { ex -> AppLog.e(TAG, "sync.failed", throwable = ex) }
 }

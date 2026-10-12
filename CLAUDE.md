@@ -499,9 +499,13 @@ updated when decisions change.
   `TaskBoardTab` (four status columns, a tap-opened status picker instead
   of drag, D4)/`GanttTab` (a hand-drawn, read-only Compose `Canvas` chart —
   bars/milestone diamonds/dependency arrows (red when
-  `violatesConstraint`)/a today line, horizontally **and** vertically
-  scrollable from the start, D2)/`TaskEditScreen` (whole-form edit, D15,
-  embeds `DependencySection`)/`DependencySection` (list predecessors +
+  `violatesConstraint`)/a today line, plus a weekly date-tick header row
+  (pinned above the rows, horizontally scrolled in lockstep with the
+  chart body, with matching gridlines through the chart itself) so a bar
+  can actually be related to a date — added post-launch after a first cut
+  shipped with no timeline indicators at all, horizontally **and**
+  vertically scrollable from the start, D2)/`TaskEditScreen` (whole-form
+  edit, D15, embeds `DependencySection`)/`DependencySection` (list predecessors +
   remove; an "Add" picker; a backend `400`/`409` — self/cross-project/
   cycle/duplicate, M5 D3/D4 — surfaces as the screen's own inline error) +
   `ProjectViewModel`/`ProjectFormViewModel`/`ProjectDetailViewModel`/

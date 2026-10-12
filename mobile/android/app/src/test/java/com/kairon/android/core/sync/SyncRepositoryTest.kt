@@ -46,6 +46,7 @@ class SyncRepositoryTest {
     fun setUp() {
         repository = SyncRepository(syncApi, cursorStore, todoDao, journalDao, projectDao, projectTaskDao)
         coEvery { cursorStore.read() } returns null
+        coEvery { cursorStore.readSyncedTypes() } returns emptySet()
     }
 
     @Test
@@ -144,5 +145,57 @@ class SyncRepositoryTest {
 
         assertTrue(result.isFailure)
         coVerify(exactly = 0) { cursorStore.write(any<Instant>()) }
+    }
+
+    @Test
+    fun aStoredCursorIsUsedOnceEveryRequestedTypeHasAlreadyBeenSynced() = runTest {
+        val storedSince = Instant.now().minusSeconds(60)
+        val since = OffsetDateTime.now(ZoneOffset.UTC)
+        coEvery { cursorStore.read() } returns storedSince
+        coEvery { cursorStore.readSyncedTypes() } returns setOf("todo", "journal", "project", "projectTask")
+        coEvery { syncApi.sync(OffsetDateTime.ofInstant(storedSince, ZoneOffset.UTC), TYPES) } returns Response.success(
+            SyncResponse(since = since, todos = ChangeSetTodoItemView(upserted = emptyList(), deletedIds = emptyList(), truncated = false)),
+        )
+
+        val result = repository.sync()
+
+        assertTrue(result.isSuccess)
+        coVerify { syncApi.sync(OffsetDateTime.ofInstant(storedSince, ZoneOffset.UTC), TYPES) }
+    }
+
+    /**
+     * The bug M11.5 shipped and then had to patch: a device that already had
+     * `todo`-only syncs running (M11) keeps its already-advanced cursor
+     * across an update that widens the requested types — without this
+     * override, any pre-existing journal/project/task row older than that
+     * cursor would never sync down, since `changedSince` only returns rows
+     * touched *after* it.
+     */
+    @Test
+    fun aStoredCursorIsIgnoredWhenARequestedTypeHasNeverBeenSyncedBefore() = runTest {
+        val staleSince = Instant.now().minusSeconds(3600)
+        val since = OffsetDateTime.now(ZoneOffset.UTC)
+        coEvery { cursorStore.read() } returns staleSince
+        coEvery { cursorStore.readSyncedTypes() } returns setOf("todo") // pre-M11.5 state
+        coEvery { syncApi.sync(null, TYPES) } returns Response.success(
+            SyncResponse(since = since, todos = ChangeSetTodoItemView(upserted = emptyList(), deletedIds = emptyList(), truncated = false)),
+        )
+
+        val result = repository.sync()
+
+        assertTrue(result.isSuccess)
+        coVerify { syncApi.sync(null, TYPES) }
+    }
+
+    @Test
+    fun aSuccessfulSyncRecordsEveryRequestedTypeAsSynced() = runTest {
+        val since = OffsetDateTime.now(ZoneOffset.UTC)
+        coEvery { syncApi.sync(null, TYPES) } returns Response.success(
+            SyncResponse(since = since, todos = ChangeSetTodoItemView(upserted = emptyList(), deletedIds = emptyList(), truncated = false)),
+        )
+
+        repository.sync()
+
+        coVerify { cursorStore.writeSyncedTypes(setOf("todo", "journal", "project", "projectTask")) }
     }
 }

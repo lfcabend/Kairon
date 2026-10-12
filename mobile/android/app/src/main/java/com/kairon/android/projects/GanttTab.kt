@@ -6,13 +6,17 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import com.kairon.android.client.model.TaskDependencyResponse
 import com.kairon.android.core.data.ProjectTaskEntity
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
+import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
 import kotlin.math.min
@@ -36,6 +42,11 @@ import kotlin.math.min
 private val DAY_WIDTH = 24.dp
 private val ROW_HEIGHT = 40.dp
 private val LABEL_WIDTH = 140.dp
+private val HEADER_HEIGHT = 36.dp
+private const val TICK_INTERVAL_DAYS = 7
+private val GANTT_HEADER_FORMATTER = DateTimeFormatter.ofPattern("MMM d", Locale.getDefault())
+private val GRIDLINE_COLOR = Color(0xFFE2E8F0)
+private val TODAY_COLOR = Color(0xFFEF4444)
 
 /**
  * D2 — a read-only Compose `Canvas` Gantt: bars, milestone diamonds (◆),
@@ -70,83 +81,136 @@ fun GanttTab(
 
     val vScroll = rememberScrollState()
     val hScroll = rememberScrollState()
+    // Tick marks every TICK_INTERVAL_DAYS, starting from the first such
+    // offset so they land on calendar-meaningful days rather than drifting
+    // with rangeStart's own padding.
+    val tickOffsets = remember(totalDays) { (0..totalDays step TICK_INTERVAL_DAYS).toList() }
 
-    Row(modifier = Modifier.fillMaxSize()) {
-        Column(modifier = Modifier.width(LABEL_WIDTH).verticalScroll(vScroll)) {
-            rows.forEach { row ->
-                Box(modifier = Modifier.height(ROW_HEIGHT).padding(start = (row.depth * 8).dp, top = 8.dp)) {
-                    Text(
-                        row.task.name,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodySmall,
-                    )
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Header: date ticks, pinned above the rows (no vertical scroll) but
+        // horizontally scrolled in lockstep with the chart body below it —
+        // without this, bars have no visible relationship to any date (the
+        // original cut of this screen had no timeline indicators at all).
+        Row(modifier = Modifier.fillMaxWidth().height(HEADER_HEIGHT)) {
+            Spacer(modifier = Modifier.width(LABEL_WIDTH))
+            Box(modifier = Modifier.fillMaxSize().horizontalScroll(hScroll)) {
+                Box(modifier = Modifier.size(DAY_WIDTH * totalDays, HEADER_HEIGHT)) {
+                    tickOffsets.forEach { offset ->
+                        val date = rangeStart.plusDays(offset.toLong())
+                        Text(
+                            date.format(GANTT_HEADER_FORMATTER),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip,
+                            modifier = Modifier.offset(x = DAY_WIDTH * offset)
+                                .width(DAY_WIDTH * TICK_INTERVAL_DAYS)
+                                .padding(start = 2.dp),
+                        )
+                    }
+                    val todayOffsetDays = ChronoUnit.DAYS.between(rangeStart, LocalDate.now()).toInt()
+                    if (todayOffsetDays in 0..totalDays) {
+                        Text(
+                            "Today",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TODAY_COLOR,
+                            modifier = Modifier.offset(x = DAY_WIDTH * todayOffsetDays + 2.dp, y = 18.dp),
+                        )
+                    }
                 }
             }
         }
+        HorizontalDivider()
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .horizontalScroll(hScroll)
-                .verticalScroll(vScroll),
-        ) {
-            Canvas(
-                modifier = Modifier
-                    .size(DAY_WIDTH * totalDays, ROW_HEIGHT * rows.size)
-                    .pointerInput(rows) {
-                        detectTapGestures { offset ->
-                            val index = (offset.y / ROW_HEIGHT.toPx()).toInt()
-                            rows.getOrNull(index)?.task?.let(onClick)
-                        }
-                    },
-            ) {
-                val dayWidthPx = DAY_WIDTH.toPx()
-                val rowHeightPx = ROW_HEIGHT.toPx()
-
-                fun xFor(date: LocalDate): Float = ChronoUnit.DAYS.between(rangeStart, date).toFloat() * dayWidthPx
-                fun yCenterFor(taskId: UUID): Float = (rowIndex[taskId] ?: 0) * rowHeightPx + rowHeightPx / 2f
-
-                // Today line.
-                val todayX = xFor(LocalDate.now())
-                if (todayX in 0f..(totalDays * dayWidthPx)) {
-                    drawLine(
-                        color = Color(0xFFEF4444),
-                        start = Offset(todayX, 0f),
-                        end = Offset(todayX, rows.size * rowHeightPx),
-                        strokeWidth = 2f,
-                    )
-                }
-
-                // Bars / milestones.
+        Row(modifier = Modifier.fillMaxSize()) {
+            Column(modifier = Modifier.width(LABEL_WIDTH).verticalScroll(vScroll)) {
                 rows.forEach { row ->
-                    val task = row.task
-                    val color = parseHexColor(task.projectColor)
-                    val y = yCenterFor(task.id)
-                    if (task.isMilestone) {
-                        val x = xFor(task.plannedStart ?: task.plannedEnd ?: rangeStart)
-                        drawMilestoneDiamond(x, y, color)
-                    } else {
-                        val start = task.plannedStart ?: task.plannedEnd ?: return@forEach
-                        val end = task.plannedEnd ?: task.plannedStart ?: return@forEach
-                        val x1 = xFor(start)
-                        val x2 = xFor(end) + dayWidthPx
-                        drawBar(x1, x2, y, color, task.progressPercent, rowHeightPx)
+                    Box(modifier = Modifier.height(ROW_HEIGHT).padding(start = (row.depth * 8).dp, top = 8.dp)) {
+                        Text(
+                            row.task.name,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                     }
                 }
+            }
 
-                // Dependency arrows (red if violatesConstraint — a soft FS-violation warning, M5).
-                dependencies.forEach { dep ->
-                    val predecessor = rows.firstOrNull { it.task.id == dep.predecessorId }?.task ?: return@forEach
-                    val successor = rows.firstOrNull { it.task.id == dep.successorId }?.task ?: return@forEach
-                    val fromDate = predecessor.plannedEnd ?: predecessor.plannedStart ?: return@forEach
-                    val toDate = successor.plannedStart ?: successor.plannedEnd ?: return@forEach
-                    val fromX = xFor(fromDate) + (if (predecessor.isMilestone) 0f else dayWidthPx)
-                    val toX = xFor(toDate)
-                    val fromY = yCenterFor(predecessor.id)
-                    val toY = yCenterFor(successor.id)
-                    val arrowColor = if (dep.violatesConstraint == true) Color(0xFFEF4444) else Color(0xFF94A3B8)
-                    drawDependencyArrow(fromX, fromY, toX, toY, arrowColor)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .horizontalScroll(hScroll)
+                    .verticalScroll(vScroll),
+            ) {
+                Canvas(
+                    modifier = Modifier
+                        .size(DAY_WIDTH * totalDays, ROW_HEIGHT * rows.size)
+                        .pointerInput(rows) {
+                            detectTapGestures { offset ->
+                                val index = (offset.y / ROW_HEIGHT.toPx()).toInt()
+                                rows.getOrNull(index)?.task?.let(onClick)
+                            }
+                        },
+                ) {
+                    val dayWidthPx = DAY_WIDTH.toPx()
+                    val rowHeightPx = ROW_HEIGHT.toPx()
+
+                    fun xFor(date: LocalDate): Float = ChronoUnit.DAYS.between(rangeStart, date).toFloat() * dayWidthPx
+                    fun yCenterFor(taskId: UUID): Float = (rowIndex[taskId] ?: 0) * rowHeightPx + rowHeightPx / 2f
+
+                    // Weekly gridlines, same offsets as the header's date ticks, so a
+                    // bar can be traced straight up to the date it starts/ends on.
+                    tickOffsets.forEach { offset ->
+                        val x = offset * dayWidthPx
+                        drawLine(
+                            color = GRIDLINE_COLOR,
+                            start = Offset(x, 0f),
+                            end = Offset(x, rows.size * rowHeightPx),
+                            strokeWidth = 1f,
+                        )
+                    }
+
+                    // Today line.
+                    val todayX = xFor(LocalDate.now())
+                    if (todayX in 0f..(totalDays * dayWidthPx)) {
+                        drawLine(
+                            color = TODAY_COLOR,
+                            start = Offset(todayX, 0f),
+                            end = Offset(todayX, rows.size * rowHeightPx),
+                            strokeWidth = 2f,
+                        )
+                    }
+
+                    // Bars / milestones.
+                    rows.forEach { row ->
+                        val task = row.task
+                        val color = parseHexColor(task.projectColor)
+                        val y = yCenterFor(task.id)
+                        if (task.isMilestone) {
+                            val x = xFor(task.plannedStart ?: task.plannedEnd ?: rangeStart)
+                            drawMilestoneDiamond(x, y, color)
+                        } else {
+                            val start = task.plannedStart ?: task.plannedEnd ?: return@forEach
+                            val end = task.plannedEnd ?: task.plannedStart ?: return@forEach
+                            val x1 = xFor(start)
+                            val x2 = xFor(end) + dayWidthPx
+                            drawBar(x1, x2, y, color, task.progressPercent, rowHeightPx)
+                        }
+                    }
+
+                    // Dependency arrows (red if violatesConstraint — a soft FS-violation warning, M5).
+                    dependencies.forEach { dep ->
+                        val predecessor = rows.firstOrNull { it.task.id == dep.predecessorId }?.task ?: return@forEach
+                        val successor = rows.firstOrNull { it.task.id == dep.successorId }?.task ?: return@forEach
+                        val fromDate = predecessor.plannedEnd ?: predecessor.plannedStart ?: return@forEach
+                        val toDate = successor.plannedStart ?: successor.plannedEnd ?: return@forEach
+                        val fromX = xFor(fromDate) + (if (predecessor.isMilestone) 0f else dayWidthPx)
+                        val toX = xFor(toDate)
+                        val fromY = yCenterFor(predecessor.id)
+                        val toY = yCenterFor(successor.id)
+                        val arrowColor = if (dep.violatesConstraint == true) Color(0xFFEF4444) else Color(0xFF94A3B8)
+                        drawDependencyArrow(fromX, fromY, toX, toY, arrowColor)
+                    }
                 }
             }
         }
