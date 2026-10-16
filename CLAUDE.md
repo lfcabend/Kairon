@@ -16,19 +16,24 @@ Journal incl. search, and Projects — categories, task tree/board, a
 read-only Gantt with dependency arrows), M11.6 (Android: assistant
 features & settings — todo suggestions, AI project generation/editing,
 execution summaries, journal reflection, and the assistant settings
-screen), and M11.7 (Android: error handling & user feedback — a shared
+screen), M11.7 (Android: error handling & user feedback — a shared
 `AppError` categorization replacing every screen's old `ex.message ?:
 "<fallback>"`, backend-`detail`-verbatim display for most categories but
 fixed Android-owned copy for connectivity/server errors, per-field
 validation display, non-blocking sync-failure banners, a one-shot
 session-expired explanation on the login screen, and dedicated
 not-found/conflict handling for mutations against a since-deleted or
-since-modified row), and M10.5 (MCP server for assistant features — a
+since-modified row), M10.5 (MCP server for assistant features — a
 standalone, always-on `mcp-server/` Node/TypeScript service a user's own
 Claude Code session connects to over a new personal-access-token (PAT)
 mechanism, bridging to the exact same `assistant_run`/`assistant_suggested_*`
 rows the paid Anthropic-API path writes today, tagged with a new
-`assistant_run.source` column) are implemented.**
+`assistant_run.source` column), and M11.8 (Android: sync truncation
+correctness — `SyncRepository` no longer advances `SyncCursorStore` past a
+`/sync` call that came back `truncated` for any requested type; it retries
+in a loop, each round's `since` advanced to the newest `updatedAt` actually
+seen in that round's upserted rows, until a round comes back fully
+non-truncated, only then persisting the cursor) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -545,7 +550,14 @@ updated when decisions change.
   `JournalMappers`/`ProjectMappers`/`ProjectTaskMappers` (View→Entity, same
   shape as `TodoMappers`; `ProjectTaskResponse.toEntity` takes an explicit
   `projectName`/`projectColor` since that single-task write response, unlike
-  `ProjectTaskView`'s own sync/list shape, carries neither); `core.auth` —
+  `ProjectTaskView`'s own sync/list shape, carries neither) — extended again
+  by M11.8 so `SyncRepository.sync()` loops on a `truncated` response
+  instead of advancing the cursor past the rows it skipped, each round's
+  `since` advanced to the newest `updatedAt` actually seen in that round's
+  own upserted rows (not the response's own `since`, which is "now" and
+  would skip the untouched remainder) until a round comes back fully
+  non-truncated — see `docs/milestones/M11.8-android-sync-truncation.md`;
+  `core.auth` —
   `SessionClearer` extended to wipe all three new tables on logout, closing
   what would otherwise repeat the cross-account-leak bug M11.8 found and
   fixed for `todo`; `core.ui` — `KaironApp`/`KaironNavHost`/

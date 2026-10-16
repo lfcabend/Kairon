@@ -54,7 +54,7 @@ class JournalServiceTest {
     void createAppendsAtMaxPositionPlus100() {
         when(entries.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
                 .thenReturn(List.of(entryOnDay(100), entryOnDay(250)));
-        when(entries.save(any(JournalEntry.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(entries.saveAndFlush(any(JournalEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
         JournalEntryView created = service.create(USER, new CreateCommand(DAY, "  Morning  ", "hello", 3));
 
@@ -67,7 +67,7 @@ class JournalServiceTest {
     void createOnAnEmptyDayStartsAt100() {
         when(entries.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
                 .thenReturn(List.of());
-        when(entries.save(any(JournalEntry.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(entries.saveAndFlush(any(JournalEntry.class))).thenAnswer(inv -> inv.getArgument(0));
 
         JournalEntryView created = service.create(USER, new CreateCommand(DAY, null, "first", null));
 

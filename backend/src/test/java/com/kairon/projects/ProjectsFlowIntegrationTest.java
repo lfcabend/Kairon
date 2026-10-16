@@ -63,6 +63,11 @@ class ProjectsFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"name\":\"" + name + "\"}"))
                 .andExpect(status().isCreated())
+                // A create response's createdAt/updatedAt are Hibernate-generated at flush
+                // time — without an explicit flush before mapping the response, these come
+                // back null (the Android client's strict non-null mapping crashed on this).
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.id");
     }
@@ -76,6 +81,9 @@ class ProjectsFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
+                // See createCategory's own comment above.
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.id");
     }
@@ -89,6 +97,9 @@ class ProjectsFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
+                // See createCategory's own comment above.
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.id");
     }
@@ -172,6 +183,8 @@ class ProjectsFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"predecessorId\":\"" + predecessor + "\"}"))
                 .andExpect(status().isCreated())
+                // See createCategory's own comment above (TaskDependency has no updatedAt).
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andReturn();
         String dependencyId = JsonPath.read(created.getResponse().getContentAsString(), "$.id");
 

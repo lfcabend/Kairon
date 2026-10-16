@@ -83,7 +83,7 @@ class ProjectServiceTest {
         when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
                 USER.value(), null, ProjectStatus.ARCHIVED))
                 .thenReturn(List.of());
-        when(projects.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(projects.saveAndFlush(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectView created = service.create(USER, new CreateCommand(null, "New project", null, null, null, null, null));
 
@@ -104,7 +104,7 @@ class ProjectServiceTest {
         when(projects.findByUserIdAndCategoryIdAndDeletedAtIsNullAndStatusNotOrderByCategoryRankAsc(
                 USER.value(), categoryId, ProjectStatus.ARCHIVED))
                 .thenReturn(List.of(categoryRankedProject(categoryId, 100)));
-        when(projects.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(projects.saveAndFlush(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectView created = service.create(USER,
                 new CreateCommand(categoryId, "New project", null, null, null, null, null));
@@ -116,7 +116,7 @@ class ProjectServiceTest {
     void createOnAnEmptySetStartsPriorityRankAt100() {
         when(projects.findByUserIdAndDeletedAtIsNullAndStatusNotOrderByPriorityRankAsc(
                 USER.value(), ProjectStatus.ARCHIVED)).thenReturn(List.of());
-        when(projects.save(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(projects.saveAndFlush(any(Project.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectView created = service.create(USER, new CreateCommand(null, "First", null, null, null, null, null));
 

@@ -1,8 +1,11 @@
 package com.kairon.android.projects
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -10,11 +13,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -82,6 +89,7 @@ fun TaskTreeTab(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TreeTaskRow(
     row: TreeRow,
@@ -95,30 +103,57 @@ private fun TreeTaskRow(
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val task = row.task
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 8.dp, horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) onDelete()
+            true
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.End,
+            ) {
+                Text("Delete", color = MaterialTheme.colorScheme.onErrorContainer)
+            }
+        },
     ) {
-        Spacer(modifier = Modifier.width((row.depth * 20).dp))
-        if (row.hasChildren) {
-            IconButton(onClick = onToggleCollapse) { Text(if (isCollapsed) "▶" else "▼") }
-        } else {
-            Spacer(modifier = Modifier.width(40.dp))
-        }
-        Text(
-            (if (task.isMilestone) "◆ " else "") + task.name,
-            modifier = Modifier.weight(1f),
-            textDecoration = if (task.status == "DONE") TextDecoration.LineThrough else null,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(task.status, style = MaterialTheme.typography.labelSmall)
-        IconButton(onClick = { menuOpen = true }) { Text("⋮") }
-        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            DropdownMenuItem(text = { Text("Move up") }, onClick = { menuOpen = false; onMoveUp() })
-            DropdownMenuItem(text = { Text("Move down") }, onClick = { menuOpen = false; onMoveDown() })
-            DropdownMenuItem(text = { Text("Add subtask") }, onClick = { menuOpen = false; onAddSubtask() })
-            DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .clickable(onClick = onClick)
+                .padding(vertical = 8.dp, horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(modifier = Modifier.width((row.depth * 20).dp))
+            if (row.hasChildren) {
+                IconButton(onClick = onToggleCollapse) { Text(if (isCollapsed) "▶" else "▼") }
+            } else {
+                Spacer(modifier = Modifier.width(40.dp))
+            }
+            Text(
+                (if (task.isMilestone) "◆ " else "") + task.name,
+                modifier = Modifier.weight(1f),
+                textDecoration = if (task.status == "DONE") TextDecoration.LineThrough else null,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(task.status, style = MaterialTheme.typography.labelSmall)
+            IconButton(onClick = { menuOpen = true }) { Text("⋮") }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(text = { Text("Move up") }, onClick = { menuOpen = false; onMoveUp() })
+                DropdownMenuItem(text = { Text("Move down") }, onClick = { menuOpen = false; onMoveDown() })
+                DropdownMenuItem(text = { Text("Add subtask") }, onClick = { menuOpen = false; onAddSubtask() })
+                DropdownMenuItem(text = { Text("Delete") }, onClick = { menuOpen = false; onDelete() })
+            }
         }
     }
 }

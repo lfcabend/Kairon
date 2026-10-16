@@ -109,7 +109,11 @@ public class JournalService implements JournalApi {
         } catch (IllegalArgumentException ex) {
             throw ApiException.badRequest(ex.getMessage());
         }
-        JournalEntry saved = entries.save(entry);
+        // saveAndFlush, not save: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without an
+        // immediate flush here the mapped response below would carry null
+        // timestamps until this transaction actually commits.
+        JournalEntry saved = entries.saveAndFlush(entry);
         log.info("Created journal entry {} userId={} day={}", saved.getId(), userId.value(), command.day());
         return JournalMapper.toView(saved);
     }

@@ -187,6 +187,81 @@ class SyncRepositoryTest {
         coVerify { syncApi.sync(null, TYPES) }
     }
 
+    /**
+     * M11.8: the bug this milestone fixes — a `truncated` page used to still
+     * advance the cursor to the response's own `since` ("now"), silently
+     * skipping every row past the first `max-rows-per-type` page. This
+     * reproduces the roadmap's own repro: more rows than fit in one page,
+     * synced from `since=null`, asserting every row is eventually fetched
+     * rather than the sync stopping after the first truncated page.
+     */
+    @Test
+    fun aTruncatedPageIsFollowedByARetryUntilEveryTypeIsNonTruncated() = runTest {
+        val firstSince = Instant.now().minusSeconds(600)
+        val secondOffset = OffsetDateTime.now(ZoneOffset.UTC)
+        val item1 = TodoItemView(
+            id = UUID.randomUUID(), day = LocalDate.now(), title = "Old 1", status = "OPEN",
+            priority = 0, position = 0,
+            createdAt = OffsetDateTime.ofInstant(firstSince, ZoneOffset.UTC),
+            updatedAt = OffsetDateTime.ofInstant(firstSince, ZoneOffset.UTC), version = 0,
+        )
+        val item2UpdatedAt = firstSince.plusSeconds(1)
+        val item2 = TodoItemView(
+            id = UUID.randomUUID(), day = LocalDate.now(), title = "Old 2", status = "OPEN",
+            priority = 0, position = 1,
+            createdAt = OffsetDateTime.ofInstant(item2UpdatedAt, ZoneOffset.UTC),
+            updatedAt = OffsetDateTime.ofInstant(item2UpdatedAt, ZoneOffset.UTC), version = 0,
+        )
+        val item3 = TodoItemView(
+            id = UUID.randomUUID(), day = LocalDate.now(), title = "Newer", status = "OPEN",
+            priority = 0, position = 2, createdAt = secondOffset, updatedAt = secondOffset, version = 0,
+        )
+
+        coEvery { syncApi.sync(null, TYPES) } returns Response.success(
+            SyncResponse(
+                since = OffsetDateTime.ofInstant(firstSince, ZoneOffset.UTC),
+                todos = ChangeSetTodoItemView(upserted = listOf(item1, item2), deletedIds = emptyList(), truncated = true),
+            ),
+        )
+        coEvery { syncApi.sync(OffsetDateTime.ofInstant(item2UpdatedAt, ZoneOffset.UTC), TYPES) } returns Response.success(
+            SyncResponse(
+                since = secondOffset,
+                todos = ChangeSetTodoItemView(upserted = listOf(item3), deletedIds = emptyList(), truncated = false),
+            ),
+        )
+
+        val result = repository.sync()
+
+        assertTrue(result.isSuccess)
+        coVerify { todoDao.upsertAll(listOf(item1.toEntity(), item2.toEntity())) }
+        coVerify { todoDao.upsertAll(listOf(item3.toEntity())) }
+        coVerify(exactly = 1) { cursorStore.write(secondOffset.toInstant()) }
+        coVerify(exactly = 0) { cursorStore.write(firstSince) }
+    }
+
+    /**
+     * A page that's truncated but contains only tombstones carries no
+     * `updatedAt` the client can advance past (`ChangeSet` doesn't echo one
+     * for a deleted id) — the known gap a real per-type keyset cursor would
+     * close (still open on the roadmap). The fix must fail loudly here
+     * rather than reissue the identical request forever.
+     */
+    @Test
+    fun aTruncatedPageOfOnlyTombstonesFailsInsteadOfLoopingForever() = runTest {
+        val deletedId = UUID.randomUUID()
+        coEvery { syncApi.sync(null, TYPES) } returns Response.success(
+            SyncResponse(
+                since = OffsetDateTime.now(ZoneOffset.UTC),
+                todos = ChangeSetTodoItemView(upserted = emptyList(), deletedIds = listOf(deletedId), truncated = true),
+            ),
+        )
+
+        val result = repository.sync()
+
+        assertTrue(result.isFailure)
+        coVerify(exactly = 0) { cursorStore.write(any<Instant>()) }
+    }
+
     @Test
     fun aSuccessfulSyncRecordsEveryRequestedTypeAsSynced() = runTest {
         val since = OffsetDateTime.now(ZoneOffset.UTC)

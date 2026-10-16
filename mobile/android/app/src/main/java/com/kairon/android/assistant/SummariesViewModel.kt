@@ -116,11 +116,14 @@ class SummariesViewModel @Inject constructor(
 
     fun openRun(run: AssistantRunView) {
         pollJob?.cancel()
-        _state.value = _state.value.copy(selectedRun = run, selectedRunLoading = false)
+        _state.value = _state.value.copy(selectedRun = run, selectedRunLoading = true)
         val id = run.id ?: return
-        if (run.status in IN_FLIGHT) {
-            pollJob = viewModelScope.launch { pollLoop(id) }
-        }
+        // The list row (above) never carries `outputMarkdown` — only
+        // `GET /assistant/runs/{id}` does — so always fetch the full detail,
+        // not just while the run is still in flight. `pollLoop` fetches once
+        // immediately and only keeps polling if the status is still PENDING/
+        // RUNNING, so this also covers the already-finished case in one call.
+        pollJob = viewModelScope.launch { pollLoop(id) }
     }
 
     fun closeDetail() {

@@ -52,7 +52,7 @@ fun TodayScreen(
 
     Scaffold(topBar = { TopAppBar(title = { Text("Today") }) }) { padding ->
         PullToRefreshBox(
-            isRefreshing = state.refreshing || todoState.syncing,
+            isRefreshing = !state.loading && (state.refreshing || todoState.syncing),
             onRefresh = {
                 viewModel.refresh(isPullToRefresh = true)
                 todoViewModel.refresh()
