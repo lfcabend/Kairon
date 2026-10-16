@@ -91,7 +91,12 @@ public class TaskDependencyService {
         }
         TaskDependencyType type = parseType(command.type());
         int lagDays = command.lagDays() != null ? command.lagDays() : 0;
-        TaskDependency saved = dependencies.save(TaskDependency.create(predecessorId, successorTaskId, type, lagDays));
+        // saveAndFlush, not save: createdAt is Hibernate-generated at flush
+        // time (@CreationTimestamp), so without an immediate flush here the
+        // mapped response below would carry a null timestamp until this
+        // transaction actually commits.
+        TaskDependency saved = dependencies.saveAndFlush(
+                TaskDependency.create(predecessorId, successorTaskId, type, lagDays));
         log.info("Created dependency {} ({} -> {}) userId={} projectId={}",
                 saved.getId(), predecessorId, successorTaskId, userId.value(), project.getId());
         Map<UUID, ProjectTask> byId = tasks.findByProjectIdAndDeletedAtIsNull(project.getId()).stream()

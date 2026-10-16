@@ -110,7 +110,11 @@ public class ProjectService {
                 command.startDate(), command.endDate());
         int categoryRank = nextCategoryRank(userId.value(), command.categoryId());
         toSave.moveWithinCategory(categoryRank);
-        Project saved = projects.save(toSave);
+        // saveAndFlush, not save: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without an
+        // immediate flush here the mapped response below would carry null
+        // timestamps until this transaction actually commits.
+        Project saved = projects.saveAndFlush(toSave);
         log.info("Created project {} userId={} priorityRank={} categoryRank={}",
                 saved.getId(), userId.value(), priorityRank, categoryRank);
         return ProjectMapper.toView(saved);

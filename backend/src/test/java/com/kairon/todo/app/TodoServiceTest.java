@@ -62,7 +62,7 @@ class TodoServiceTest {
     void createAppendsAtMaxPositionPlus100() {
         when(items.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
                 .thenReturn(List.of(itemOnDay(100), itemOnDay(250)));
-        when(items.save(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(items.saveAndFlush(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TodoItemView created = service.create(USER,
                 new CreateCommand(DAY, "  new thing  ", null, null, null, null));
@@ -76,7 +76,7 @@ class TodoServiceTest {
     void createOnAnEmptyDayStartsAt100() {
         when(items.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
                 .thenReturn(List.of());
-        when(items.save(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(items.saveAndFlush(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
 
         TodoItemView created = service.create(USER,
                 new CreateCommand(DAY, "first", null, null, null, null));
@@ -140,7 +140,7 @@ class TodoServiceTest {
         UUID taskId = UUID.randomUUID();
         when(items.findByUserIdAndDayAndDeletedAtIsNullOrderByPositionAscCreatedAtAsc(USER.value(), DAY))
                 .thenReturn(List.of());
-        when(items.save(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(items.saveAndFlush(any(TodoItem.class))).thenAnswer(inv -> inv.getArgument(0));
         when(projects.requireTask(USER, taskId)).thenReturn(projectTaskView(taskId));
 
         TodoItemView created = service.create(USER, new CreateCommand(DAY, "linked", null, null, null, taskId));

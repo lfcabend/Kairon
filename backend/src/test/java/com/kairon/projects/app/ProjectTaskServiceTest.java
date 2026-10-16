@@ -70,7 +70,7 @@ class ProjectTaskServiceTest {
     void createAppendsAtMaxPositionPlus100PerSiblingGroup() {
         when(tasks.findByProjectIdAndParentTaskIdAndDeletedAtIsNullOrderByPositionAsc(project.getId(), null))
                 .thenReturn(List.of(taskAt(null, 100), taskAt(null, 250)));
-        when(tasks.save(any(ProjectTask.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(tasks.saveAndFlush(any(ProjectTask.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectTaskView created = service.create(USER, project.getId(),
                 new CreateCommand("New task", null, null, null, null, null, false));

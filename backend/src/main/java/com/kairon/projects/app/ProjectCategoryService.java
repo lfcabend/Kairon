@@ -59,7 +59,11 @@ public class ProjectCategoryService {
         }
         int position = nextPosition(userId.value());
         String color = command.color() != null ? command.color() : DEFAULT_COLOR;
-        ProjectCategory saved = categories.save(ProjectCategory.create(userId.value(), name, color, position));
+        // saveAndFlush, not save: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without an
+        // immediate flush here the mapped response below would carry null
+        // timestamps until this transaction actually commits.
+        ProjectCategory saved = categories.saveAndFlush(ProjectCategory.create(userId.value(), name, color, position));
         log.info("Created project category {} userId={}", saved.getId(), userId.value());
         return ProjectCategoryMapper.toView(saved);
     }

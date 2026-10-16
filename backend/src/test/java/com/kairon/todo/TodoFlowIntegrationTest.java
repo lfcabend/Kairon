@@ -56,6 +56,11 @@ class TodoFlowIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"day\":\"" + day + "\",\"title\":\"" + title + "\"}"))
                 .andExpect(status().isCreated())
+                // A create response's createdAt/updatedAt are Hibernate-generated at flush
+                // time — without an explicit flush before mapping the response, these come
+                // back null (the Android client's strict non-null mapping crashed on this).
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andReturn();
         return JsonPath.read(res.getResponse().getContentAsString(), "$.id");
     }

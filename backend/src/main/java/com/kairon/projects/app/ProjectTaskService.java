@@ -116,7 +116,11 @@ public class ProjectTaskService implements ProjectsApi {
         if (command.estimateHours() != null) {
             task.setEstimateHours(command.estimateHours());
         }
-        ProjectTask saved = tasks.save(task);
+        // saveAndFlush, not save: createdAt/updatedAt are Hibernate-generated
+        // at flush time (@CreationTimestamp/@UpdateTimestamp), so without an
+        // immediate flush here the mapped response below would carry null
+        // timestamps until this transaction actually commits.
+        ProjectTask saved = tasks.saveAndFlush(task);
         log.info("Created task {} userId={} projectId={} parentTaskId={}",
                 saved.getId(), userId.value(), projectId, command.parentTaskId());
         return ProjectTaskMapper.toView(saved, project);

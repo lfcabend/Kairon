@@ -129,7 +129,7 @@ class TaskDependencyServiceTest {
         when(dependencies.findByPredecessorIdAndSuccessorId(predecessor.getId(), successor.getId()))
                 .thenReturn(Optional.empty());
         when(dependencies.findByProjectId(project.getId())).thenReturn(List.of());
-        when(dependencies.save(any(TaskDependency.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(dependencies.saveAndFlush(any(TaskDependency.class))).thenAnswer(inv -> inv.getArgument(0));
         when(tasks.findByProjectIdAndDeletedAtIsNull(project.getId())).thenReturn(List.of(predecessor, successor));
 
         TaskDependencyView created = service.create(USER, successor.getId(),

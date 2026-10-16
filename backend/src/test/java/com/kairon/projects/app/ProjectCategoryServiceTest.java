@@ -47,7 +47,7 @@ class ProjectCategoryServiceTest {
                 .thenReturn(List.of(
                         ProjectCategory.create(USER.value(), "a", "#111111", 100),
                         ProjectCategory.create(USER.value(), "b", "#111111", 250)));
-        when(categories.save(any(ProjectCategory.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(categories.saveAndFlush(any(ProjectCategory.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectCategoryView created = service.create(USER, new CreateCommand("New", null));
 
@@ -59,7 +59,7 @@ class ProjectCategoryServiceTest {
     @Test
     void createOnAnEmptySetStartsAt100() {
         when(categories.findByUserIdOrderByPositionAsc(USER.value())).thenReturn(List.of());
-        when(categories.save(any(ProjectCategory.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(categories.saveAndFlush(any(ProjectCategory.class))).thenAnswer(inv -> inv.getArgument(0));
 
         ProjectCategoryView created = service.create(USER, new CreateCommand("First", "#abcdef"));
 
