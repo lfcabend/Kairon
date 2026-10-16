@@ -24,6 +24,7 @@ jobs:
     outputs:
       image: ${{ steps.tag.outputs.image }}
       migrator-image: ${{ steps.tag.outputs.migrator-image }}
+      mcp-server-image: ${{ steps.tag.outputs.mcp-server-image }}
     services:
       postgres:
         image: postgres:16-alpine
@@ -46,6 +47,9 @@ jobs:
           sha=$(git rev-parse --short=12 HEAD)
           echo "image=ghcr.io/lfcabend/kairon:${sha}" >> "$GITHUB_OUTPUT"
           echo "migrator-image=ghcr.io/lfcabend/kairon-migrator:${sha}" >> "$GITHUB_OUTPUT"
+          # M10.5 — same Taskfile.yml GIT_COMMIT-based tagging scheme as the two
+          # images above (Q8): no separate semver, no new tagging convention.
+          echo "mcp-server-image=ghcr.io/lfcabend/kairon-mcp-server:${sha}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/login-action@v3
         with:
@@ -70,6 +74,14 @@ jobs:
           push: true
           tags: ${{ steps.tag.outputs.migrator-image }}
 
+      - name: Build & push mcp-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/mcp-server.Dockerfile
+          push: true
+          tags: ${{ steps.tag.outputs.mcp-server-image }}
+
       - name: Trivy scan (app image)
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -83,6 +95,14 @@ jobs:
         with:
           scan-type: image
           image-ref: ${{ steps.tag.outputs.migrator-image }}
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+
+      - name: Trivy scan (mcp-server image)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.tag.outputs.mcp-server-image }}
           severity: HIGH,CRITICAL
           exit-code: "1"
 
@@ -136,7 +156,7 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - name: helm upgrade --install
+      - name: helm upgrade --install (kairon)
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBECONFIG_XBMC }}" | base64 -d > ~/.kube/config
@@ -147,3 +167,16 @@ jobs:
             -f deploy/helm/kairon/values-xbmc.yaml \
             --set image.tag="$image_tag" \
             --wait --timeout 65m
+
+      - name: helm upgrade --install (kairon-mcp)
+        # M10.5 — its own separate release (D1-chart), same namespace, deployed
+        # after (not instead of) the main chart's own upgrade above; the two
+        # don't depend on each other at runtime (exact ordering decided at
+        # implementation time, D1-ci), so after is just as correct as alongside.
+        run: |
+          mcp_image_tag=$(echo "${{ needs.package.outputs.mcp-server-image }}" | cut -d: -f2)
+          helm upgrade --install kairon-mcp deploy/helm/kairon-mcp \
+            --kube-context xbmc --namespace kairon --create-namespace \
+            -f deploy/helm/kairon-mcp/values-xbmc.yaml \
+            --set image.tag="$mcp_image_tag" \
+            --wait --timeout 10m

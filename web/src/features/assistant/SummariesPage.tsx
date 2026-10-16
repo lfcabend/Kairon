@@ -116,6 +116,7 @@ export function SummariesPage() {
               <span className="flex items-center gap-3">
                 <span className="font-medium">{KIND_LABEL[run.kind] ?? run.kind}</span>
                 <span className="text-muted-foreground">{periodLabel(run.periodStart, run.periodEnd)}</span>
+                {run.source === "MCP" && <Badge variant="outline">via MCP</Badge>}
               </span>
               <Badge variant={STATUS_VARIANT[run.status] ?? "outline"}>{run.status}</Badge>
             </button>

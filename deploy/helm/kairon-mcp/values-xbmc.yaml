@@ -1,0 +1,29 @@
+# xbmc (home k3s) overlay — the one real deployed target for this chart
+# (D1-chart). Same cluster/ingress-class facts as deploy/helm/kairon's own
+# values-xbmc.yaml.
+
+image:
+  repository: ghcr.io/lfcabend/kairon-mcp-server
+  tag: ""                 # always pass --set image.tag=<git-sha>
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  className: traefik
+  host: xbmc
+  extraHosts:
+    - xbmc.tail9ae0e9.ts.net   # the same public Tailscale Funnel hostname the main app uses
+  path: /mcp
+  tls:
+    enabled: false
+  # values.yaml's own nginx-specific annotations (proxy-buffering, timeouts,
+  # limit-rps) stay merged in here, same as the main chart's own
+  # values-xbmc.yaml takes with its nginx-specific proxy-read/send-timeout
+  # annotations — inert under Traefik (which has no default response timeout
+  # at all), harmless to leave in place rather than overriding to {} (a deep
+  # merge of an empty map changes nothing anyway).
+
+# In-cluster Service DNS name for the main release, installed as "kairon" in
+# this same namespace (confirmed against the real xbmc deploy).
+kairon:
+  baseUrl: http://kairon.kairon.svc.cluster.local:8080/kairon

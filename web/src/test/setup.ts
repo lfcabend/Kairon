@@ -13,6 +13,7 @@ import {
   resetAssistantStore,
   resetJournalStore,
   resetMeResponse,
+  resetPersonalAccessTokenStore,
   resetProjectsStore,
   resetTodoStore,
 } from "./msw/handlers";
@@ -96,6 +97,7 @@ afterEach(() => {
   resetProjectsStore();
   resetAssistantStore();
   resetMeResponse();
+  resetPersonalAccessTokenStore();
   useAuthStore.setState({ accessToken: null, user: null });
 });
 

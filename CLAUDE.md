@@ -23,7 +23,12 @@ fixed Android-owned copy for connectivity/server errors, per-field
 validation display, non-blocking sync-failure banners, a one-shot
 session-expired explanation on the login screen, and dedicated
 not-found/conflict handling for mutations against a since-deleted or
-since-modified row) are implemented.**
+since-modified row), and M10.5 (MCP server for assistant features — a
+standalone, always-on `mcp-server/` Node/TypeScript service a user's own
+Claude Code session connects to over a new personal-access-token (PAT)
+mechanism, bridging to the exact same `assistant_run`/`assistant_suggested_*`
+rows the paid Anthropic-API path writes today, tagged with a new
+`assistant_run.source` column) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -34,7 +39,15 @@ updated when decisions change.
   registers `@CurrentUser` with springdoc's `SpringDocUtils.addAnnotationsToIgnore`, so
   the JWT-resolved `userId` no longer leaks into the OpenAPI spec as a spurious required
   query param — a real, previously-unnoticed defect that only mattered once M11 started
-  generating a real client from that spec); `error` — the RFC 7807
+  generating a real client from that spec; M10.5 extends this resolver with a second
+  branch — `PatPrincipal` alongside the existing `Jwt` case — and adds `PatPrincipal`/
+  `PersonalAccessTokenValidator` (the SPI `identity.app.PersonalAccessTokenService`
+  implements, keeping `common` free of any import on `identity`)/
+  `PersonalAccessTokenAuthenticationFilter`/`PatAwareBearerTokenResolver`;
+  `SecurityConfig`'s PAT allowlist wiring takes `PersonalAccessTokenValidator` via
+  `ObjectProvider` so every existing `@WebMvcTest` slice that never wires the identity
+  module keeps building the exact same filter chain it already asserts against);
+  `error` — the RFC 7807
   `@RestControllerAdvice` + `ApiException`; `ratelimit` — the Bucket4j auth filter;
   `id` — `Uuidv7`; `logging` — `CorrelationIdFilter`, per-request id in the MDC +
   `X-Request-Id`; `sync` — `ChangeSet<T>` (M11, `{upserted, deletedIds, truncated}`,
@@ -44,7 +57,14 @@ updated when decisions change.
   `refreshToken` field (M11 D6), returned in the body in addition to the existing
   web-only `Set-Cookie`, so a native client without a cookie jar can complete login;
   `dev` — the `local`-profile
-  `DevDataSeeder`), `todo` (`api` port `TodoApi`/`TodoItemView` (gained
+  `DevDataSeeder`; M10.5 adds `domain.PersonalAccessToken` (no soft delete, no
+  rotation-family concept — a revoked token is marked `revoked_at`, never
+  deleted)/`repo.PersonalAccessTokenRepository`/`app.PersonalAccessTokenService`
+  (issue/list/revoke, plus the sole implementation of
+  `common.security.PersonalAccessTokenValidator`)/
+  `web.PersonalAccessTokenController`/`PersonalAccessTokenDtos` under
+  `/api/v1/me/personal-access-tokens`, JWT-only — D3 deliberately excludes a PAT
+  from managing PATs), `todo` (`api` port `TodoApi`/`TodoItemView` (gained
   `periodStats`/`PeriodStats` for M9's execution-summary aggregation, and
   `changedSince` for M11's Android sync mechanism), `domain`
   `TodoItem`/`TodoStatus`, `repo` (M11's `changedSince` backing query is the one place
@@ -272,7 +292,9 @@ updated when decisions change.
   field, `suggestedProjectEdit`, populated only for `PROJECT_EDIT` runs —
   same "one run view, each kind populates only its own field" convention;
   M10: the `outputMarkdown` field is now also populated for
-  `JOURNAL_REFLECTION` runs, no shape change needed)/
+  `JOURNAL_REFLECTION` runs, no shape change needed; M10.5: gained `source`
+  (`"API"` \| `"MCP"`, from the new `domain.AssistantRunSource` enum +
+  `AssistantRun.markMcp()`) — read by the web run-history "via MCP" badge)/
   `AssistantRunPage` (M9 — the
   `content`/`page`/`totalElements` shape backing `GET /assistant/runs`, same
   convention as `ProjectPage`)/`AssistantSuggestedTaskView`/
@@ -294,14 +316,36 @@ updated when decisions change.
   types directly for its operation lists the same way `PersistedProjectPlan`
   reuses `PlannedTaskPayload`, with its own `PersistedProjectFieldChanges`
   nested record resolving the model's `categoryName` the same way
-  `PersistedProjectPlan` does), `config`
+  `PersistedProjectPlan` does)/`RenderedContext` (M10.5, public — the plain
+  `{systemPrompt, userContent}` pair `McpAssistantService`'s five
+  `read*Context` methods return, so `assistant.web.McpAssistantController`
+  never needs to name any of the package-private `*ContextBuilder.Context`
+  types directly across the package boundary)/`AssistantAvailability`/
+  `AssistantSuggestionWriter` (M10.5 D19 — the five `requireXAvailable`
+  gates+`resolveModel`, and the suggestion-persisting/capping/category-
+  resolution logic, extracted out of `AssistantRunService` into their own
+  package-private `@Component`s so `McpAssistantService` reuses exactly the
+  same rules rather than duplicating them)/`McpAssistantService` (M10.5 D20 —
+  the MCP entry point's own service: five context-read/write-back pairs
+  mirroring `AssistantRunService`'s own five features, but never calling
+  `AnthropicClient` — the reasoning already happened in the caller's own
+  Claude Code session. A write-back always tags `AssistantRun.markMcp()`,
+  never draws from the per-user token budget (`run.succeed(0, 0)`), and
+  rebuilds its own context server-side at submit time — D13's own
+  "re-derive rather than trust a caller-supplied snapshot" reasoning,
+  generalized here to all five pairs — purely to populate `input_snapshot`
+  truthfully and, for summary, to append the server-rendered stats table),
+  `config`
   `AssistantConfig`, `web` `AssistantRunController` (M9: gained
   `POST /assistant/summaries` and `GET /assistant/runs`; M10: gained
   `POST /assistant/journal-reflection`)/`SuggestedTaskController`/
   `AssistantDtos` (M10: gained `JournalReflectionRequest`)/`ProjectPlanController`/
   `SuggestedProjectController`/
   `ProjectPlanDtos` (M8.5)/`ProjectEditController`/`SuggestedProjectEditController`/
-  `ProjectEditDtos` (M9.5)). Extends `TodoApi` with `range` and, for M9,
+  `ProjectEditDtos` (M9.5)/`McpAssistantController`/`McpAssistantDtos` (M10.5
+  — the ten `/api/v1/assistant/mcp/**` endpoints, five `POST .../:context`
+  (read) and five plain `POST` (write-back), reachable with either a normal
+  JWT or a personal access token). Extends `TodoApi` with `range` and, for M9,
   `periodStats`; `JournalApi` with `range`, now also read directly by
   `AssistantRunService.requestJournalReflection` (M10, the empty-week check)
   and by `JournalReflectionContextBuilder`;
@@ -340,7 +384,10 @@ updated when decisions change.
   (widens `assistant_run.kind` to add `PROJECT_EDIT`; adds
   `assistant_suggested_project_edit`, M9.5 — landed after M10's `V010` by
   merge order, even though M9.5 shipped first; renumbered from this file's
-  own `V010` on rebase to avoid colliding with M10's).
+  own `V010` on rebase to avoid colliding with M10's), `V012__mcp_access.sql`
+  (`personal_access_token` + `assistant_run.source`, M10.5's PAT mechanism
+  and run-provenance column — no change to any existing
+  `assistant_suggested_*` table, D18).
   M6 adds no migration; there is no `V006`. M9 and M10's own `JOURNAL_REFLECTION`
   feature likewise add no migration — M8's `V007` deliberately over-specified
   `assistant_run.kind`/`output_markdown`/`period_start`/`period_end` for
@@ -433,14 +480,30 @@ updated when decisions change.
   `assistantKeys` (gained `runs.list(filter)`); M9.5's `useAcceptProjectEdit`
   invalidates the edited project's own `projectKeys.detail`/`tasks`/
   `dependencies` queries (a cross-feature import of `projectKeys`, same
-  precedent `todoKeys` already set for `useAssistant.ts`).
+  precedent `todoKeys` already set for `useAssistant.ts`); M10.5 adds a small
+  "via MCP" `Badge` — shown only when `run.source === "MCP"` — on
+  `SummariesPage`'s history rows and `SummaryDetail`'s dialog title (the two
+  places an `AssistantRunView` is reachable from a browsable history list
+  today; the ephemeral per-request review dialogs for todo-suggestion/
+  project-plan/project-edit runs are not wired with this badge — deliberately
+  out of scope, since those only ever render a run the web UI's own button
+  click just created, never one submitted out-of-band via MCP).
+  `src/features/auth/DeveloperAccessSection.tsx` (M10.5 — embedded in
+  `AccountPage.tsx` below `AssistantSettings`: a "Generate token" form (name,
+  optional expiry), a one-time reveal of the raw token in a monospace block
+  with copy-to-clipboard and an explicit "shown once" notice, and a list of
+  existing tokens with a confirm-before-revoke step), `src/lib/api/
+  personalAccessTokens.ts` + `useAuth`-sibling `usePersonalAccessTokens.ts`
+  (list/generate/revoke via TanStack Query mutations, same shape as every
+  other settings mutation in this app).
   `src/components/AppLayout.tsx` is the
   top-nav shell wrapping the protected routes, "Today" first in the nav order
   and the app's default landing route (M6); M9 adds a "Summaries" top-level
   nav entry after "Projects" (`/summaries`), the same deliberate exception to
   M8/M8.5's own nav pattern. API access is hand-written
   types in `src/lib/api/types.ts` plus `todo.ts`/`journal.ts`/`projects.ts`/
-  `auth.ts`/`about.ts`/`planning.ts`/`assistant.ts` over `client.ts` (the
+  `auth.ts`/`about.ts`/`planning.ts`/`assistant.ts`/`personalAccessTokens.ts`
+  (M10.5) over `client.ts` (the
   single-flight 401→refresh→retry fetch wrapper). Tests: Vitest + MSW
   (`src/test/msw/`); Playwright happy paths in `web/e2e/` (`npm run
   test:e2e`, needs a running full stack).
@@ -655,19 +718,50 @@ updated when decisions change.
   no Helm-generated fallback key, unlike the JWT secret), a conditional
   `ANTHROPIC_API_KEY` env var in `deployment.yaml`, `KAIRON_ASSISTANT_*`
   ConfigMap entries, and a `deploy/RUNBOOK.md` section on enabling/rotating
-  the key.
-
-**M10.5 — MCP server for assistant features (bring-your-own Claude
-subscription)** (see `docs/ROADMAP.md`) is still undrafted and outstanding —
-M11, M11.5, M11.6, and now M11.7 were all implemented ahead of it on direct
-request, not because M10.5 was dropped. M11.6 — Android: assistant features
-& settings — closed out the three-slice Android feature-parity track
-(M11 → M11.5 → M11.6) with full feature parity against web; M11.7 — Android:
-error handling & user feedback — is a cross-cutting fix on top of that track
-(every screen that touches the network, not one feature), found while
-real-device-testing M11.4 and implemented as its own slice rather than
-folded into M11.5/M11.6. M10.5 is now the one remaining undrafted milestone
-on the board (see `docs/ROADMAP.md`).
+  the key. M10.5 adds `docker/mcp-server.Dockerfile` (Node multi-stage: install
+  + `tsc` build, then a slim `node:lts-alpine` runtime stage, no JDK involved
+  at all) and a new, separate Helm chart `deploy/helm/kairon-mcp/`
+  (Chart.yaml/values.yaml/values-xbmc.yaml/templates — its own Deployment/
+  Service/Ingress, deployed to the **same namespace** as the `kairon` release
+  as its own independent `helm upgrade`; no Secret mounted at all — nothing
+  secret to store, every request forwards its own caller's PAT; its
+  `Ingress` adds a sibling path, `/mcp`, to the same xbmc Tailscale Funnel
+  host the main chart's own `Ingress` already serves, needing zero changes to
+  that chart); `.github/workflows/deploy.yml` gains a third image build/
+  Trivy-scan/push (`ghcr.io/lfcabend/kairon-mcp-server`) and a second
+  `helm upgrade` step targeting the new chart; `Taskfile.yml`'s `xbmc` task
+  gains a matching `mcp-image-push` step.
+- `mcp-server/` — (M10.5) the standalone MCP server, TypeScript/Node, its
+  **own npm toolchain root** (same "own toolchain root" framing
+  `mobile/android/`'s own bullet already takes) — a thin, stateless REST
+  client over Kairon's existing and new `/api/v1/assistant/mcp/**` API,
+  always running, reachable from any of the user's devices. Holds no
+  credential of its own: `src/auth.ts` reads `Authorization: Bearer <token>`
+  off each incoming HTTP request (401 before any tool handler runs if
+  missing); `src/kaironClient.ts` is the fetch wrapper that takes that
+  per-call bearer token as a parameter (never a module-level constant) and
+  maps a Kairon RFC 7807 `problem+json` body to a thrown `KaironApiError`;
+  `src/config.ts` reads `KAIRON_BASE_URL`/`PORT` from the environment — no
+  `KAIRON_PAT` of any kind, since there's no server-wide credential to
+  configure. `src/index.ts` wires one Express route, `POST /mcp`
+  (MCP's Streamable HTTP transport, **stateless mode** — `sessionIdGenerator:
+  undefined`, no GET/SSE stream, no DELETE): a fresh `McpServer` +
+  `StreamableHTTPServerTransport` pair is built per request, with every tool
+  handler closing over that one request's bearer token, so two concurrent
+  callers (or two devices for the same user) never share any mutable state.
+  `src/tools/assistantContext.ts` (the five `get_*_context` tools) /
+  `assistantSubmit.ts` (the five `submit_*` write-back tools) /
+  `generalReads.ts` (`list_todos`/`list_journal_entries`/`list_projects`/
+  `get_project`/`list_project_tasks`/`list_project_dependencies` — thin
+  wrappers over Kairon's existing REST endpoints, no new backend read surface)
+  register against the real `@modelcontextprotocol/sdk` `McpServer` type;
+  `src/kaironTypes.ts` is this server's own hand-written mirror of the
+  backend's `/assistant/mcp/**` DTOs (no generated client, no OpenAPI
+  coupling — same posture as `web/`'s own hand-written `src/lib/api/*.ts`).
+  Tests: Vitest with `fetch` mocked (`kaironClient.test.ts`, `auth.test.ts`,
+  one test file per tool group, using a small `testHarness.ts` fake
+  `McpServer` that just records `.tool(...)` registrations so a handler can
+  be exercised without any real transport/session machinery).
 
 ## What Kairon is
 

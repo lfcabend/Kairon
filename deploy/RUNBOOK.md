@@ -120,6 +120,42 @@ every opted-in user's data on a shared instance key, not just the operator's
 own. Confirm your organisation's retention settings before enabling this for
 other people (docs/DESIGN.md §13.5).
 
+## Generate a PAT / connect a remote MCP client (M10.5)
+
+The `kairon-mcp` release is deployed and upgraded independently of the main
+`kairon` release (`task xbmc` builds/pushes/deploys both; the CI `deploy`
+workflow does the same on every merge to `main`) — see
+docs/milestones/M10.5-mcp-server.md. It needs no secret of its own: every
+request carries the caller's own personal access token (PAT), forwarded
+verbatim to the backend.
+
+**The full, user-facing guide — generating a PAT, connecting the Claude Code
+CLI / a manual `.mcp.json` / Claude Desktop / a mobile-cloud Claude surface,
+verifying the connection, and troubleshooting a failed one — lives in
+[`mcp-server/README.md`](../mcp-server/README.md).** This section stays
+focused on the two operator-side tasks that guide doesn't cover: revoking a
+token out-of-band, and debugging connectivity from inside the cluster.
+
+**Revoke a PAT out of band** (e.g. the web UI is unreachable) — normally
+this is Account → "Developer access" → "Revoke" next to the token instead:
+
+```sh
+curl -X DELETE https://xbmc.tail9ae0e9.ts.net/kairon/api/v1/me/personal-access-tokens/<id> \
+  -H "Authorization: Bearer <a normal JWT, not a PAT — D3>"
+```
+
+A revoked PAT 401s on its very next use; nothing needs restarting (the
+backend performs a real hash lookup per request, D15/D16 — there's no
+server-side cache to invalidate).
+
+**Debug connectivity**: `kairon-mcp`'s own health check needs no auth —
+```sh
+kubectl -n kairon run curl-debug --rm -it --image=curlimages/curl --restart=Never \
+  -- curl -sf http://kairon-mcp:3000/healthz
+```
+— and its logs are read the same way as the main app's (see "Read logs"
+below), just against the `kairon-mcp` Deployment instead of `kairon`.
+
 ## Create the required secrets on a fresh cluster
 
 Before the first `helm upgrade --install` against a brand-new cluster:
@@ -135,7 +171,8 @@ unset and the chart generates + manages one itself (see "Rotate the JWT secret"
 above). Set it only if you want the JWT secret managed outside Helm entirely.
 `kairon-assistant` (holding `ANTHROPIC_API_KEY`) is optional too, and only
 needed if you're turning the assistant on — see "Enable or rotate the
-Anthropic API key" above.
+Anthropic API key" above. The `kairon-mcp` release (M10.5) needs no secret
+at all — nothing to create for it here.
 
 ## Make a brand-new GHCR package public
 

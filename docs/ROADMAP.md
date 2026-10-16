@@ -319,72 +319,65 @@ project-category-ranking change merged to `main` while this plan was drafted).
 
 ## M10.5 — MCP server for assistant features (bring-your-own Claude subscription)
 
-No milestone plan has been drafted for this yet — the bullets below are the
-shape of the idea, not locked decisions (contrast M8–M10's own
-`milestones/*.md` plans). Today every assistant feature (`TODO_SUGGESTION`,
-`PROJECT_GENERATION`, `PROJECT_EDIT`, `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY`,
-`JOURNAL_REFLECTION`) is paid for per-token against one instance-wide
-`ANTHROPIC_API_KEY`, via `assistant.llm.AnthropicClient`
-(`docs/adr/0002-ai-assistant-anthropic.md`). This milestone adds a second,
-zero-marginal-cost way to drive the same features: an **MCP server** exposing
-Kairon's assistant context (the same data each `*ContextBuilder` already
-renders into a prompt today) and write-back actions as MCP tools, so a Claude
-Code session running under the user's own Claude subscription can do the
-reasoning that `AnthropicClientImpl` currently pays Anthropic for per call —
-while a Claude-Code-authored result still lands in the same persisted
-`assistant_run` / `assistant_suggested_task` / `assistant_suggested_project` /
-`assistant_suggested_project_edit` rows the API path writes today, so it shows
+See [`milestones/M10.5-mcp-server.md`](milestones/M10.5-mcp-server.md) for
+the full plan and rationale (Status: Accepted — implemented). Today every assistant
+feature (`TODO_SUGGESTION`, `PROJECT_GENERATION`, `PROJECT_EDIT`,
+`WEEKLY_SUMMARY`/`MONTHLY_SUMMARY`, `JOURNAL_REFLECTION`) is paid for
+per-token against one instance-wide `ANTHROPIC_API_KEY`, via
+`assistant.llm.AnthropicClient` (`docs/adr/0002-ai-assistant-anthropic.md`).
+This milestone adds a second, zero-marginal-cost way to drive the same
+features: a **remote, always-on MCP server** — a new top-level
+`mcp-server/` (TypeScript/Node, Streamable HTTP transport), Dockerized and
+deployed as its own Helm chart/release into the same k8s namespace, reachable
+at a new `/mcp` path on the existing xbmc Tailscale Funnel hostname — so a
+Claude Code session (including from the user's phone) running under their
+own Claude subscription can do the reasoning that `AnthropicClientImpl`
+currently pays Anthropic for per call. A Claude-Code-authored result still
+lands in the same persisted `assistant_run` / `assistant_suggested_task` /
+`assistant_suggested_project` / `assistant_suggested_project_edit` rows the
+API path writes today — always `PROPOSED`, never auto-accepted — so it shows
 up in the normal web review/accept/dismiss UI unchanged. The existing
-Anthropic-API path stays exactly as-is — for the scheduled/unattended summary
-sweep (M10), and for any user without Claude Code — this is strictly an
-**additional** entry point, not a replacement.
+Anthropic-API path stays exactly as-is — for the scheduled/unattended
+summary sweep (M10), and for any user without Claude Code — this is
+strictly an **additional** entry point, not a replacement.
 
-- [ ] An MCP server exposing one read-side tool per feature
-      (`get_todo_suggestion_context`, `get_project_plan_context`,
-      `get_project_edit_context`, `get_summary_context`,
-      `get_journal_reflection_context`) returning the same context each
-      `*ContextBuilder` already assembles, as structured data instead of a
-      rendered prompt string sent to Anthropic.
-- [ ] One write-back tool per feature (`submit_todo_suggestions`,
-      `submit_project_plan`, `submit_project_edit`, `submit_summary`,
-      `submit_journal_reflection`) that persists Claude's output into the same
-      rows the Anthropic path writes today.
-- [ ] New (or reused) REST endpoints behind those tools for "read context
-      without starting a run" and "write back a result for an existing/new
-      run" — today `AssistantRunService` always does both in one call per
-      feature, so this needs to be split.
-- [ ] Decide the auth story for a tool call acting "as" a specific Kairon
-      user — likely a long-lived personal-access token distinct from the web
-      app's short-lived JWT, scoped to only the assistant read/write-back
-      endpoints.
-- [ ] Decide where the server itself lives — a thin standalone process
-      calling Kairon's REST API over the network, vs. an in-process MCP
-      transport inside the `assistant` module. Leaning toward the former: it
-      keeps the "only `assistant` imports the Anthropic SDK" ArchUnit rule
-      meaningful by not also making that module responsible for an unrelated
-      MCP transport, and lets the MCP server run/deploy independently of the
-      backend's release cycle.
-- [ ] No change to existing opt-in flags, the monthly token budget, or the
-      scheduled sweep (M8/M9/M10) — purely additive. `ANTHROPIC_API_KEY`
-      stays required for the in-app "Generate" buttons and the scheduled
-      summary sweep; the MCP path is a parallel route for the same features
-      with no Anthropic token cost when driven from a Claude Code session.
-- [ ] Revisit `docs/adr/0002-ai-assistant-anthropic.md` (or add a new ADR)
-      once the auth/process-boundary questions above are settled — this
-      milestone deliberately changes that ADR's "all calls are server-side"
-      and "a single `ANTHROPIC_API_KEY` ... serves all users" framing.
+- [x] A new personal-access-token (PAT) mechanism (`identity`-owned, hashed,
+      revocable, managed from a new Account-page section) distinct from the
+      web/Android JWT, scoped — by a fixed `SecurityConfig` allowlist, not
+      per-token — to read-only `todo`/`journal`/`projects` plus ten new
+      `assistant` endpoints. The MCP server holds no credential of its own:
+      every request forwards the caller's own PAT, verbatim, per request.
+- [x] Ten new endpoints (`POST /api/v1/assistant/mcp/**`) splitting each of
+      the five assistant features into a context-read half (no
+      `assistant_run` row — mirrors the existing `*ContextBuilder`'s
+      rendered `{systemPrompt, userContent}`, not a new structured-JSON
+      shape) and a write-back half (creates the same `PROPOSED`/`SUCCEEDED`
+      rows the Anthropic-API path creates, tagged with a new
+      `assistant_run.source` column, zero draw on the monthly token budget).
+- [x] `mcp-server/`: the five `get_*_context`/`submit_*` tool pairs, plus
+      general read-only tools over `todo`/`journal`/`projects` (reusing the
+      existing REST endpoints as-is, no new backend read surface for those).
+- [x] Dockerized (`docker/mcp-server.Dockerfile`) and deployed as a separate
+      Helm chart (`deploy/helm/kairon-mcp/`) into the same namespace as the
+      main `kairon` release, with its own `Ingress` adding `/mcp` to the
+      existing xbmc host (no change needed to the main chart's own ingress).
+- [x] No change to existing opt-in flags, the monthly token budget, or the
+      scheduled sweep (M8/M9/M10) — purely additive.
+- [x] `docs/adr/0002-ai-assistant-anthropic.md` gains an appended amendment
+      section (not an in-place edit) — this milestone changes that ADR's
+      "all calls are server-side" framing.
 
-Open questions (none settled yet):
-
-- [ ] Does accepting a Claude-Code-authored suggestion still go through the
-      normal web review step, or can the write-back tool accept on the
-      user's behalf directly?
-- [ ] Does an MCP-driven run count against the existing per-user monthly
-      token budget (ADR-0002) at all, given no Anthropic tokens are spent by
-      the instance for it?
-- [ ] Scope: stay limited to the five assistant context/write-back tool
-      pairs above, or also expose plain `todo`/`journal`/`projects` read
-      access for ad hoc queries from a Claude Code session?
+Settled (see the milestone plan's own decision log for the full rationale):
+accepting a Claude-Code-authored suggestion still goes through the normal
+web review step, never a direct accept; an MCP-driven run does **not** draw
+from the per-user monthly token budget; scope includes both the five
+assistant pairs **and** general `todo`/`journal`/`projects` reads. The one
+real open risk still carried past implementation, unresolved either way:
+whether the actual mobile/cloud Claude surface accepts a manually-configured
+bearer header for an unlisted self-hosted MCP server, or requires full OAuth
+— shipped the simpler bearer-header design (confirmed working for the
+Claude Code CLI itself) and left finding out about the mobile/cloud surface
+for real-world use (milestone plan Q7).
 
 ## M11 — Android foundation: auth, sync & Today/Todo
 

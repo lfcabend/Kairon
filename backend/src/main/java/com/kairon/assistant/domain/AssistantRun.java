@@ -80,6 +80,11 @@ public class AssistantRun {
     @Column(name = "batch_id")
     private UUID batchId;
 
+    /** {@code API} unless {@link #markMcp()} is called (M10.5 D10) — see {@link AssistantRunSource}. */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private AssistantRunSource source = AssistantRunSource.API;
+
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -140,6 +145,11 @@ public class AssistantRun {
         this.error = error;
     }
 
+    /** Tags this run as MCP-submitted (M10.5 D10) — called once, right after {@link #pending}. */
+    public void markMcp() {
+        this.source = AssistantRunSource.MCP;
+    }
+
     public UUID getId() {
         return id;
     }
@@ -194,6 +204,10 @@ public class AssistantRun {
 
     public void setBatchId(UUID batchId) {
         this.batchId = batchId;
+    }
+
+    public AssistantRunSource getSource() {
+        return source;
     }
 
     public Instant getCreatedAt() {

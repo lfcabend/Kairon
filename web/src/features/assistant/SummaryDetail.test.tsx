@@ -52,6 +52,38 @@ test("shows a spinner while the run is still PENDING", async () => {
   expect(await screen.findByRole("status")).toHaveTextContent("Generating your summary…");
 });
 
+test("shows a \"via MCP\" badge in the title for an MCP-sourced run", async () => {
+  const run = seedAssistantRun({
+    kind: "WEEKLY_SUMMARY",
+    status: "SUCCEEDED",
+    periodStart: "2026-09-21",
+    periodEnd: "2026-09-27",
+    outputMarkdown: "A finished narrative.",
+    source: "MCP",
+  });
+
+  renderDetail(run.id);
+
+  await screen.findByText("A finished narrative.");
+  expect(screen.getByText("via MCP")).toBeInTheDocument();
+});
+
+test("shows no badge at all for an ordinary API-sourced run", async () => {
+  const run = seedAssistantRun({
+    kind: "WEEKLY_SUMMARY",
+    status: "SUCCEEDED",
+    periodStart: "2026-09-21",
+    periodEnd: "2026-09-27",
+    outputMarkdown: "A finished narrative.",
+    source: "API",
+  });
+
+  renderDetail(run.id);
+
+  await screen.findByText("A finished narrative.");
+  expect(screen.queryByText("via MCP")).not.toBeInTheDocument();
+});
+
 test("shows the error detail when the run FAILED", async () => {
   const run = seedAssistantRun({
     kind: "WEEKLY_SUMMARY",

@@ -11,6 +11,7 @@ out/
 node_modules/
 web/dist/
 web/.vite/
+mcp-server/dist/
 *.local
 
 # Env / secrets

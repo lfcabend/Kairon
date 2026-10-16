@@ -100,3 +100,51 @@ qualifying orgs) is documented in `deploy/`.
 - `assistant` is the only module allowed to import the Anthropic SDK, enforced
   by ArchUnit, keeping the dependency contained and a future swap cheap.
 - Three new milestones (M8–M10) push native mobile to M11+.
+
+## Amendment (2026-10-16, M10.5 — MCP server for assistant features)
+
+See [`../milestones/M10.5-mcp-server.md`](../milestones/M10.5-mcp-server.md)
+for the full plan. Appended rather than edited in place (per this repo's own
+convention check — neither this ADR nor
+[0001](0001-architecture-and-stack.md) had been revised before, so there was
+no existing precedent either way; default chosen: preserve the original
+Decision prose exactly as it read in 2026-09, and record what later changed
+here).
+
+This milestone adds a second, zero-marginal-cost entry point alongside the
+one described above: a standalone **MCP server**
+(`mcp-server/`, TypeScript/Node, Streamable HTTP transport), deployed as its
+own Helm release, that a user's own Claude Code session connects to directly
+over a personal access token. It never imports the Anthropic SDK and never
+calls the Anthropic API — the reasoning happens entirely inside the caller's
+own Claude subscription, outside this instance.
+
+Two sentences from the Decision above need qualifying in light of this:
+
+- **"All calls are server-side."** No longer true without qualification — an
+  MCP-submitted result's *reasoning* happens in the caller's own Claude Code
+  session. What stays true, and is the real invariant: **every call that
+  spends the instance's own Anthropic budget is server-side**; the MCP path
+  spends none of it (a write-back never calls `requireWithinBudget` at all).
+- **"A single `ANTHROPIC_API_KEY`… serves all users."** Still true for the
+  original path; there is now a second path with no API key involvement of
+  any kind.
+
+What is explicitly **unchanged**, and is the sentence to point to as "what
+didn't move": **suggest-only**. A write-back through the MCP server always
+creates a `PROPOSED` suggestion row (or, for summary/reflection, a
+`SUCCEEDED` run with no accept/dismiss step of its own) — identical in shape
+to what the Anthropic-API path creates, and reviewed through the exact same
+web/Android accept/dismiss UI. There is no direct-accept variant anywhere in
+this milestone; a wrong or hallucinated Claude-Code-authored suggestion never
+silently becomes real data just because it came from a trusted local
+session.
+
+Mechanically: a new `identity`-owned personal-access-token (PAT) mechanism,
+scoped by a fixed `SecurityConfig` allowlist (read-only `todo`/`journal`/
+`projects` plus ten new `/api/v1/assistant/mcp/**` endpoints) rather than a
+per-token scope column; `assistant_run` gains a `source` column (`API` \|
+`MCP`) for audit/UI badge purposes only — nothing branches on it except the
+(already-noted) budget check's absence. See `DATA_MODEL.md` for both new/
+changed columns and `CLAUDE.md`'s "Current state" for the full module-by-
+module change list.

@@ -57,6 +57,27 @@ test("renders history and clicking a row opens its detail", async () => {
   expect(await screen.findByText("A finished narrative.")).toBeInTheDocument();
 });
 
+test("a history row shows a \"via MCP\" badge only for an MCP-sourced run", async () => {
+  seedAssistantRun({
+    kind: "WEEKLY_SUMMARY",
+    status: "SUCCEEDED",
+    periodStart: "2026-09-21",
+    periodEnd: "2026-09-27",
+    source: "MCP",
+  });
+  seedAssistantRun({
+    kind: "MONTHLY_SUMMARY",
+    status: "SUCCEEDED",
+    periodStart: "2026-08-01",
+    periodEnd: "2026-08-31",
+    source: "API",
+  });
+  renderApp("/summaries");
+
+  await screen.findByText("2026-09-21 – 2026-09-27");
+  expect(screen.getAllByText("via MCP")).toHaveLength(1);
+});
+
 test("generating a weekly summary adds a new row and opens it in the PENDING/RUNNING state", async () => {
   const user = userEvent.setup();
   optIn();

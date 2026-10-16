@@ -111,9 +111,17 @@ class AssistantRunServiceTest {
     }
 
     private AssistantRunService newService() {
+        // Real (not mocked) AssistantAvailability/AssistantSuggestionWriter, built from
+        // the same mocks/properties this test already wires — the D19 extraction out of
+        // AssistantRunService changes how these checks/writes are reached, not what they
+        // do, so every existing assertion below (capping, clamping, opt-in, budget, …)
+        // still holds unmodified.
+        AssistantAvailability availability = new AssistantAvailability(properties, accounts);
+        AssistantSuggestionWriter writer = new AssistantSuggestionWriter(properties, suggestedTasks,
+                suggestedProjects, suggestedProjectEdits, objectMapper);
         return new AssistantRunService(runs, suggestedTasks, suggestedProjects, suggestedProjectEdits, properties,
-                accounts, projectsApi, contextBuilder, projectPlanContextBuilder, projectEditContextBuilder, journal,
-                anthropicClient, objectMapper, CLOCK);
+                availability, writer, accounts, projectsApi, contextBuilder, projectPlanContextBuilder,
+                projectEditContextBuilder, journal, anthropicClient, objectMapper, CLOCK);
     }
 
     @SuppressWarnings("unchecked")

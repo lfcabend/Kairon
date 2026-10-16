@@ -24,6 +24,31 @@ export interface Me {
   preferences: Record<string, unknown>;
 }
 
+// --- Personal access tokens (M10.5) -------------------------------------------
+
+export interface PersonalAccessToken {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  expiresAt: string | null;
+  revoked: boolean;
+}
+
+/** The raw token value appears here, and only here — never again on any later read. */
+export interface IssuedPersonalAccessToken {
+  id: string;
+  name: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export interface IssuePersonalAccessTokenBody {
+  name: string;
+  expiresAt?: string | null;
+}
+
 export interface RegisterBody {
   email: string;
   password: string;
@@ -354,6 +379,8 @@ export interface AssistantRun {
    * markdown string. A row from the `GET /assistant/runs` list omits this.
    */
   outputMarkdown?: string | null;
+  /** `"API"` (the paid Anthropic-API path) or `"MCP"` (a Claude-Code-submitted run, M10.5). */
+  source: "API" | "MCP";
 }
 
 export interface TodoSuggestionBody {

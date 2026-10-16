@@ -45,7 +45,8 @@ final class AssistantMapper {
                 List.of(),
                 null,
                 null,
-                null);
+                null,
+                run.getSource().name());
     }
 
     static AssistantRunView toRunView(AssistantRun run, List<AssistantSuggestedTask> tasks,
@@ -64,7 +65,8 @@ final class AssistantMapper {
                 tasks.stream().map(AssistantMapper::toSuggestedTaskView).toList(),
                 suggestedProject,
                 suggestedProjectEdit,
-                run.getOutputMarkdown());
+                run.getOutputMarkdown(),
+                run.getSource().name());
     }
 
     static AssistantSuggestedProjectView toSuggestedProjectView(AssistantSuggestedProject row,

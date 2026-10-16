@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kairon-mcp.fullname" . }}
+  labels:
+    {{- include "kairon-mcp.labels" . | nindent 4 }}
+data:
+  # D1-auth: the only non-secret config this server needs — there is no
+  # per-user credential to configure, no KAIRON_PAT env var of any kind.
+  KAIRON_BASE_URL: {{ .Values.kairon.baseUrl | quote }}
+  PORT: {{ .Values.service.port | quote }}

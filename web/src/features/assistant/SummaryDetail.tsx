@@ -2,6 +2,7 @@ import type { Components } from "react-markdown";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { Badge } from "@/components/ui/badge";
 import {
   Dialog,
   DialogContent,
@@ -62,7 +63,10 @@ export function SummaryDetail({ runId, onOpenChange }: Props) {
     <Dialog open={runId !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{run ? `${KIND_LABEL[run.kind] ?? run.kind} — ${periodLabel(run)}` : "Summary"}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {run ? `${KIND_LABEL[run.kind] ?? run.kind} — ${periodLabel(run)}` : "Summary"}
+            {run?.source === "MCP" && <Badge variant="outline">via MCP</Badge>}
+          </DialogTitle>
         </DialogHeader>
 
         {isLoading && !run ? (

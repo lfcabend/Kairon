@@ -6,6 +6,7 @@ import type {
   AuthResponse,
   JournalEntry,
   Me,
+  PersonalAccessToken,
   PlannedDependency,
   PlannedTask,
   Project,
@@ -44,6 +45,16 @@ export function resetMeResponse() {
 
 const problem = (status: number, detail: string) =>
   HttpResponse.json({ status, detail }, { status });
+
+// --- in-memory personal access token store (M10.5) ------------------------
+
+let personalAccessTokens: PersonalAccessToken[] = [];
+let personalAccessTokenSeq = 0;
+
+export function resetPersonalAccessTokenStore() {
+  personalAccessTokens = [];
+  personalAccessTokenSeq = 0;
+}
 
 // --- in-memory todo store ------------------------------------------------
 
@@ -657,6 +668,7 @@ export function seedAssistantRun(partial: Partial<AssistantRun>): AssistantRun {
     suggestions: partial.suggestions ?? [],
     suggestedProject: partial.suggestedProject,
     outputMarkdown: partial.outputMarkdown,
+    source: partial.source ?? "API",
   };
   assistantRuns.push(run);
   return run;
@@ -808,6 +820,7 @@ const assistantHandlers = [
       outputTokens: 240,
       createdAt: new Date().toISOString(),
       suggestions: created,
+      source: "API",
     };
     assistantRuns.push(run);
     return HttpResponse.json(run, { status: 201 });
@@ -880,6 +893,7 @@ const assistantHandlers = [
       periodEnd: range.end,
       createdAt: new Date().toISOString(),
       suggestions: [],
+      source: "API",
     };
     assistantRuns.push(run);
     return HttpResponse.json(run, { status: 201 });
@@ -910,6 +924,7 @@ const assistantHandlers = [
       periodEnd: range.end,
       createdAt: new Date().toISOString(),
       suggestions: [],
+      source: "API",
     };
     assistantRuns.push(run);
     return HttpResponse.json(run, { status: 201 });
@@ -996,6 +1011,7 @@ const assistantHandlers = [
       createdAt: new Date().toISOString(),
       suggestions: [],
       suggestedProject,
+      source: "API",
     };
     assistantRuns.push(run);
     return HttpResponse.json(run, { status: 201 });
@@ -1107,6 +1123,7 @@ const assistantHandlers = [
       createdAt: new Date().toISOString(),
       suggestions: [],
       suggestedProjectEdit,
+      source: "API",
     };
     assistantRuns.push(run);
     return HttpResponse.json(run, { status: 201 });
@@ -1305,6 +1322,41 @@ export const handlers = [
     const patch = (await request.json()) as Partial<Me>;
     Object.assign(meResponse, patch);
     return HttpResponse.json(meResponse);
+  }),
+
+  // --- personal access tokens (M10.5) ----------------------------------
+
+  http.get("/kairon/api/v1/me/personal-access-tokens", ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    return HttpResponse.json(personalAccessTokens.filter((t) => !t.revoked));
+  }),
+
+  http.post("/kairon/api/v1/me/personal-access-tokens", async ({ request }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const body = (await request.json()) as { name: string; expiresAt?: string | null };
+    personalAccessTokenSeq += 1;
+    const id = `pat-${personalAccessTokenSeq}`;
+    const createdAt = new Date().toISOString();
+    personalAccessTokens.push({
+      id,
+      name: body.name,
+      createdAt,
+      lastUsedAt: null,
+      expiresAt: body.expiresAt ?? null,
+      revoked: false,
+    });
+    return HttpResponse.json(
+      { id, name: body.name, token: `kairon_pat_${id}-raw`, createdAt, expiresAt: body.expiresAt ?? null },
+      { status: 201 },
+    );
+  }),
+
+  http.delete("/kairon/api/v1/me/personal-access-tokens/:id", ({ request, params }) => {
+    if (!authed(request)) return problem(401, "Authentication required.");
+    const token = personalAccessTokens.find((t) => t.id === params.id);
+    if (!token) return problem(404, "Personal access token not found.");
+    token.revoked = true;
+    return new HttpResponse(null, { status: 204 });
   }),
 
   // --- todo -----------------------------------------------------------

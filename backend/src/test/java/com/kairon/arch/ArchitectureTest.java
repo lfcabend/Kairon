@@ -85,4 +85,12 @@ class ArchitectureTest {
             .that().resideOutsideOfPackage("com.kairon.assistant..")
             .should().dependOnClassesThat().resideInAPackage("com.anthropic..")
             .as("assistant.llm.AnthropicClient is the only wrapper around the Anthropic SDK (docs/adr/0002)");
+
+    @ArchTest
+    static final ArchRule commonSecurityNeverImportsIdentity = noClasses()
+            .that().resideInAPackage("com.kairon.common.security..")
+            .should().dependOnClassesThat().resideInAPackage("com.kairon.identity..")
+            .as("common is the shared kernel every module depends on, never the reverse — "
+                    + "PersonalAccessTokenValidator is the SPI identity implements instead "
+                    + "(docs/milestones/M10.5-mcp-server.md D15)");
 }

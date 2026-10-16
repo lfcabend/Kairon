@@ -29,6 +29,7 @@ Conventions:
 ```mermaid
 erDiagram
     app_user ||--o{ refresh_token       : has
+    app_user ||--o{ personal_access_token : has
     app_user ||--o{ todo_item           : owns
     app_user ||--o{ journal_entry       : owns
     app_user ||--o{ project             : owns
@@ -67,6 +68,16 @@ erDiagram
         varchar token_hash UK
         uuid family_id
         varchar user_agent
+        timestamptz expires_at
+        timestamptz revoked_at
+        timestamptz created_at
+    }
+    personal_access_token {
+        uuid id PK
+        uuid user_id FK
+        varchar name
+        varchar token_hash UK
+        timestamptz last_used_at
         timestamptz expires_at
         timestamptz revoked_at
         timestamptz created_at
@@ -174,6 +185,7 @@ erDiagram
         int output_tokens
         text error
         uuid batch_id FK
+        varchar source
         timestamptz created_at
         timestamptz updated_at
         bigint version
@@ -265,6 +277,29 @@ Indexes: `unique(email)`.
 
 Indexes: `unique(token_hash)`, `index(user_id)`, `index(family_id)`.
 A cleanup `CronJob` (or a scheduled task) deletes rows past `expires_at`.
+
+### `personal_access_token`  (module: identity, added `V012`, M10.5)
+
+| Column | Type | Notes |
+| --- | --- | --- |
+| `id` | uuid PK | |
+| `user_id` | uuid FK → app_user | |
+| `name` | varchar(100) | caller-chosen, e.g. "Claude Code (phone)" |
+| `token_hash` | varchar(64) | SHA-256 of the opaque token (`kairon_pat_…` prefix); **unique** |
+| `last_used_at` | timestamptz null | touched on every successful validation |
+| `expires_at` | timestamptz null | no default expiry — revocation is the primary control, same posture GitHub PATs take |
+| `revoked_at` | timestamptz null | |
+| `created_at` | timestamptz | |
+
+Indexes: `unique(token_hash)`, `index(user_id) where revoked_at is null`.
+A long-lived, named, individually revocable credential distinct from
+`refresh_token` (which rotates on every use and is family-revoked on reuse
+detection — a static credential fights that design). **No soft delete**: a
+revoked token is marked `revoked_at`, never deleted, so "who had access and
+when" stays auditable; a PAT has no rotation-family concept, so there's no
+`family_id` either. Scoped to a fixed, code-level allowlist (not a per-token
+scope column) — read-only `todo`/`journal`/`projects` plus
+`/api/v1/assistant/mcp/**` — enforced in `SecurityConfig`, never in data.
 
 ### `todo_item`  (module: todo)
 
@@ -406,6 +441,7 @@ dependency graph).
 | `input_tokens`,`output_tokens` | int null | from the API response, for cost visibility |
 | `error` | text null | RFC 7807 detail when `status = FAILED` |
 | `batch_id` | uuid FK → assistant_batch, null | set only for a `WEEKLY_SUMMARY`/`MONTHLY_SUMMARY` run dispatched by the `@Scheduled` sweep via the Anthropic Batch API (M10); null for every synchronously/`@Async`-dispatched run |
+| `source` | varchar(10) | `API` (default) \| `MCP` — added `V012`, M10.5: which door produced this run. `MCP` means the reasoning happened inside the caller's own Claude Code session via the standalone MCP server, not this instance's paid Anthropic API key; a `MCP` run draws zero per-user token budget (`input_tokens`/`output_tokens` are always `0`) and is always immediately `SUCCEEDED` — there is no `PENDING`/`RUNNING` step on this path |
 | `created_at`,`updated_at`,`version` | | |
 
 Indexes: `index(user_id, kind, created_at)`, `index(batch_id) where batch_id is
@@ -580,6 +616,7 @@ tracking the roadmap:
 | `V009__project_category_rank.sql` | per-category manual project ordering (`project.category_rank`) |
 | `V010__assistant_batch.sql` | `assistant_batch` + `assistant_run.batch_id` (M10 — the Batch API migration for M9's scheduled sweep; M10's own `JOURNAL_REFLECTION` run needed no migration at all) |
 | `V011__project_edit.sql` | widens `assistant_run.kind` to add `PROJECT_EDIT`; `assistant_suggested_project_edit` (M9.5 — renumbered from this feature's own originally-planned `V010` once `V010__assistant_batch.sql` landed first) |
+| `V012__mcp_access.sql` | `personal_access_token` + `assistant_run.source` (M10.5 — the MCP server entry point; no change to any existing `assistant_suggested_*` table) |
 | `V0xx__…` | tags, attachments, recurrence, etc. as they land |
 
 Repeatable migrations (`R__…`) only for views/functions if introduced.

@@ -81,7 +81,7 @@ class SummarySchedulerTest {
         UUID runIdB = UUID.randomUUID();
         when(assistantRuns.requestSummary(eq(USER_B), eq(SummaryPeriod.WEEK), any()))
                 .thenReturn(new AssistantRunView(runIdB, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
-                        null, null, null, null, null, Instant.now(), List.of(), null, null, null));
+                        null, null, null, null, null, Instant.now(), List.of(), null, null, null, "API"));
 
         scheduler(available).weekly();
 
@@ -98,7 +98,7 @@ class SummarySchedulerTest {
         UUID runIdB = UUID.randomUUID();
         when(assistantRuns.requestSummary(eq(USER_B), eq(SummaryPeriod.WEEK), any()))
                 .thenReturn(new AssistantRunView(runIdB, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
-                        null, null, null, null, null, Instant.now(), List.of(), null, null, null));
+                        null, null, null, null, null, Instant.now(), List.of(), null, null, null, "API"));
 
         scheduler(available).weekly();
 
@@ -112,7 +112,7 @@ class SummarySchedulerTest {
         when(assistantRuns.requestSummary(eq(USER_A), eq(SummaryPeriod.MONTH),
                 eq(CLOCK.instant().atZone(ZoneOffset.UTC).toLocalDate().minusDays(1))))
                 .thenReturn(new AssistantRunView(runId, "MONTHLY_SUMMARY", "PENDING", "claude-sonnet-5",
-                        null, null, null, null, null, Instant.now(), List.of(), null, null, null));
+                        null, null, null, null, null, Instant.now(), List.of(), null, null, null, "API"));
 
         scheduler(available).monthly();
 
@@ -126,10 +126,10 @@ class SummarySchedulerTest {
         UUID runIdB = UUID.randomUUID();
         when(assistantRuns.requestSummary(eq(USER_A), eq(SummaryPeriod.WEEK), any()))
                 .thenReturn(new AssistantRunView(runIdA, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
-                        null, null, null, null, null, Instant.now(), List.of(), null, null, null));
+                        null, null, null, null, null, Instant.now(), List.of(), null, null, null, "API"));
         when(assistantRuns.requestSummary(eq(USER_B), eq(SummaryPeriod.WEEK), any()))
                 .thenReturn(new AssistantRunView(runIdB, "WEEKLY_SUMMARY", "PENDING", "claude-sonnet-5",
-                        null, null, null, null, null, Instant.now(), List.of(), null, null, null));
+                        null, null, null, null, null, Instant.now(), List.of(), null, null, null, "API"));
 
         scheduler(available).weekly();
 

@@ -1,0 +1,71 @@
+# Default values for the kairon-mcp chart. Overlaid by values-<env>.yaml —
+# see docs/milestones/M10.5-mcp-server.md D1-chart/D1-ci for the full
+# rationale. No values-local.yaml: xbmc is the only real deployed target for
+# this feature (reaching it from a phone requires the real Funnel hostname).
+
+image:
+  repository: ghcr.io/lfcabend/kairon-mcp-server
+  tag: ""            # defaults to .Chart.AppVersion when empty — always pass --set image.tag=<git-sha>
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
+
+service:
+  type: ClusterIP
+  port: 3000
+
+# D1-auth: this server holds no credential of its own — there is nothing
+# secret to mount here at all, unlike the main kairon chart's JWT/DB/Anthropic
+# secrets. Every request forwards its own caller's personal access token.
+kairon:
+  # In-cluster Service DNS name for the main `kairon` release (D1-chart) —
+  # exact name confirmed against that chart's own service.yaml/_helpers.tpl
+  # (<release-name>, since "kairon" contains the chart name). Override if the
+  # main release is installed under a different release name.
+  baseUrl: http://kairon.kairon.svc.cluster.local:8080/kairon
+
+ingress:
+  enabled: true
+  className: nginx
+  # Sibling path on the SAME host the main kairon chart's own ingress already
+  # serves (D1-ingress) — ingress-nginx merges multiple Ingress objects
+  # targeting the same host as long as their paths don't collide, so this
+  # needs zero changes to the main chart's own ingress.yaml.
+  host: kairon.localtest.me
+  extraHosts: []
+  path: /mcp
+  annotations:
+    # Streamable HTTP keeps its GET/SSE half open for the life of a session
+    # (Q5) — buffering would break streaming, and a short read timeout would
+    # cut a long-idle-but-still-valid connection.
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # The one concession to this path now being reachable from the public
+    # internet (Q6) — a coarse per-IP rate limit, not a new application-level
+    # limiter (the backend's own Bucket4j limiter on /assistant/mcp/** still
+    # covers every real API call this server makes on a caller's behalf).
+    nginx.ingress.kubernetes.io/limit-rps: "5"
+  tls:
+    enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+startupProbe:
+  failureThreshold: 12
+  periodSeconds: 5

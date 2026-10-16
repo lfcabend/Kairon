@@ -5,11 +5,16 @@ import tools.jackson.databind.ObjectMapper;
 import com.kairon.common.ratelimit.RateLimitFilter;
 import com.kairon.common.ratelimit.RateLimitProperties;
 
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.authorization.AuthorityAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -26,6 +31,15 @@ import org.springframework.security.web.SecurityFilterChain;
  *       {@code SameSite=Strict}.</li>
  *   <li>{@code /api/v1/auth/**} and {@code /api/v1/ping} are open; every other
  *       {@code /api/v1/**} route needs a valid access token.</li>
+ *   <li>A personal-access-token (PAT, M10.5) request — recognized by its fixed
+ *       {@code kairon_pat_…} prefix, authenticated by
+ *       {@link PersonalAccessTokenAuthenticationFilter} — may reach only a
+ *       narrow allowlist (read-only {@code todo}/{@code journal}/{@code projects}
+ *       plus {@code /api/v1/assistant/mcp/**}); every other {@code /api/v1/**}
+ *       path positively excludes the {@code SCOPE_mcp} authority a PAT alone
+ *       carries, so a PAT can never reach e.g. {@code PATCH /me} or the
+ *       existing {@code /assistant/**} endpoints. A JWT principal is
+ *       unaffected (docs/milestones/M10.5-mcp-server.md D3/D17).</li>
  *   <li>Only {@code /actuator/health/**} and {@code /actuator/info} are open; every
  *       other actuator path is denied outright regardless of what
  *       {@code management.endpoints.web.exposure.include} is ever set to, so a
@@ -51,7 +65,8 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, RateLimitProperties rateLimitProperties,
-            ProblemAuthHandlers problemAuthHandlers, ObjectMapper objectMapper, Environment environment)
+            ProblemAuthHandlers problemAuthHandlers, ObjectMapper objectMapper, Environment environment,
+            ObjectProvider<PersonalAccessTokenValidator> personalAccessTokenValidators)
             throws Exception {
         // Built here rather than as beans so Spring Boot does not also register them as
         // plain servlet filters outside the security chain. A second, independently
@@ -65,6 +80,12 @@ public class SecurityConfig {
                 .bind("kairon.assistant.rate-limit", RateLimitProperties.class)
                 .orElseGet(() -> new RateLimitProperties(false, 0, null, java.util.List.of()));
         RateLimitFilter assistantRateLimitFilter = new RateLimitFilter(assistantRateLimitProperties, objectMapper);
+        // An ObjectProvider, not a direct dependency: a sliced @WebMvcTest context that
+        // imports this class but never wires the identity module has no such bean, and
+        // must still build the exact same filter chain every such test already asserts
+        // against — the PAT allowlist below only activates once a real validator exists
+        // (i.e. in the full application context).
+        PersonalAccessTokenValidator personalAccessTokenValidator = personalAccessTokenValidators.getIfAvailable();
         http
                 .csrf(csrf -> csrf.disable())
                 .cors(cors -> cors.disable())
@@ -72,22 +93,46 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/v1/auth/**", "/api/v1/ping").permitAll()
-                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
-                        .requestMatchers("/actuator/**").denyAll()
-                        .requestMatchers("/api/v1/**").authenticated()
-                        .anyRequest().permitAll())
+                .authorizeHttpRequests(auth -> {
+                    auth.requestMatchers("/api/v1/auth/**", "/api/v1/ping").permitAll()
+                            .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                            .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                            .requestMatchers("/actuator/**").denyAll();
+                    if (personalAccessTokenValidator != null) {
+                        // M10.5 D3/D17 — the PAT allowlist. Both of these are satisfied by
+                        // `authenticated()`, true for a Jwt *or* a PatPrincipal, so they must
+                        // come before the generic `/api/v1/**` rule below (Spring Security
+                        // evaluates matchers top-down, first match wins).
+                        auth.requestMatchers(HttpMethod.GET, "/api/v1/todo/**", "/api/v1/journal/**",
+                                        "/api/v1/projects/**").authenticated()
+                                .requestMatchers("/api/v1/assistant/mcp/**").authenticated()
+                                // Everything else under /api/v1/** needs to be authenticated AND not
+                                // a PAT (a PAT request to e.g. PATCH /me falls through to here, since
+                                // it doesn't match either allowlist rule above, and must be positively
+                                // denied rather than let through by a plain authenticated() check).
+                                .requestMatchers("/api/v1/**").access(AuthorizationManagers.allOf(
+                                        AuthenticatedAuthorizationManager.authenticated(),
+                                        AuthorizationManagers.not(
+                                                AuthorityAuthorizationManager.hasAuthority("SCOPE_mcp"))));
+                    } else {
+                        auth.requestMatchers("/api/v1/**").authenticated();
+                    }
+                    auth.anyRequest().permitAll();
+                })
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .authenticationEntryPoint(problemAuthHandlers)
                         .accessDeniedHandler(problemAuthHandlers)
+                        .bearerTokenResolver(new PatAwareBearerTokenResolver())
                         .jwt(Customizer.withDefaults()))
                 .exceptionHandling(ex -> ex
                         .authenticationEntryPoint(problemAuthHandlers)
                         .accessDeniedHandler(problemAuthHandlers))
                 .addFilterBefore(rateLimitFilter, BearerTokenAuthenticationFilter.class)
                 .addFilterBefore(assistantRateLimitFilter, BearerTokenAuthenticationFilter.class);
+        if (personalAccessTokenValidator != null) {
+            http.addFilterBefore(new PersonalAccessTokenAuthenticationFilter(personalAccessTokenValidator),
+                    BearerTokenAuthenticationFilter.class);
+        }
         return http.build();
     }
 }

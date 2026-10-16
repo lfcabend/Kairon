@@ -15,6 +15,7 @@ import type { Me, RolloverMode } from "@/lib/api/types";
 import { AssistantSettings } from "../assistant/AssistantSettings";
 import { getRolloverMode } from "../todo/useRollover";
 import { useAuthStore } from "./authStore";
+import { DeveloperAccessSection } from "./DeveloperAccessSection";
 
 const schema = z.object({
   displayName: z.string().min(1, "Display name is required").max(80),
@@ -145,6 +146,8 @@ export default function AccountPage() {
       </section>
 
       <AssistantSettings me={meQuery.data} />
+
+      <DeveloperAccessSection />
 
       <section className="flex gap-3">
         <Button variant="outline" onClick={() => void signOut(false)}>

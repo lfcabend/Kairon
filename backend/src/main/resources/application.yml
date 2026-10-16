@@ -182,3 +182,16 @@ kairon:
         - /api/v1/assistant/project-edits
         - /api/v1/assistant/summaries
         - /api/v1/assistant/journal-reflection
+        # M10.5 — the ten new MCP entry-point endpoints join the same budget/mechanism
+        # (flagged a fourth time now for a reason: M8.5, M9, and M10 each forgot this
+        # once at plan time, docs/milestones/M10.5-mcp-server.md §4.4).
+        - /api/v1/assistant/mcp/todo-suggestions:context
+        - /api/v1/assistant/mcp/todo-suggestions
+        - /api/v1/assistant/mcp/project-plan:context
+        - /api/v1/assistant/mcp/project-plan
+        - /api/v1/assistant/mcp/project-edits:context
+        - /api/v1/assistant/mcp/project-edits
+        - /api/v1/assistant/mcp/summaries:context
+        - /api/v1/assistant/mcp/summaries
+        - /api/v1/assistant/mcp/journal-reflection:context
+        - /api/v1/assistant/mcp/journal-reflection

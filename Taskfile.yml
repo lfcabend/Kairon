@@ -49,6 +49,12 @@ vars:
   # and pushed alongside the app image, tagged with the same commit sha.
   GHCR_MIGRATOR_REPO: '{{.GHCR_MIGRATOR_REPO | default "ghcr.io/lfcabend/kairon-migrator"}}'
   GHCR_MIGRATOR_IMAGE: '{{.GHCR_MIGRATOR_REPO}}:{{.IMAGE_TAG}}'
+  # M10.5 — the MCP server's own image/chart, deployed as a separate release
+  # into the same xbmc namespace (docs/milestones/M10.5-mcp-server.md D1-chart).
+  GHCR_MCP_REPO: '{{.GHCR_MCP_REPO | default "ghcr.io/lfcabend/kairon-mcp-server"}}'
+  GHCR_MCP_IMAGE: '{{.GHCR_MCP_REPO}}:{{.IMAGE_TAG}}'
+  MCP_HELM_RELEASE: kairon-mcp
+  MCP_HELM_CHART: deploy/helm/kairon-mcp
   # Remote k3s deploy target. The kube-context is pinned on the helm call so a
   # wrong current-context cannot misfire the deploy.
   XBMC_CONTEXT: '{{.XBMC_CONTEXT | default "xbmc"}}'
@@ -153,6 +159,7 @@ tasks:
     cmds:
       - task: image-push
       - task: migrator-image-push
+      - task: mcp-image-push
       - >-
         helm upgrade --install {{.HELM_RELEASE}} {{.HELM_CHART}}
         --kube-context {{.XBMC_CONTEXT}}
@@ -161,6 +168,22 @@ tasks:
         --set image.tag={{.IMAGE_TAG}}
         --wait --timeout 65m
       - 'echo "deployed {{.GHCR_IMAGE}} to context {{.XBMC_CONTEXT}}"'
+      - >-
+        helm upgrade --install {{.MCP_HELM_RELEASE}} {{.MCP_HELM_CHART}}
+        --kube-context {{.XBMC_CONTEXT}}
+        --namespace {{.XBMC_NAMESPACE}} --create-namespace
+        -f {{.MCP_HELM_CHART}}/values-xbmc.yaml
+        --set image.tag={{.IMAGE_TAG}}
+        --wait --timeout 10m
+      - 'echo "deployed {{.GHCR_MCP_IMAGE}} to context {{.XBMC_CONTEXT}}"'
+
+  mcp-image-push:
+    desc: Build the MCP server image (docker/mcp-server.Dockerfile) and push it to GHCR. Needs `docker login ghcr.io`.
+    cmds:
+      - docker build -f docker/mcp-server.Dockerfile -t {{.GHCR_MCP_IMAGE}} -t {{.GHCR_MCP_REPO}}:latest .
+      - docker push {{.GHCR_MCP_IMAGE}}
+      - docker push {{.GHCR_MCP_REPO}}:latest
+      - 'echo "pushed {{.GHCR_MCP_IMAGE}}"'
 
   ingress:
     desc: Install/upgrade the ingress-nginx controller (serves http://kairon.localtest.me/kairon).

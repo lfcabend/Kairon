@@ -26,5 +26,7 @@ public record AssistantRunView(
         List<AssistantSuggestedTaskView> suggestions,
         AssistantSuggestedProjectView suggestedProject,
         AssistantSuggestedProjectEditView suggestedProjectEdit,
-        String outputMarkdown) {
+        String outputMarkdown,
+        /** {@code "API"} or {@code "MCP"} (M10.5 D10) — which door produced this run. */
+        String source) {
 }

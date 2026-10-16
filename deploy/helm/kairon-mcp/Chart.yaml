@@ -1,0 +1,11 @@
+apiVersion: v2
+name: kairon-mcp
+description: >-
+  kairon-mcp-server — the standalone MCP server bridging a user's own Claude
+  Code session to Kairon's assistant features (docs/milestones/
+  M10.5-mcp-server.md). Its own chart/release, deployed into the same
+  namespace as the main `kairon` release, deliberately decoupled from it
+  (D1-chart).
+type: application
+version: 0.1.0
+appVersion: "0.0.1"

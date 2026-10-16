@@ -55,7 +55,8 @@ class ProjectEditControllerTest {
         AssistantSuggestedProjectEditView suggestedProjectEdit = new AssistantSuggestedProjectEditView(
                 UUID.randomUUID(), id, "PROPOSED", UUID.randomUUID(), null, List.of(), List.of(), List.of());
         return new AssistantRunView(id, "PROJECT_EDIT", "SUCCEEDED", "claude-sonnet-5", null, null,
-                500, 200, null, Instant.parse("2026-09-25T08:00:00Z"), List.of(), null, suggestedProjectEdit, null);
+                500, 200, null, Instant.parse("2026-09-25T08:00:00Z"), List.of(), null, suggestedProjectEdit, null,
+                "API");
     }
 
     @Test
