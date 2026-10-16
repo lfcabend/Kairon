@@ -1,5 +1,6 @@
 package com.kairon.android.projects
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -309,8 +310,27 @@ private fun ProjectRow(
                     Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            project.propertySize?.let { ProjectSizeBadge(size = it, modifier = Modifier.padding(end = 8.dp)) }
             ProjectStatusChip(status = project.status, onSelect = onChangeStatus)
         }
+    }
+}
+
+/** Small, non-interactive outline badge for `project.size` (mirrors the web app's own size `Badge`, M4 D16). Hidden entirely for an unsized project. */
+@Composable
+private fun ProjectSizeBadge(size: String, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(4.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+        color = MaterialTheme.colorScheme.surface,
+    ) {
+        Text(
+            size,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+        )
     }
 }
 
