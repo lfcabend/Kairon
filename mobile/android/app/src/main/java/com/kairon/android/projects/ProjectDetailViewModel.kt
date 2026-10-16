@@ -21,7 +21,11 @@ import com.kairon.android.core.network.userMessage
 import com.kairon.android.core.sync.SyncRepository
 import com.kairon.android.core.sync.toEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -31,6 +35,11 @@ import java.util.UUID
 import javax.inject.Inject
 
 private const val TAG = "ProjectDetailViewModel"
+
+/** How long a swiped-away task stays pending before [ProjectDetailViewModel.deleteTask] actually calls the backend. */
+private const val DELETE_UNDO_WINDOW_MILLIS = 5000L
+
+data class PendingTaskDeletion(val taskId: UUID, val taskName: String)
 
 val TASK_STATUSES = listOf("TODO", "IN_PROGRESS", "BLOCKED", "DONE")
 
@@ -67,13 +76,23 @@ class ProjectDetailViewModel @Inject constructor(
     private val syncError = MutableStateFlow<AppError?>(null)
     private val error = MutableStateFlow<String?>(null)
 
+    /** Tasks swiped away but not yet actually deleted (D-undo) — hidden from [state] while pending. */
+    private val pendingDeleteIds = MutableStateFlow<Set<UUID>>(emptySet())
+    private val pendingDeleteJobs = mutableMapOf<UUID, Job>()
+    private val _pendingDeletions = MutableSharedFlow<PendingTaskDeletion>(extraBufferCapacity = 1)
+    val pendingDeletions: SharedFlow<PendingTaskDeletion> = _pendingDeletions
+
     val state: StateFlow<ProjectDetailUiState> = combine(
-        combine(projectDao.observeById(projectId), projectTaskDao.observeForProject(projectId)) { project, tasks -> project to tasks },
+        combine(
+            projectDao.observeById(projectId),
+            projectTaskDao.observeForProject(projectId),
+            pendingDeleteIds,
+        ) { project, tasks, pendingIds -> Triple(project, tasks.filterNot { it.id in pendingIds }, pendingIds) },
         dependencies,
         syncing,
         syncError,
         error,
-    ) { (project, tasks), deps, isSyncing, syncErr, err ->
+    ) { (project, tasks, _), deps, isSyncing, syncErr, err ->
         ProjectDetailUiState(project, tasks, deps, isSyncing, syncErr, err)
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProjectDetailUiState())
 
@@ -171,17 +190,35 @@ class ProjectDetailViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Hides [task] immediately (via [pendingDeleteIds]) and emits a
+     * [PendingTaskDeletion] for the screen to show an "Undo" snackbar, but
+     * only actually calls the backend after [DELETE_UNDO_WINDOW_MILLIS] —
+     * [undoDeleteTask] cancels that job and un-hides the task instead.
+     */
     fun deleteTask(task: ProjectTaskEntity) {
-        viewModelScope.launch {
+        pendingDeleteIds.value = pendingDeleteIds.value + task.id
+        _pendingDeletions.tryEmit(PendingTaskDeletion(task.id, task.name))
+        pendingDeleteJobs[task.id] = viewModelScope.launch {
+            delay(DELETE_UNDO_WINDOW_MILLIS)
+            pendingDeleteJobs.remove(task.id)
             runCatching {
                 taskApi.delete1(task.id).requireSuccessful(TAG, "deleteTask")
             }.onSuccess {
                 projectTaskDao.deleteById(task.id)
+                pendingDeleteIds.value = pendingDeleteIds.value - task.id
                 AppLog.i(TAG, "deleteTask.success", mapOf("id" to task.id))
             }.onFailure { ex ->
                 AppLog.e(TAG, "deleteTask.failed", mapOf("id" to task.id), throwable = ex)
+                pendingDeleteIds.value = pendingDeleteIds.value - task.id
                 error.value = ex.toAppError().userMessage()
             }
         }
+    }
+
+    fun undoDeleteTask(taskId: UUID) {
+        pendingDeleteJobs.remove(taskId)?.cancel()
+        pendingDeleteIds.value = pendingDeleteIds.value - taskId
+        AppLog.i(TAG, "deleteTask.undone", mapOf("id" to taskId))
     }
 }
