@@ -7,7 +7,7 @@ import { beforeEach, expect, test } from "vitest";
 import App from "@/App";
 import { useAuthStore } from "@/features/auth/authStore";
 
-import { seedProjectTasks, seedProjects } from "@/test/msw/handlers";
+import { seedCategories, seedProjectTasks, seedProjects } from "@/test/msw/handlers";
 
 function renderApp(route: string) {
   const queryClient = new QueryClient({
@@ -36,6 +36,16 @@ test("renders the project header and its task tree", async () => {
 
   expect(await screen.findByRole("heading", { name: "Home network overhaul" })).toBeInTheDocument();
   expect(await screen.findByText("Run new drops")).toBeInTheDocument();
+  expect(screen.getByText("Uncategorized")).toBeInTheDocument();
+});
+
+test("renders the project's category next to its status/size badges", async () => {
+  const category = seedCategories([{ name: "Investing" }])[0];
+  const project = seedProjects([{ name: "Lijfrente polis", categoryId: category.id }])[0];
+  renderApp(`/projects/${project.id}`);
+
+  expect(await screen.findByRole("heading", { name: "Lijfrente polis" })).toBeInTheDocument();
+  expect(screen.getByText("Investing")).toBeInTheDocument();
 });
 
 test("Tabs switch between tree and board without losing task state", async () => {

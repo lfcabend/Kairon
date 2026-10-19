@@ -37,6 +37,10 @@ export function ProjectDetailPage() {
   if (isLoading) return null;
   if (!project) return <p className="text-sm text-muted-foreground">Project not found.</p>;
 
+  const categoryName = project.categoryId
+    ? categories.find((c) => c.id === project.categoryId)?.name
+    : "Uncategorized";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -46,6 +50,7 @@ export function ProjectDetailPage() {
             <h1 className="text-xl font-semibold">{project.name}</h1>
             <Badge variant="secondary">{project.status.replace("_", " ")}</Badge>
             {project.size && <Badge variant="outline">{project.size}</Badge>}
+            {categoryName && <Badge variant="outline" className="text-muted-foreground">{categoryName}</Badge>}
           </div>
           {project.description && <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>}
         </div>
