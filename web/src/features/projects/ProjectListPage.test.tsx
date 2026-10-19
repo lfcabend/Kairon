@@ -79,6 +79,16 @@ test("the quick filter narrows the rendered projects by name without refetching"
   expect(screen.queryByText("Beta")).not.toBeInTheDocument();
 });
 
+test("a project past the old 50-item default page size still renders in its category section", async () => {
+  const category = seedCategories([{ name: "Investing" }])[0];
+  seedProjects(Array.from({ length: 54 }, (_, i) => ({ name: `Filler ${i + 1}` })));
+  seedProjects([{ name: "Lijfrente polis", categoryId: category.id }]);
+  renderApp("/projects");
+
+  expect(await screen.findByText("Investing")).toBeInTheDocument();
+  expect(screen.getByText("Lijfrente polis")).toBeInTheDocument();
+});
+
 test("the priority list renders every non-archived project flat, without category grouping", async () => {
   const category = seedCategories([{ name: "Home" }])[0];
   seedProjects([{ name: "Alpha", categoryId: category.id }, { name: "Beta" }]);

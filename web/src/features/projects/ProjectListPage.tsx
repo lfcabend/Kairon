@@ -39,6 +39,16 @@ import { useMoveProjectCategory, useProjects, useReorderProjectsInCategory } fro
 
 type SortMode = "status" | "recent" | "name" | "priority" | "custom";
 
+/**
+ * Every non-priority sort mode groups the *entire* result into category sections
+ * client-side (same "every project, flat" assumption `useProjectsByPriority`'s
+ * unpaginated endpoint already makes for "Sort by: Priority") — there's no "load
+ * more" control on this page, so a project past the old 50-item default page size
+ * would silently vanish from its category section. Comfortably larger than any
+ * realistic personal project count.
+ */
+const ALL_PROJECTS_PAGE_SIZE = 1000;
+
 type Section = { id: string; name: string; projects: Project[] };
 
 const STATUS_OPTIONS: { value: string; label: string }[] = [
@@ -256,7 +266,7 @@ export function ProjectListPage() {
   const statusParam = status === "any" ? undefined : (status as ProjectStatus);
   const sizeParam = size === "any" ? undefined : (size as ProjectSize);
 
-  const { data: page, isLoading } = useProjects(statusParam, undefined, sizeParam, 0);
+  const { data: page, isLoading } = useProjects(statusParam, undefined, sizeParam, 0, ALL_PROJECTS_PAGE_SIZE);
   const projects = page?.content ?? [];
 
   const sections = useMemo(() => {

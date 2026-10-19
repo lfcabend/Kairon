@@ -13,10 +13,16 @@ import { randomId } from "@/lib/id";
 
 import { projectKeys } from "./projectKeys";
 
-export function useProjects(status: string | undefined, categoryId: string | undefined, size: string | undefined, page = 0) {
+export function useProjects(
+  status: string | undefined,
+  categoryId: string | undefined,
+  size: string | undefined,
+  page = 0,
+  pageSize?: number,
+) {
   return useQuery({
-    queryKey: projectKeys.list(status, categoryId, size, page),
-    queryFn: () => projectsApi.list({ status, categoryId, size, page }),
+    queryKey: projectKeys.list(status, categoryId, size, page, pageSize),
+    queryFn: () => projectsApi.list({ status, categoryId, size, page, pageSize }),
   });
 }
 
