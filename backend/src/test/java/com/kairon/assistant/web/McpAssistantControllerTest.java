@@ -8,10 +8,12 @@ import java.util.UUID;
 import com.kairon.assistant.app.AssistantRunView;
 import com.kairon.assistant.app.Horizon;
 import com.kairon.assistant.app.McpAssistantService;
+import com.kairon.assistant.app.ProjectEditApplyResult;
 import com.kairon.assistant.app.RenderedContext;
 import com.kairon.assistant.app.SummaryPeriod;
 import com.kairon.assistant.llm.ProjectEditPayload;
 import com.kairon.assistant.llm.ProjectPlanPayload;
+import com.kairon.projects.api.ProjectView;
 import com.kairon.common.security.CurrentUserArgumentResolver;
 import com.kairon.common.security.SecurityConfig;
 import com.kairon.common.security.WebMvcConfig;
@@ -35,7 +37,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Request/response DTO mapping for all ten {@code /assistant/mcp/**} endpoints. */
+/** Request/response DTO mapping for all eleven {@code /assistant/mcp/**} endpoints. */
 @WebMvcTest(McpAssistantController.class)
 @Import({ SecurityConfig.class, WebMvcConfig.class, CurrentUserArgumentResolver.class })
 @ActiveProfiles("test")
@@ -141,6 +143,25 @@ class McpAssistantControllerTest {
                                 + "\"reorderOperations\":[]}}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.kind").value("PROJECT_EDIT"));
+    }
+
+    @Test
+    void applyProjectEditReturns200WithTheUpdatedProjectAndTasks() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        ProjectView updated = new ProjectView(projectId, null, "Kitchen remodel", null, "ACTIVE", null, 100, 100,
+                "#6366f1", DAY, DAY, null, null, Instant.parse("2026-09-21T08:00:00Z"),
+                Instant.parse("2026-09-21T08:00:00Z"), 0);
+        when(mcp.applyProjectEdit(any(), eq(projectId), eq("add a task"), eq(null), any(ProjectEditPayload.class)))
+                .thenReturn(new ProjectEditApplyResult(updated, List.of()));
+
+        mvc.perform(post("/api/v1/assistant/mcp/project-edits:apply").with(asUser())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"projectId\":\"" + projectId + "\",\"description\":\"add a task\","
+                                + "\"diff\":{\"taskOperations\":[],\"dependencyOperations\":[],"
+                                + "\"reorderOperations\":[]}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.project.id").value(projectId.toString()))
+                .andExpect(jsonPath("$.tasks").isArray());
     }
 
     @Test

@@ -8,7 +8,7 @@ import { registerAssistantSubmitTools } from "./assistantSubmit.js";
 import { registerGeneralReadTools } from "./generalReads.js";
 
 /**
- * Exercises every one of the 16 registered tools through the REAL
+ * Exercises every one of the 17 registered tools through the REAL
  * `@modelcontextprotocol/sdk` `McpServer`/`Client` pair (linked in-memory
  * transports, no network) rather than the lighter `testHarness.ts` fake used
  * by the per-group unit tests — this is the only place that proves the real
@@ -76,6 +76,15 @@ const CASES: Case[] = [
     invalid: { projectId: "p1", description: "add a task" }, // missing diff
   },
   {
+    tool: "update_project",
+    valid: {
+      projectId: "p1",
+      description: "add a task",
+      diff: { taskOperations: [], dependencyOperations: [], reorderOperations: [] },
+    },
+    invalid: { projectId: "p1", description: "add a task" }, // missing diff
+  },
+  {
     tool: "submit_summary",
     valid: { period: "WEEK", date: "2026-09-21", markdown: "It went well." },
     invalid: { period: "WEEK", date: "2026-09-21" }, // missing markdown
@@ -100,7 +109,7 @@ describe("every registered tool, via the real MCP SDK validation layer", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("registers exactly the 16 tools this server is documented to expose", async () => {
+  it("registers exactly the 17 tools this server is documented to expose", async () => {
     const { client } = await connectedClient();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual(CASES.map((c) => c.tool).sort());

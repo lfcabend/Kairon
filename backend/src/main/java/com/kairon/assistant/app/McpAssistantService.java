@@ -17,6 +17,8 @@ import com.kairon.common.error.ApiException;
 import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.journal.api.JournalApi;
+import com.kairon.projects.api.ProjectTaskView;
+import com.kairon.projects.api.ProjectView;
 import com.kairon.projects.api.ProjectsApi;
 
 import tools.jackson.databind.ObjectMapper;
@@ -58,6 +60,7 @@ public class McpAssistantService {
     private final AssistantRunRepository runs;
     private final AssistantAvailability availability;
     private final AssistantSuggestionWriter writer;
+    private final SuggestedProjectEditService suggestedProjectEditService;
     private final ProjectsApi projectsApi;
     private final JournalApi journal;
     private final TodoSuggestionContextBuilder todoContextBuilder;
@@ -68,13 +71,15 @@ public class McpAssistantService {
     private final ObjectMapper objectMapper;
 
     public McpAssistantService(AssistantRunRepository runs, AssistantAvailability availability,
-            AssistantSuggestionWriter writer, ProjectsApi projectsApi, JournalApi journal,
+            AssistantSuggestionWriter writer, SuggestedProjectEditService suggestedProjectEditService,
+            ProjectsApi projectsApi, JournalApi journal,
             TodoSuggestionContextBuilder todoContextBuilder, ProjectPlanContextBuilder projectPlanContextBuilder,
             ProjectEditContextBuilder projectEditContextBuilder, SummaryContextBuilder summaryContextBuilder,
             JournalReflectionContextBuilder journalReflectionContextBuilder, ObjectMapper objectMapper) {
         this.runs = runs;
         this.availability = availability;
         this.writer = writer;
+        this.suggestedProjectEditService = suggestedProjectEditService;
         this.projectsApi = projectsApi;
         this.journal = journal;
         this.todoContextBuilder = todoContextBuilder;
@@ -181,6 +186,40 @@ public class McpAssistantService {
                 run.getId(), userId.value(), projectId, persisted.taskOperations().size());
         return AssistantMapper.toRunView(run, List.of(), null,
                 AssistantMapper.toSuggestedProjectEditView(saved, persisted));
+    }
+
+    /**
+     * Same as {@link #submitProjectEdit}, but applies the diff immediately
+     * instead of leaving it {@code PROPOSED} for later review — the Claude
+     * Code conversation that produced it *is* the review step. Reuses
+     * {@link SuggestedProjectEditService#accept} so the apply goes through
+     * exactly the same validation/cascade logic the web UI's own "Edit with
+     * AI" accept button uses, immediately after persisting the same
+     * {@code PROPOSED} audit row {@link #submitProjectEdit} would.
+     */
+    @Transactional
+    public ProjectEditApplyResult applyProjectEdit(UserId userId, UUID projectId, String description, String model,
+            ProjectEditPayload diff) {
+        availability.requireProjectEditingAvailable(userId);
+        projectsApi.requireProject(userId, projectId); // re-checked (D14's own posture)
+
+        AssistantRun run = AssistantRun.pending(userId.value(), AssistantRunKind.PROJECT_EDIT, null, null,
+                resolveCallerModel(model));
+        run.markMcp();
+        runs.save(run);
+        ProjectEditContextBuilder.Context context = projectEditContextBuilder.build(userId, projectId, description);
+        run.start(context.inputSnapshot());
+        runs.save(run);
+
+        AssistantSuggestedProjectEdit saved = writer.saveSuggestedEdit(run, projectId, diff, context.categories());
+        run.succeed(0, 0);
+        runs.save(run);
+
+        ProjectView updated = suggestedProjectEditService.accept(userId, saved.getId(), null);
+        List<ProjectTaskView> tasks = projectsApi.tasksForProject(userId, projectId);
+        log.info("Applied MCP-submitted PROJECT_EDIT run {} userId={} projectId={} (auto-accepted)",
+                run.getId(), userId.value(), projectId);
+        return new ProjectEditApplyResult(updated, tasks);
     }
 
     // --- Summary -------------------------------------------------------------

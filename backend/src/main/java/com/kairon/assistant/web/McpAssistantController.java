@@ -2,9 +2,12 @@ package com.kairon.assistant.web;
 
 import com.kairon.assistant.app.AssistantRunView;
 import com.kairon.assistant.app.McpAssistantService;
+import com.kairon.assistant.app.ProjectEditApplyResult;
 import com.kairon.assistant.app.RenderedContext;
+import com.kairon.assistant.web.McpAssistantDtos.ApplyProjectEditRequest;
 import com.kairon.assistant.web.McpAssistantDtos.JournalReflectionContextRequest;
 import com.kairon.assistant.web.McpAssistantDtos.McpContextResponse;
+import com.kairon.assistant.web.McpAssistantDtos.ProjectEditApplyResponse;
 import com.kairon.assistant.web.McpAssistantDtos.ProjectEditContextRequest;
 import com.kairon.assistant.web.McpAssistantDtos.ProjectPlanContextRequest;
 import com.kairon.assistant.web.McpAssistantDtos.SubmitJournalReflectionRequest;
@@ -37,6 +40,14 @@ import org.springframework.web.bind.annotation.RestController;
  * additionally restricted to only these paths plus read-only {@code todo}/
  * {@code journal}/{@code projects} — {@code SecurityConfig} D3/D17); nothing
  * here is PAT-specific on its own.
+ *
+ * <p>Plus one eleventh endpoint, {@code project-edits:apply} — a direct-apply
+ * twin of {@code project-edits} for callers who want the Claude Code
+ * conversation itself to be the review step, skipping the normal
+ * {@code PROPOSED}-then-accept-in-the-web-UI flow entirely. It still writes
+ * the exact same {@code assistant_run}/{@code assistant_suggested_project_edit}
+ * audit rows {@code project-edits} does, immediately followed by the same
+ * accept logic the web UI's "Edit with AI" button triggers.</p>
  */
 @RestController
 @RequestMapping("/api/v1/assistant/mcp")
@@ -102,6 +113,16 @@ public class McpAssistantController {
             @Valid @RequestBody SubmitProjectEditRequest req) {
         log.debug("POST /assistant/mcp/project-edits userId={} projectId={}", userId.value(), req.projectId());
         return mcp.submitProjectEdit(userId, req.projectId(), req.description(), req.model(), req.diff());
+    }
+
+    @PostMapping("/project-edits:apply")
+    @ResponseStatus(HttpStatus.OK)
+    public ProjectEditApplyResponse applyProjectEdit(@CurrentUser UserId userId,
+            @Valid @RequestBody ApplyProjectEditRequest req) {
+        log.debug("POST /assistant/mcp/project-edits:apply userId={} projectId={}", userId.value(), req.projectId());
+        ProjectEditApplyResult result = mcp.applyProjectEdit(userId, req.projectId(), req.description(), req.model(),
+                req.diff());
+        return new ProjectEditApplyResponse(result.project(), result.tasks());
     }
 
     @PostMapping("/summaries:context")

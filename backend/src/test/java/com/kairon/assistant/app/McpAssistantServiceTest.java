@@ -18,6 +18,7 @@ import com.kairon.common.security.UserId;
 import com.kairon.identity.api.AssistantPreferencesView;
 import com.kairon.journal.api.JournalApi;
 import com.kairon.journal.api.JournalEntryView;
+import com.kairon.projects.api.ProjectTaskView;
 import com.kairon.projects.api.ProjectsApi;
 import com.kairon.projects.api.ProjectView;
 
@@ -65,6 +66,9 @@ class McpAssistantServiceTest {
     AssistantSuggestionWriter writer;
 
     @Mock
+    SuggestedProjectEditService suggestedProjectEditService;
+
+    @Mock
     ProjectsApi projectsApi;
 
     @Mock
@@ -92,9 +96,9 @@ class McpAssistantServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new McpAssistantService(runs, availability, writer, projectsApi, journal, todoContextBuilder,
-                projectPlanContextBuilder, projectEditContextBuilder, summaryContextBuilder,
-                journalReflectionContextBuilder, objectMapper);
+        service = new McpAssistantService(runs, availability, writer, suggestedProjectEditService, projectsApi,
+                journal, todoContextBuilder, projectPlanContextBuilder, projectEditContextBuilder,
+                summaryContextBuilder, journalReflectionContextBuilder, objectMapper);
     }
 
     private static AssistantPreferencesView prefs(String tone) {
@@ -310,6 +314,65 @@ class McpAssistantServiceTest {
         assertThat(view.source()).isEqualTo("MCP");
         assertThat(view.suggestedProjectEdit()).isNotNull();
         assertThat(view.suggestedProjectEdit().taskOperations()).hasSize(1);
+    }
+
+    @Test
+    void applyProjectEdit_whenNotOptedIn_throwsForbiddenAndNeverChecksTheProject() {
+        when(availability.requireProjectEditingAvailable(USER))
+                .thenThrow(ApiException.forbidden("You haven't enabled project editing in Settings."));
+        ProjectEditPayload diff = new ProjectEditPayload(null, List.of(), List.of(), List.of());
+
+        assertThatThrownBy(() -> service.applyProjectEdit(USER, UUID.randomUUID(), "add a task", null, diff))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(403));
+        verify(projectsApi, never()).requireProject(any(), any());
+        verify(runs, never()).save(any());
+    }
+
+    @Test
+    void applyProjectEdit_whenProjectNotOwned_throws404BeforeSavingAnything() {
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenThrow(ApiException.notFound("Project not found."));
+        TaskOperationPayload op = new TaskOperationPayload("ADD", null, "n1", null, "Inspection", null, false, DAY,
+                DAY, null);
+        ProjectEditPayload diff = new ProjectEditPayload(null, List.of(op), List.of(), List.of());
+
+        assertThatThrownBy(() -> service.applyProjectEdit(USER, projectId, "add a task", null, diff))
+                .isInstanceOf(ApiException.class)
+                .satisfies(e -> assertThat(((ApiException) e).getStatus().value()).isEqualTo(404));
+        verify(runs, never()).save(any());
+        verify(writer, never()).saveSuggestedEdit(any(), any(), any(), any());
+        verify(suggestedProjectEditService, never()).accept(any(), any(), any());
+    }
+
+    @Test
+    void applyProjectEdit_onSuccess_acceptsTheDiffAndReturnsTheUpdatedProjectAndTasks() {
+        UUID projectId = UUID.randomUUID();
+        when(projectsApi.requireProject(USER, projectId)).thenReturn(project(projectId));
+        when(projectEditContextBuilder.build(eq(USER), eq(projectId), eq("add a task")))
+                .thenReturn(new ProjectEditContextBuilder.Context("sys", "user", Map.of(), List.of()));
+        TaskOperationPayload op = new TaskOperationPayload("ADD", null, "n1", null, "Inspection", null, false, DAY,
+                DAY, null);
+        ProjectEditPayload diff = new ProjectEditPayload(null, List.of(op), List.of(), List.of());
+        AssistantSuggestedProjectEdit saved = AssistantSuggestedProjectEdit.propose(UUID.randomUUID(), USER.value(),
+                projectId, Map.of());
+        when(writer.saveSuggestedEdit(any(), eq(projectId), eq(diff), any())).thenReturn(saved);
+        ProjectView updated = project(projectId);
+        when(suggestedProjectEditService.accept(USER, saved.getId(), null)).thenReturn(updated);
+        List<ProjectTaskView> tasks = List.of();
+        when(projectsApi.tasksForProject(USER, projectId)).thenReturn(tasks);
+
+        ProjectEditApplyResult result = service.applyProjectEdit(USER, projectId, "add a task", null, diff);
+
+        assertThat(result.project()).isEqualTo(updated);
+        assertThat(result.tasks()).isEqualTo(tasks);
+        verify(suggestedProjectEditService).accept(USER, saved.getId(), null);
+
+        ArgumentCaptor<com.kairon.assistant.domain.AssistantRun> savedRun =
+                ArgumentCaptor.forClass(com.kairon.assistant.domain.AssistantRun.class);
+        verify(runs, org.mockito.Mockito.atLeastOnce()).save(savedRun.capture());
+        assertThat(savedRun.getValue().getSource().name()).isEqualTo("MCP");
+        verify(runs, never()).sumTokensSince(any(), any());
     }
 
     private static ProjectView project(UUID id) {

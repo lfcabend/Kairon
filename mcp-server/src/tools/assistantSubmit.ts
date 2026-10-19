@@ -104,6 +104,12 @@ const projectEditSchema = z.object({
  * data. Draws zero per-user token budget (D5) and is tagged `source: MCP`
  * (D10). You must have called the matching `get_*_context` tool first and
  * based your answer only on what it returned.
+ *
+ * Plus one direct-apply tool, `update_project` — the one exception to "never
+ * a direct accept" above: it writes the same `PROPOSED` audit row
+ * `submit_project_edit` does, then immediately applies it, for a caller that
+ * wants the chat conversation itself to stand in for the web UI's review
+ * step.
  */
 export function registerAssistantSubmitTools(server: McpServer, bearerToken: string): void {
   server.tool(
@@ -172,6 +178,32 @@ export function registerAssistantSubmitTools(server: McpServer, bearerToken: str
           body: { projectId, description, model, diff },
         });
         return textResult(run);
+      } catch (err) {
+        return errorResult((err as Error).message);
+      }
+    },
+  );
+
+  server.tool(
+    "update_project",
+    "Apply an edit diff directly to an existing project and its tasks — same diff shape as " +
+      "submit_project_edit (call get_project_edit_context first), but applied immediately instead " +
+      "of left PROPOSED for later review in the Kairon UI. Use this once you and the user have " +
+      "agreed on the change in this conversation; that agreement *is* the review step. Still " +
+      "writes the same audit trail submit_project_edit does. 404s if the project isn't yours.",
+    {
+      projectId: z.string(),
+      description: z.string(),
+      model: MODEL_FIELD,
+      diff: projectEditSchema,
+    },
+    async ({ projectId, description, model, diff }) => {
+      try {
+        const result = await kaironFetch(bearerToken, "/assistant/mcp/project-edits:apply", {
+          method: "POST",
+          body: { projectId, description, model, diff },
+        });
+        return textResult(result);
       } catch (err) {
         return errorResult((err as Error).message);
       }

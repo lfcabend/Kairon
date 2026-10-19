@@ -9,6 +9,8 @@ import com.kairon.assistant.app.SummaryPeriod;
 import com.kairon.assistant.llm.ProjectEditPayload;
 import com.kairon.assistant.llm.ProjectPlanPayload;
 import com.kairon.assistant.llm.SuggestedTaskPayload;
+import com.kairon.projects.api.ProjectTaskView;
+import com.kairon.projects.api.ProjectView;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -51,6 +53,14 @@ final class McpAssistantDtos {
 
     record SubmitProjectEditRequest(@NotNull UUID projectId, @NotBlank String description, String model,
             @NotNull @Valid ProjectEditPayload diff) {
+    }
+
+    /** Same shape as {@link SubmitProjectEditRequest} — the diff is applied immediately, not left {@code PROPOSED}. */
+    record ApplyProjectEditRequest(@NotNull UUID projectId, @NotBlank String description, String model,
+            @NotNull @Valid ProjectEditPayload diff) {
+    }
+
+    record ProjectEditApplyResponse(ProjectView project, List<ProjectTaskView> tasks) {
     }
 
     record SummaryContextRequest(@NotNull SummaryPeriod period, @NotNull LocalDate date) {
