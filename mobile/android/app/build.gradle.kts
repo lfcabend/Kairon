@@ -127,6 +127,11 @@ dependencies {
     kapt(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
 
+    // M11.9 — periodic background notification checks (NotificationCheckWorker).
+    implementation(libs.work.runtime.ktx)
+    implementation(libs.hilt.work)
+    kapt(libs.hilt.compiler.androidx)
+
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     kapt(libs.room.compiler)
@@ -152,5 +157,9 @@ dependencies {
     // collaborators directly (no Hilt test runner wired up); mockk's plain JVM
     // artifact doesn't work against real Android bytecode on-device/emulator.
     androidTestImplementation(libs.mockk.android)
+    // M11.9 — NotificationCheckWorkerTest needs a real Context (TestListenableWorkerBuilder),
+    // only available under instrumentation, not this project's Robolectric-free unit tests.
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.work.testing)
     debugImplementation(libs.compose.ui.test.manifest)
 }

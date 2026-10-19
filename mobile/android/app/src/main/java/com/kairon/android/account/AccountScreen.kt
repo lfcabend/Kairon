@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.kairon.android.assistant.AssistantSettingsSection
 import com.kairon.android.core.ui.InlineError
+import com.kairon.android.notifications.NotificationsSection
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,6 +49,7 @@ fun AccountScreen(onLoggedOut: () -> Unit, viewModel: AccountViewModel = hiltVie
             }
 
             AssistantSettingsSection()
+            NotificationsSection()
         }
     }
 }

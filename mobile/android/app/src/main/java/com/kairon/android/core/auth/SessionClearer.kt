@@ -6,6 +6,7 @@ import com.kairon.android.core.data.ProjectTaskDao
 import com.kairon.android.core.data.TodoDao
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.sync.SyncCursorStore
+import com.kairon.android.notifications.NotificationScheduler
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,7 +21,10 @@ private const val TAG = "SessionClearer"
  * `/sync` cursor forces a full resync on the next login no matter which path
  * ended the session. M11.5 extends this to the three new Room tables —
  * leaving any of them out here would repeat the cross-account-leak bug M11.8
- * already found and fixed for `todo`.
+ * already found and fixed for `todo`. M11.9 (D8) extends it again to cancel
+ * [NotificationCheckWorker][com.kairon.android.notifications.NotificationCheckWorker]'s
+ * periodic job — otherwise it would keep firing (and failing) a `/sync` call
+ * every ~30 minutes on a logged-out device forever.
  */
 @Singleton
 class SessionClearer @Inject constructor(
@@ -30,6 +34,7 @@ class SessionClearer @Inject constructor(
     private val projectDao: ProjectDao,
     private val projectTaskDao: ProjectTaskDao,
     private val syncCursorStore: SyncCursorStore,
+    private val notificationScheduler: NotificationScheduler,
 ) {
     suspend fun clearSession() {
         tokenStore.clear()
@@ -38,6 +43,7 @@ class SessionClearer @Inject constructor(
         projectDao.clearAll()
         projectTaskDao.clearAll()
         syncCursorStore.clear()
+        notificationScheduler.cancel()
         AppLog.i(TAG, "session.cleared")
     }
 }

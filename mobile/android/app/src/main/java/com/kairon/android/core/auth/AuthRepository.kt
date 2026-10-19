@@ -6,6 +6,7 @@ import com.kairon.android.client.model.LogoutRequest
 import com.kairon.android.client.model.RegisterRequest
 import com.kairon.android.core.logging.AppLog
 import com.kairon.android.core.network.bodyOrThrow
+import com.kairon.android.notifications.NotificationScheduler
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,6 +18,7 @@ class AuthRepository @Inject constructor(
     private val authApi: AuthControllerApi,
     private val tokenStore: TokenStore,
     private val sessionClearer: SessionClearer,
+    private val notificationScheduler: NotificationScheduler,
 ) {
 
     val signedIn get() = tokenStore.signedIn
@@ -30,6 +32,7 @@ class AuthRepository @Inject constructor(
             error("Login succeeded but response carried no tokens")
         }
         tokenStore.store(accessToken, refreshToken)
+        notificationScheduler.enqueue()
         AppLog.i(TAG, "login.success")
     }.onFailure { ex -> AppLog.e(TAG, "login.failed", throwable = ex) }
 
@@ -49,6 +52,7 @@ class AuthRepository @Inject constructor(
             error("Registration succeeded but response carried no tokens")
         }
         tokenStore.store(accessToken, refreshToken)
+        notificationScheduler.enqueue()
         AppLog.i(TAG, "register.success")
     }.onFailure { ex -> AppLog.e(TAG, "register.failed", throwable = ex) }
 

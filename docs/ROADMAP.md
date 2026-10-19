@@ -603,7 +603,7 @@ incremental delta.
 ## M11.9 — Android: configurable notifications for overdue and incomplete items
 
 See [`milestones/M11.9-android-notifications.md`](milestones/M11.9-android-notifications.md)
-for the full plan (Status: Draft). Local, on-device notifications only — no
+for the full plan (Status: Accepted — implemented). Local, on-device notifications only — no
 backend change, no FCM/push infrastructure, no `device_token`/`reminder`
 schema (that stub in `DATA_MODEL.md`'s "Not in the first cut" section is for
 true server-driven push and stays unbuilt; this milestone covers the
@@ -621,21 +621,21 @@ periodic `WorkManager` job performs its own `/sync` call before evaluating
 either condition, since nothing in the app today triggers a background sync
 outside of a screen being opened.
 
-- [ ] Android: a "Notifications" section on the Account screen — two
+- [x] Android: a "Notifications" section on the Account screen — two
       toggles (daily incomplete-todo reminder, overdue project-task
       notifications) and a time picker for the daily reminder's trigger
       time.
-- [ ] Android: a periodic `WorkManager` job (no new backend endpoint) that
+- [x] Android: a periodic `WorkManager` job (no new backend endpoint) that
       syncs, then reads the Room cache (`TodoDao`/`ProjectTaskDao`) and fires
       a local notification for each enabled, due condition — a daily digest
       for incomplete todos (at most once per calendar day) and a digest for
       newly-overdue project tasks (not re-sent once already notified for a
       given task).
-- [ ] Android: the Android 13+ `POST_NOTIFICATIONS` runtime permission
+- [x] Android: the Android 13+ `POST_NOTIFICATIONS` runtime permission
       request flow, requested the first time either toggle is turned on.
-- [ ] Android: two notification channels (daily reminder, overdue tasks) so
+- [x] Android: two notification channels (daily reminder, overdue tasks) so
       a user can manage them independently from system settings too.
-- [ ] The periodic job's lifecycle is tied to the session (enqueued on
+- [x] The periodic job's lifecycle is tied to the session (enqueued on
       login, cancelled from `SessionClearer`) so a logged-out device doesn't
       keep polling.
 

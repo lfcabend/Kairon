@@ -3,6 +3,7 @@ package com.kairon.android.core.auth
 import com.kairon.android.client.api.AuthControllerApi
 import com.kairon.android.client.model.AuthResponse
 import com.kairon.android.client.model.LoginRequest
+import com.kairon.android.notifications.NotificationScheduler
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -18,11 +19,12 @@ class AuthRepositoryTest {
     private val authApi = mockk<AuthControllerApi>()
     private val tokenStore = mockk<TokenStore>(relaxed = true)
     private val sessionClearer = mockk<SessionClearer>(relaxed = true)
+    private val notificationScheduler = mockk<NotificationScheduler>(relaxed = true)
     private lateinit var repository: AuthRepository
 
     @Before
     fun setUp() {
-        repository = AuthRepository(authApi, tokenStore, sessionClearer)
+        repository = AuthRepository(authApi, tokenStore, sessionClearer, notificationScheduler)
     }
 
     @Test

@@ -15,6 +15,8 @@ kotlinxSerializationJson = "1.11.0"
 securityCrypto = "1.1.0"
 datastorePreferences = "1.2.1"
 openapiGenerator = "7.14.0"
+workRuntime = "2.11.0"
+androidxTestCore = "1.7.0"
 junit = "4.13.2"
 mockk = "1.14.2"
 turbine = "1.2.0"
@@ -37,6 +39,14 @@ navigation-compose = { group = "androidx.navigation", name = "navigation-compose
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
 hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version.ref = "hiltNavigationCompose" }
+# M11.9 — androidx.hilt (not com.google.dagger) group, versioned alongside hilt-navigation-compose;
+# lets NotificationCheckWorker (@HiltWorker) constructor-inject its collaborators.
+hilt-work = { group = "androidx.hilt", name = "hilt-work", version.ref = "hiltNavigationCompose" }
+hilt-compiler-androidx = { group = "androidx.hilt", name = "hilt-compiler", version.ref = "hiltNavigationCompose" }
+
+work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "workRuntime" }
+work-testing = { group = "androidx.work", name = "work-testing", version.ref = "workRuntime" }
+androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidxTestCore" }
 
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }

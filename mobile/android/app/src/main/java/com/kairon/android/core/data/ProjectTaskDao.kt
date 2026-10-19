@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import java.time.LocalDate
 import java.util.UUID
 
 @Dao
@@ -12,6 +13,10 @@ interface ProjectTaskDao {
 
     @Query("SELECT * FROM project_task WHERE projectId = :projectId ORDER BY position ASC, createdAt ASC")
     fun observeForProject(projectId: UUID): Flow<List<ProjectTaskEntity>>
+
+    /** M11.9 D10 — mirrors the backend's own `ProjectTaskRepository.findDueOrOverdue` overdue half. */
+    @Query("SELECT * FROM project_task WHERE plannedEnd < :today AND status != 'DONE'")
+    suspend fun findOverdue(today: LocalDate): List<ProjectTaskEntity>
 
     @Query("SELECT * FROM project_task WHERE projectId = :projectId ORDER BY position ASC, createdAt ASC")
     suspend fun listForProject(projectId: UUID): List<ProjectTaskEntity>

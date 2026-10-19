@@ -28,12 +28,21 @@ standalone, always-on `mcp-server/` Node/TypeScript service a user's own
 Claude Code session connects to over a new personal-access-token (PAT)
 mechanism, bridging to the exact same `assistant_run`/`assistant_suggested_*`
 rows the paid Anthropic-API path writes today, tagged with a new
-`assistant_run.source` column), and M11.8 (Android: sync truncation
+`assistant_run.source` column), M11.8 (Android: sync truncation
 correctness — `SyncRepository` no longer advances `SyncCursorStore` past a
 `/sync` call that came back `truncated` for any requested type; it retries
 in a loop, each round's `since` advanced to the newest `updatedAt` actually
 seen in that round's upserted rows, until a round comes back fully
-non-truncated, only then persisting the cursor) are implemented.**
+non-truncated, only then persisting the cursor), and M11.9 (Android:
+configurable on-device notifications — a new `notifications` package with a
+periodic `WorkManager` job, `NotificationCheckWorker`, that syncs via a
+second, independent `SyncScope.NOTIFICATIONS` cursor and then evaluates two
+user-toggleable, on-device-only-stored conditions against the refreshed
+Room cache: a once-a-day reminder while today's todo list still has
+incomplete items, and a notification when a project task becomes overdue,
+each deduplicated against its own bookkeeping so a tick never re-notifies
+for the same day/task; tied to the session's own lifecycle via
+`NotificationScheduler.enqueue`/`cancel`) are implemented.**
 The `docs/` (`DESIGN.md`, `DATA_MODEL.md`, `ROADMAP.md`, `milestones/`, `adr/`)
 remain the specification — treat them as the source of truth and keep them
 updated when decisions change.
@@ -700,7 +709,37 @@ updated when decisions change.
   new `mockk-android` `androidTestImplementation` dependency (same version
   as the existing `mockk`) since no `androidTest` source set existed before
   this milestone and plain JVM `mockk` doesn't work against real Android
-  bytecode on-device.
+  bytecode on-device. M11.9 (configurable on-device notifications; see
+  `docs/milestones/M11.9-android-notifications.md`) adds a new
+  `notifications` package — the app's first use of `androidx.work`
+  (`work-runtime-ktx` + `androidx.hilt:hilt-work`, so `NotificationCheckWorker`
+  gets ordinary Hilt constructor injection via `@HiltWorker`/`HiltWorkerFactory`;
+  `KaironApplication` now implements `Configuration.Provider`, which in turn
+  required removing `WorkManager`'s default manifest-declared
+  `androidx.startup` initializer so it initializes on-demand instead):
+  `NotificationPreferences` (a small Preferences `DataStore`, on-device only,
+  never synced — `dailyReminderEnabled`/`dailyReminderTimeMinutes`/
+  `overdueNotificationsEnabled` plus `lastDailyReminderDate`/
+  `notifiedOverdueTaskIds` dedupe bookkeeping; the `DataStore<Preferences>`
+  itself is Hilt-provided via `NotificationModule` rather than built from a
+  `Context` inside the class, so a plain-JUnit test can hand it one over a
+  temp file instead — this app has no Robolectric)/`NotificationConditions.kt`
+  (two pure, dependency-free functions — `isDailyReminderDue`/
+  `diffOverdueTasks` — covered by `NotificationConditionsTest`)/
+  `NotificationChannels`/`NotificationScheduler` (`enqueue`/`cancel` a
+  `PeriodicWorkRequest` on a ~30-minute cadence, `NetworkType.CONNECTED`)/
+  `NotificationCheckWorker` (`@HiltWorker` `CoroutineWorker`: a no-op if both
+  toggles are off, otherwise its own `SyncScope.NOTIFICATIONS` sync then
+  evaluates both conditions against the refreshed Room cache via a new
+  `ProjectTaskDao.findOverdue` query, mirroring the backend's
+  `ProjectTaskRepository.findDueOrOverdue` overdue half)/`NotificationsSection`
+  (embedded in `AccountScreen` — two toggles + a Material3 `TimePicker`,
+  requesting the Android 13+ `POST_NOTIFICATIONS` permission on an off→on
+  flip)/`NotificationsSettingsViewModel`. `NotificationScheduler.enqueue`/
+  `cancel` are wired into `AuthRepository` (after login/register),
+  `KaironApplication.onCreate` (an app relaunch with an existing session),
+  and `SessionClearer.clearSession` (so a logged-out device stops polling) —
+  the same session-lifecycle chokepoints M11/M11.5/M11.8 already established.
 - `deploy/`, `docker/` — Helm chart and image from M0; M1 adds a `KAIRON_JWT_SECRET`
   app Secret wired into the Deployment. The About page adds `KAIRON_IMAGE_REF` /
   `KAIRON_DEPLOYED_AT` env vars (rendered at `helm upgrade` time — so an upgrade
