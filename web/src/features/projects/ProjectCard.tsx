@@ -7,10 +7,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import type { Project, ProjectStatus } from "@/lib/api/types";
+import type { Project, ProjectSize, ProjectStatus } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
-import { useChangeProjectStatus } from "./useProjects";
+import { useChangeProjectSize, useChangeProjectStatus } from "./useProjects";
 import { useProjectTasks } from "./useProjectTasks";
 
 const STATUS_LABEL: Record<ProjectStatus, string> = {
@@ -22,6 +22,8 @@ const STATUS_LABEL: Record<ProjectStatus, string> = {
 };
 
 const STATUS_OPTIONS = Object.keys(STATUS_LABEL) as ProjectStatus[];
+
+const SIZE_OPTIONS: ProjectSize[] = ["XS", "S", "M", "L", "XL"];
 
 interface Props {
   project: Project;
@@ -62,7 +64,46 @@ function StatusBadge({ project }: { project: Project }) {
   );
 }
 
-/** List row: color swatch, name, status badge (quick-change dropdown), size badge (D16), date range, task count. No priority indicator (D18). */
+/**
+ * Size badge as a dropdown trigger, same idiom as `StatusBadge` above. When unset,
+ * renders a dashed "Set size" placeholder so the size is still reachable without
+ * opening the edit dialog; a "Clear" item lets it go back to unset.
+ */
+function SizeBadge({ project }: { project: Project }) {
+  const changeSize = useChangeProjectSize();
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label={`Size: ${project.size ?? "not set"}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Badge
+          variant="outline"
+          className={cn("uppercase cursor-pointer hover:opacity-80", !project.size && "border-dashed text-muted-foreground")}
+        >
+          {project.size ?? "Set size"}
+        </Badge>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {SIZE_OPTIONS.map((s) => (
+          <DropdownMenuItem
+            key={s}
+            disabled={s === project.size}
+            onClick={() => changeSize.mutate({ project, size: s })}
+          >
+            {s}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuItem disabled={!project.size} onClick={() => changeSize.mutate({ project, size: null })}>
+          Clear
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/** List row: color swatch, name, status badge (quick-change dropdown), size badge (quick-change dropdown, D16), date range, task count. No priority indicator (D18). */
 export function ProjectCard({ project, dragHandle }: Props) {
   const { data } = useProjectTasks(project.id);
   const taskCount = data?.totalElements ?? 0;
@@ -86,11 +127,7 @@ export function ProjectCard({ project, dragHandle }: Props) {
             {project.name}
           </Link>
           <StatusBadge project={project} />
-          {project.size && (
-            <Badge variant="outline" className={cn("uppercase")}>
-              {project.size}
-            </Badge>
-          )}
+          <SizeBadge project={project} />
         </div>
         <Link to={`/projects/${project.id}`} className="mt-0.5 flex gap-3 text-xs text-muted-foreground">
           {dateRange && <span>{dateRange}</span>}
