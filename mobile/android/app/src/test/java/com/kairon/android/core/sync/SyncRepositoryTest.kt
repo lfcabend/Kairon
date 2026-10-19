@@ -31,6 +31,7 @@ import java.time.ZoneOffset
 import java.util.UUID
 
 private const val TYPES = "todo,journal,project,projectTask"
+private const val NOTIFICATION_TYPES = "todo,projectTask"
 
 class SyncRepositoryTest {
 
@@ -272,5 +273,37 @@ class SyncRepositoryTest {
         repository.sync()
 
         coVerify { cursorStore.writeSyncedTypes(setOf("todo", "journal", "project", "projectTask")) }
+    }
+
+    /**
+     * M11.9: `NotificationCheckWorker`'s own periodic sync only ever asks for
+     * `todo`/`projectTask` — it must use its own [SyncScope.NOTIFICATIONS]
+     * cursor, never the [SyncScope.FULL] one the screen-driven syncs above
+     * all use, or it would falsely advance the FULL cursor past
+     * `journal`/`project` changes it never actually requested.
+     */
+    @Test
+    fun theNotificationsScopeRequestsOnlyItsOwnNarrowerTypeSetAndUsesItsOwnCursor() = runTest {
+        val storedSince = Instant.now().minusSeconds(60)
+        val since = OffsetDateTime.now(ZoneOffset.UTC)
+        coEvery { cursorStore.read(SyncScope.NOTIFICATIONS) } returns storedSince
+        coEvery { cursorStore.readSyncedTypes(SyncScope.NOTIFICATIONS) } returns setOf("todo", "projectTask")
+        coEvery {
+            syncApi.sync(OffsetDateTime.ofInstant(storedSince, ZoneOffset.UTC), NOTIFICATION_TYPES)
+        } returns Response.success(
+            SyncResponse(
+                since = since,
+                todos = ChangeSetTodoItemView(upserted = emptyList(), deletedIds = emptyList(), truncated = false),
+            ),
+        )
+
+        val result = repository.sync(SyncScope.NOTIFICATIONS)
+
+        assertTrue(result.isSuccess)
+        coVerify { syncApi.sync(OffsetDateTime.ofInstant(storedSince, ZoneOffset.UTC), NOTIFICATION_TYPES) }
+        coVerify { cursorStore.write(since.toInstant(), SyncScope.NOTIFICATIONS) }
+        coVerify { cursorStore.writeSyncedTypes(setOf("todo", "projectTask"), SyncScope.NOTIFICATIONS) }
+        coVerify(exactly = 0) { cursorStore.write(any<Instant>(), SyncScope.FULL) }
+        coVerify(exactly = 0) { cursorStore.read(SyncScope.FULL) }
     }
 }

@@ -13,9 +13,6 @@ import javax.inject.Singleton
 
 private const val TAG = "SyncRepository"
 
-/** Every type this app version requests — the one place to extend when a later milestone widens it. */
-private val REQUESTED_TYPES = listOf("todo", "journal", "project", "projectTask")
-
 /**
  * A safety net against a genuine non-convergence (a server-side bug, or the
  * no-progress case [sync] itself detects and fails fast on) — never expected
@@ -27,7 +24,14 @@ private const val MAX_ROUNDS = 50
  * Owns the `/sync` call and fans upserts/tombstones out to each feature's
  * Room DAO (M11 §6.3). M11.5 widens the requested set to every type the
  * backend already supports (D7) — `project_category`/`task_dependency` stay
- * out, per M11 D9/M11.5's own confirmation of it.
+ * out, per M11 D9/M11.5's own confirmation of it. M11.9 adds a second
+ * [SyncScope] ([SyncScope.NOTIFICATIONS]) with its own narrower type set and
+ * its own independent cursor (see [SyncCursorStore]'s own doc comment) —
+ * every call site below that processes `body.*` stays scope-agnostic, since
+ * a type outside the caller's requested set simply comes back as an empty
+ * `ChangeSet` (confirmed server-side: `SyncService.sync` returns
+ * `ChangeSet.empty()`, never a null field, for an unrequested type) rather
+ * than needing its own branch here.
  *
  * M11.8: `GET /sync` caps each type at `kairon.sync.max-rows-per-type` rows
  * (oldest-`updatedAt`-first) and sets that type's `truncated` flag instead of
@@ -50,10 +54,11 @@ class SyncRepository @Inject constructor(
     private val projectTaskDao: ProjectTaskDao,
 ) {
 
-    suspend fun sync(): Result<Unit> = runCatching {
-        val storedSince = cursorStore.read()
-        val syncedTypes = cursorStore.readSyncedTypes()
-        val neverSyncedTypes = REQUESTED_TYPES.filterNot { it in syncedTypes }
+    suspend fun sync(scope: SyncScope = SyncScope.FULL): Result<Unit> = runCatching {
+        val requestedTypes = scope.requestedTypes
+        val storedSince = cursorStore.read(scope)
+        val syncedTypes = cursorStore.readSyncedTypes(scope)
+        val neverSyncedTypes = requestedTypes.filterNot { it in syncedTypes }
         // A single shared cursor only makes sense for a fixed type set. The
         // first time this device requests a type it's never synced before
         // (freshly widened by an app update, or a genuinely fresh install),
@@ -71,7 +76,7 @@ class SyncRepository @Inject constructor(
             AppLog.d(TAG, "sync.start", mapOf("since" to since, "round" to round, "neverSyncedTypes" to neverSyncedTypes))
             val response = syncApi.sync(
                 since?.let { OffsetDateTime.ofInstant(it, java.time.ZoneOffset.UTC) },
-                REQUESTED_TYPES.joinToString(","),
+                requestedTypes.joinToString(","),
             )
             val body = response.bodyOrThrow(TAG, "sync")
 
@@ -136,8 +141,8 @@ class SyncRepository @Inject constructor(
             }
 
             if (!anyTruncated) {
-                body.since?.toInstant()?.let { cursorStore.write(it) }
-                cursorStore.writeSyncedTypes(REQUESTED_TYPES.toSet())
+                body.since?.toInstant()?.let { cursorStore.write(it, scope) }
+                cursorStore.writeSyncedTypes(requestedTypes.toSet(), scope)
                 AppLog.i(
                     TAG, "sync.success",
                     mapOf("upserted" to upsertedCount, "deleted" to deletedCount, "rounds" to round),

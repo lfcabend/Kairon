@@ -27,35 +27,58 @@ private val Context.syncDataStore by preferencesDataStore(name = "kairon_sync")
  * [SyncRepository] uses the two together to force one full resync
  * (`since` treated as null) whenever the requested set grows to cover a
  * type this device has never synced before.
+ *
+ * M11.9 adds a second, independent cursor keyed by [SyncScope] for the same
+ * reason: `NotificationCheckWorker`'s own narrower [SyncScope.NOTIFICATIONS]
+ * sync must never advance the [SyncScope.FULL] cursor the UI's own sync
+ * relies on — doing so would falsely claim "we have the complete state of
+ * `journal`/`project` up to this point" for types that call never requested,
+ * permanently hiding any change to those types that happened in the gap.
+ * The two scopes' cursors advance fully independently, each redundantly
+ * re-syncing `todo`/`projectTask` on its own schedule — harmless, since
+ * upserts/tombstones are idempotent.
  */
 @Singleton
 class SyncCursorStore @Inject constructor(@ApplicationContext private val context: Context) {
 
-    private val sinceKey = stringPreferencesKey("todo_since")
-    private val syncedTypesKey = stringPreferencesKey("synced_types")
+    private fun sinceKey(scope: SyncScope) = stringPreferencesKey(
+        when (scope) {
+            SyncScope.FULL -> "todo_since"
+            SyncScope.NOTIFICATIONS -> "notification_since"
+        },
+    )
 
-    suspend fun read(): Instant? =
-        context.syncDataStore.data.first()[sinceKey]?.let(Instant::parse)
+    private fun syncedTypesKey(scope: SyncScope) = stringPreferencesKey(
+        when (scope) {
+            SyncScope.FULL -> "synced_types"
+            SyncScope.NOTIFICATIONS -> "notification_synced_types"
+        },
+    )
 
-    suspend fun write(since: Instant) {
-        context.syncDataStore.edit { it[sinceKey] = since.toString() }
+    suspend fun read(scope: SyncScope = SyncScope.FULL): Instant? =
+        context.syncDataStore.data.first()[sinceKey(scope)]?.let(Instant::parse)
+
+    suspend fun write(since: Instant, scope: SyncScope = SyncScope.FULL) {
+        context.syncDataStore.edit { it[sinceKey(scope)] = since.toString() }
     }
 
-    suspend fun readSyncedTypes(): Set<String> =
-        context.syncDataStore.data.first()[syncedTypesKey]
+    suspend fun readSyncedTypes(scope: SyncScope = SyncScope.FULL): Set<String> =
+        context.syncDataStore.data.first()[syncedTypesKey(scope)]
             ?.split(",")
             ?.filter { it.isNotBlank() }
             ?.toSet()
             ?: emptySet()
 
-    suspend fun writeSyncedTypes(types: Set<String>) {
-        context.syncDataStore.edit { it[syncedTypesKey] = types.joinToString(",") }
+    suspend fun writeSyncedTypes(types: Set<String>, scope: SyncScope = SyncScope.FULL) {
+        context.syncDataStore.edit { it[syncedTypesKey(scope)] = types.joinToString(",") }
     }
 
     suspend fun clear() {
-        context.syncDataStore.edit {
-            it.remove(sinceKey)
-            it.remove(syncedTypesKey)
+        context.syncDataStore.edit { prefs ->
+            SyncScope.entries.forEach { scope ->
+                prefs.remove(sinceKey(scope))
+                prefs.remove(syncedTypesKey(scope))
+            }
         }
     }
 }
