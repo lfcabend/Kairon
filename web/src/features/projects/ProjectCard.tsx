@@ -28,6 +28,11 @@ const SIZE_OPTIONS: ProjectSize[] = ["XS", "S", "M", "L", "XL"];
 interface Props {
   project: Project;
   dragHandle?: React.ReactNode;
+  /**
+   * Shown only where the project isn't already grouped under a category heading —
+   * currently just `ProjectPriorityList`'s flat, cross-category view.
+   */
+  categoryName?: string;
 }
 
 /**
@@ -103,8 +108,13 @@ function SizeBadge({ project }: { project: Project }) {
   );
 }
 
-/** List row: color swatch, name, status badge (quick-change dropdown), size badge (quick-change dropdown, D16), date range, task count. No priority indicator (D18). */
-export function ProjectCard({ project, dragHandle }: Props) {
+/**
+ * List row: color swatch, name, status badge (quick-change dropdown), size badge
+ * (quick-change dropdown, D16), an optional category badge (only passed by the
+ * flat priority view, which has no category-section heading of its own to convey
+ * it otherwise), date range, task count. No priority indicator (D18).
+ */
+export function ProjectCard({ project, dragHandle, categoryName }: Props) {
   const { data } = useProjectTasks(project.id);
   const taskCount = data?.totalElements ?? 0;
 
@@ -128,6 +138,11 @@ export function ProjectCard({ project, dragHandle }: Props) {
           </Link>
           <StatusBadge project={project} />
           <SizeBadge project={project} />
+          {categoryName && (
+            <Badge variant="outline" className="text-muted-foreground">
+              {categoryName}
+            </Badge>
+          )}
         </div>
         <Link to={`/projects/${project.id}`} className="mt-0.5 flex gap-3 text-xs text-muted-foreground">
           {dateRange && <span>{dateRange}</span>}

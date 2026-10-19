@@ -89,7 +89,7 @@ test("a project past the old 50-item default page size still renders in its cate
   expect(screen.getByText("Lijfrente polis")).toBeInTheDocument();
 });
 
-test("the priority list renders every non-archived project flat, without category grouping", async () => {
+test("the priority list renders every non-archived project flat, with each project's own category badge instead of section grouping", async () => {
   const category = seedCategories([{ name: "Home" }])[0];
   seedProjects([{ name: "Alpha", categoryId: category.id }, { name: "Beta" }]);
   render(
@@ -104,5 +104,8 @@ test("the priority list renders every non-archived project flat, without categor
 
   expect(await screen.findByText("Alpha")).toBeInTheDocument();
   expect(screen.getByText("Beta")).toBeInTheDocument();
-  expect(screen.queryByText("Home")).not.toBeInTheDocument();
+  // No category-section heading grouping, but each card still shows its own category.
+  expect(screen.queryByRole("heading", { name: "Home" })).not.toBeInTheDocument();
+  expect(screen.getByText("Home")).toBeInTheDocument();
+  expect(screen.getByText("Uncategorized")).toBeInTheDocument();
 });

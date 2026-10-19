@@ -17,10 +17,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical } from "lucide-react";
 
+import { useMemo } from "react";
+
 import type { Project } from "@/lib/api/types";
 
 import { ProjectCard } from "./ProjectCard";
 import { matchesFilter } from "./projectFilter";
+import { useProjectCategories } from "./useProjectCategories";
 import { useProjectsByPriority, useReorderProjects } from "./useProjects";
 
 interface Props {
@@ -33,8 +36,11 @@ interface Props {
 /** Flat, cross-category, drag-orderable list for "Sort by: Priority" (D19). */
 export function ProjectPriorityList({ draggable, filterText = "" }: Props) {
   const { data: allProjects = [], isLoading } = useProjectsByPriority();
+  const { data: categories = [] } = useProjectCategories();
   const projects = allProjects.filter((p) => matchesFilter(p, filterText));
   const reorder = useReorderProjects();
+
+  const categoryNameById = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -76,7 +82,12 @@ export function ProjectPriorityList({ draggable, filterText = "" }: Props) {
         <SortableContext items={projects.map((p) => p.id)} strategy={verticalListSortingStrategy}>
           <ul className="space-y-1">
             {projects.map((project) => (
-              <PriorityRow key={project.id} project={project} draggable={draggable} />
+              <PriorityRow
+                key={project.id}
+                project={project}
+                draggable={draggable}
+                categoryName={project.categoryId ? categoryNameById.get(project.categoryId) : "Uncategorized"}
+              />
             ))}
           </ul>
         </SortableContext>
@@ -85,7 +96,15 @@ export function ProjectPriorityList({ draggable, filterText = "" }: Props) {
   );
 }
 
-function PriorityRow({ project, draggable }: { project: Project; draggable: boolean }) {
+function PriorityRow({
+  project,
+  draggable,
+  categoryName,
+}: {
+  project: Project;
+  draggable: boolean;
+  categoryName?: string;
+}) {
   const sortable = useSortable({ id: project.id, disabled: !draggable });
   const style = {
     transform: CSS.Transform.toString(sortable.transform),
@@ -96,6 +115,7 @@ function PriorityRow({ project, draggable }: { project: Project; draggable: bool
     <li ref={sortable.setNodeRef} style={style} className={sortable.isDragging ? "opacity-60" : undefined}>
       <ProjectCard
         project={project}
+        categoryName={categoryName}
         dragHandle={
           draggable ? (
             <button
